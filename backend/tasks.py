@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from dataclasses import asdict
 from typing import Any
 
@@ -56,6 +57,8 @@ def save_live_opportunities(
             "listing_url": listing.url,
             "asking_price": listing.price_amount,
             "source": listing.source,
+            "description": listing.description,
+            "image_urls": listing.image_urls,
         }
         for listing in listings
         if listing.url not in existing_urls
@@ -88,13 +91,41 @@ def infer_brand(model: str) -> str:
     return model.strip().split()[0].title() if model.strip() else "Unknown"
 
 
+def _run_scrape_in_dedicated_loop(coro_factory) -> list[ScrapedListing]:
+    """Run an async scrape on a fresh event loop that supports subprocesses.
+
+    On Windows, uvicorn's ``--reload`` forces a ``SelectorEventLoop``, which
+    cannot spawn subprocesses. Playwright needs one to launch the browser, so
+    we run the coroutine on a dedicated ``ProactorEventLoop`` here instead.
+    Meant to be called from a worker thread (e.g. via ``asyncio.to_thread``)
+    so it never conflicts with the loop uvicorn is already running.
+    """
+    if sys.platform == "win32":
+        loop = asyncio.ProactorEventLoop()
+    else:
+        loop = asyncio.new_event_loop()
+
+    try:
+        asyncio.set_event_loop(loop)
+        return loop.run_until_complete(coro_factory())
+    finally:
+        try:
+            loop.run_until_complete(loop.shutdown_asyncgens())
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
+
+
 async def scrape_subito_and_save(
     query: str = "iPhone 13 Pro",
     category: str = "smartphone",
     max_results: int = 5,
 ) -> dict[str, Any]:
     scraper = SubitoScraper(headless=True, organic_only=True)
-    listings = await scraper.search_text(query=query, max_results=max_results)
+    listings = await asyncio.to_thread(
+        _run_scrape_in_dedicated_loop,
+        lambda: scraper.search_text(query=query, max_results=max_results, deep=True),
+    )
 
     product, product_created = await asyncio.to_thread(
         get_or_create_product,

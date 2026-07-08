@@ -3,4 +3,5 @@ uvicorn
 supabase
 playwright
 beautifulsoup4
+httpx
 python-dotenv

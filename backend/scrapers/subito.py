@@ -1,12 +1,16 @@
+import asyncio
 import random
 import re
-from urllib.parse import urlencode
+from dataclasses import replace
+from urllib.parse import urlencode, urlparse
 
+import httpx
 from bs4 import BeautifulSoup
 from playwright.async_api import BrowserType, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
 
+from backend.core.database import upload_image_to_storage
 from backend.scrapers.base import BaseScraper, ScrapedListing, SearchRequest
 
 
@@ -22,6 +26,14 @@ class SubitoScraper(BaseScraper):
         re.IGNORECASE,
     )
     PROMOTED_MARKERS = {"promo", "vetrina"}
+    LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
+    CONTENT_TYPE_EXT = {
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/webp": ".webp",
+        "image/gif": ".gif",
+    }
 
     def __init__(
         self,
@@ -53,6 +65,7 @@ class SubitoScraper(BaseScraper):
         max_results: int = 5,
         min_price: int | None = None,
         max_price: int | None = None,
+        deep: bool = False,
     ) -> list[ScrapedListing]:
         url = self._build_search_url(
             SearchRequest(
@@ -88,11 +101,15 @@ class SubitoScraper(BaseScraper):
                 await page.mouse.wheel(0, random.randint(450, 900))
                 await self._human_delay(page, min_ms=700, max_ms=1_400)
                 html = await page.content()
+                listings = self._parse_results(html, max_results=max_results, query=query)
+
+                if deep and listings:
+                    listings = await self._enrich_listings(page, listings)
             finally:
                 await context.close()
                 await browser.close()
 
-        return self._parse_results(html, max_results=max_results, query=query)
+        return listings
 
     def _get_browser_type(self, playwright) -> BrowserType:
         try:
@@ -144,6 +161,143 @@ class SubitoScraper(BaseScraper):
         max_ms: int = 2_500,
     ) -> None:
         await page.wait_for_timeout(random.randint(min_ms, max_ms))
+
+    async def _enrich_listings(
+        self,
+        page: Page,
+        listings: list[ScrapedListing],
+    ) -> list[ScrapedListing]:
+        """Visit each listing's detail page to add description and stored images."""
+        enriched: list[ScrapedListing] = []
+
+        for index, listing in enumerate(listings):
+            if index > 0:
+                # 1-3s between requests to look human and avoid blocks.
+                await self._human_delay(page, min_ms=1_000, max_ms=3_000)
+
+            try:
+                await page.goto(
+                    listing.url, wait_until="domcontentloaded", timeout=self.timeout_ms
+                )
+                await self._human_delay(page, min_ms=800, max_ms=1_500)
+
+                description = await self._extract_description(page)
+                image_url = await self._extract_main_image_url(page)
+                image_urls = await self._store_listing_image(image_url, listing.url)
+
+                enriched.append(
+                    replace(listing, description=description, image_urls=image_urls)
+                )
+            except Exception:
+                # Never lose a listing because enrichment of one page failed.
+                enriched.append(listing)
+
+        return enriched
+
+    async def _extract_description(self, page: Page) -> str | None:
+        try:
+            text = await page.evaluate(
+                """() => {
+                    let best = '';
+                    document.querySelectorAll('[class*="description"]').forEach((el) => {
+                        const t = (el.innerText || '').trim();
+                        if (t.length > best.length) best = t;
+                    });
+                    return best;
+                }"""
+            )
+            if text and len(text.strip()) >= 40:
+                return text.strip()
+        except Exception:
+            pass
+
+        for selector in (
+            "meta[property='og:description']",
+            "meta[name='description']",
+        ):
+            try:
+                node = page.locator(selector).first
+                if await node.count() > 0:
+                    content = await node.get_attribute("content")
+                    if content and content.strip():
+                        return content.strip()
+            except Exception:
+                continue
+
+        return None
+
+    async def _extract_main_image_url(self, page: Page) -> str | None:
+        try:
+            node = page.locator("meta[property='og:image']").first
+            if await node.count() > 0:
+                content = await node.get_attribute("content")
+                if content and content.strip():
+                    return content.strip()
+        except Exception:
+            pass
+
+        try:
+            return await page.evaluate(
+                """() => {
+                    let best = null, area = 0;
+                    document.querySelectorAll('img').forEach((el) => {
+                        const a = (el.naturalWidth || 0) * (el.naturalHeight || 0);
+                        if (a > area) { area = a; best = el.currentSrc || el.src; }
+                    });
+                    return best;
+                }"""
+            )
+        except Exception:
+            return None
+
+    async def _store_listing_image(
+        self,
+        image_url: str | None,
+        listing_url: str,
+    ) -> list[str]:
+        """Download the main image and persist it to Supabase Storage."""
+        if not image_url:
+            return []
+
+        try:
+            async with httpx.AsyncClient(
+                timeout=30, headers={"User-Agent": self.USER_AGENT}, follow_redirects=True
+            ) as client:
+                response = await client.get(image_url)
+                response.raise_for_status()
+                content = response.content
+                content_type = (
+                    response.headers.get("content-type", "image/jpeg")
+                    .split(";")[0]
+                    .strip()
+                    .lower()
+                )
+        except Exception:
+            return []
+
+        extension = self.CONTENT_TYPE_EXT.get(content_type, ".jpg")
+        filename = f"{self.source_name}/{self._listing_slug(listing_url)}{extension}"
+
+        try:
+            public_url = await asyncio.to_thread(
+                upload_image_to_storage,
+                content,
+                filename,
+                content_type=content_type,
+            )
+        except Exception:
+            return []
+
+        return [public_url]
+
+    def _listing_slug(self, listing_url: str) -> str:
+        match = self.LISTING_ID_RE.search(listing_url)
+        if match:
+            return match.group(1)
+
+        path = urlparse(listing_url).path.rsplit("/", 1)[-1]
+        cleaned = re.sub(r"[^a-zA-Z0-9_-]", "-", path) or "listing"
+        return cleaned.removesuffix(".htm")
 
     def _parse_results(
         self,
