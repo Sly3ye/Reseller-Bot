@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import statistics
 import sys
 from dataclasses import asdict
@@ -9,6 +10,8 @@ from supabase import Client
 
 from backend.core.database import get_supabase_client
 from backend.scrapers import ScrapedListing, SearchRequest, SubitoScraper
+
+logger = logging.getLogger(__name__)
 
 # numeric(5,2) in market_trends.margin_pct caps the storable percentage.
 MARGIN_PCT_LIMIT = 999.99
@@ -305,14 +308,78 @@ async def run_nightly_batch(
     }
 
 
-async def run_sniper_live() -> dict[str, int | str]:
-    """Simulate fast underpriced-deal discovery for a focused search."""
-    scraper = SubitoScraper(headless=True)
-    results = await scraper.search(
-        SearchRequest(query="iphone 15 pro", max_results=10, max_price=650)
+def get_active_products(client: Client | None = None) -> list[dict[str, Any]]:
+    """Fetch the products the scraping engines should track (is_active = true)."""
+    db = client or get_supabase_client()
+    result = (
+        db.table("products")
+        .select("id, model, category")
+        .eq("is_active", True)
+        .execute()
     )
+    return result.data or []
 
-    return {"mode": "sniper_live", "results": len(results)}
+
+async def run_nightly_batch_all_products() -> dict[str, Any]:
+    """Motore Notturno (scheduled): refresh market trends for every active product."""
+    products = await asyncio.to_thread(get_active_products)
+    logger.info("Nightly batch: %d active product(s)", len(products))
+
+    results: list[dict[str, Any]] = []
+    for product in products:
+        model = product["model"]
+        try:
+            outcome = await run_nightly_batch(
+                query=model, category=product["category"]
+            )
+            results.append(outcome)
+            logger.info(
+                "Nightly batch done for '%s' (volume=%s)",
+                model,
+                (outcome.get("stats") or {}).get("volume"),
+            )
+        except Exception:
+            logger.exception("Nightly batch failed for '%s'", model)
+            results.append({"query": model, "error": True})
+
+    return {"mode": "nightly_batch_all", "products": len(products), "results": results}
+
+
+async def run_sniper_all_products(max_results: int = 5) -> dict[str, Any]:
+    """Cecchino Live (scheduled): hunt fresh opportunities for every active product.
+
+    Deep-scrapes each active product and saves new opportunities (with margins
+    computed against the latest market trend) into live_opportunities.
+    """
+    products = await asyncio.to_thread(get_active_products)
+    logger.info("Sniper live: %d active product(s)", len(products))
+
+    results: list[dict[str, Any]] = []
+    for product in products:
+        model = product["model"]
+        try:
+            outcome = await scrape_subito_and_save(
+                query=model,
+                category=product["category"],
+                max_results=max_results,
+            )
+            results.append(
+                {
+                    "query": model,
+                    "scraped_count": outcome["scraped_count"],
+                    "saved_count": outcome["saved_count"],
+                }
+            )
+            logger.info(
+                "Sniper done for '%s' (new opportunities=%d)",
+                model,
+                outcome["saved_count"],
+            )
+        except Exception:
+            logger.exception("Sniper failed for '%s'", model)
+            results.append({"query": model, "error": True})
+
+    return {"mode": "sniper_all", "products": len(products), "results": results}
 
 
 if __name__ == "__main__":
