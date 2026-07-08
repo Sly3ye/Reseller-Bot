@@ -66,6 +66,8 @@ def save_live_opportunities(
         {
             "product_id": product_id,
             "listing_url": listing.url,
+            "title": listing.title,
+            "location": listing.location,
             "asking_price": listing.price_amount,
             "source": listing.source,
             "description": listing.description,
