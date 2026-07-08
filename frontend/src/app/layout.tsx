@@ -1,23 +1,23 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-
-import { Sidebar } from "@/components/sidebar";
+import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const ibmPlexSans = IBM_Plex_Sans({
+  variable: "--font-ibm-plex-sans",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const ibmPlexMono = IBM_Plex_Mono({
+  variable: "--font-ibm-plex-mono",
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "ResellerOS Dashboard",
-  description: "Dashboard per reseller di auto e iPhone",
+  title: "FlipRadar — Arbitrage Sniper",
+  description: "Live arbitrage sniper for used tech and cars",
 };
 
 export default function RootLayout({
@@ -28,16 +28,9 @@ export default function RootLayout({
   return (
     <html
       lang="it"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} antialiased`}
     >
-      <body className="min-h-full bg-zinc-100 text-zinc-950">
-        <div className="min-h-screen md:flex">
-          <Sidebar />
-          <main className="min-w-0 flex-1 px-4 py-6 md:px-8 lg:px-10">
-            <div className="mx-auto w-full max-w-6xl">{children}</div>
-          </main>
-        </div>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

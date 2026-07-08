@@ -17,6 +17,64 @@ export type LiveOpportunity = {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
+export type Category = "smartphone" | "auto";
+
+export type ApiOpportunity = {
+  id: string;
+  title: string | null;
+  location: string | null;
+  askingPrice: number | null;
+  marketAvg: number | null;
+  marginEur: number | null;
+  marginPct: number | null;
+  description: string | null;
+  images: string[];
+  foundAt: string | null;
+  source: string | null;
+  status: string | null;
+  url: string;
+};
+
+export type ApiModelStat = {
+  name: string;
+  avg: number | null;
+  sample: number | null;
+  changePct: number | null;
+};
+
+export type ApiTrends = {
+  activeListings: number;
+  avgMarketPrice: number | null;
+  outliersFiltered: number | null;
+  trend: { date: string; price: number }[];
+  trendProduct: string | null;
+  models: ApiModelStat[];
+};
+
+export async function fetchOpportunities(
+  category: Category,
+  signal?: AbortSignal,
+): Promise<ApiOpportunity[]> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/opportunities?category=${category}`,
+    { cache: "no-store", signal },
+  );
+  if (!res.ok) throw new Error(`GET /api/opportunities failed (${res.status})`);
+  return res.json();
+}
+
+export async function fetchTrends(
+  category: Category,
+  signal?: AbortSignal,
+): Promise<ApiTrends> {
+  const res = await fetch(`${API_BASE_URL}/api/trends?category=${category}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /api/trends failed (${res.status})`);
+  return res.json();
+}
+
 export async function getMarketTrends(): Promise<MarketTrendPoint[]> {
   void API_BASE_URL;
 

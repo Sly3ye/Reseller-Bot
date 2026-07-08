@@ -14,3 +14,7 @@ __pycache__/
 
 playwright-report/
 test-results/
+
+# Design handoff bundles from Claude Design (source artifacts, not code)
+*-handoff.zip
+design_handoff/
