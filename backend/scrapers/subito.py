@@ -1,4 +1,5 @@
 import asyncio
+import json
 import random
 import re
 from dataclasses import replace
@@ -66,15 +67,19 @@ class SubitoScraper(BaseScraper):
         min_price: int | None = None,
         max_price: int | None = None,
         deep: bool = False,
+        strict_match: bool = True,
+        pages: int = 1,
     ) -> list[ScrapedListing]:
-        url = self._build_search_url(
-            SearchRequest(
-                query=query,
-                max_results=max_results,
-                min_price=min_price,
-                max_price=max_price,
-            )
+        request = SearchRequest(
+            query=query,
+            max_results=max_results,
+            min_price=min_price,
+            max_price=max_price,
         )
+        # Strict match keeps only titles containing every query token (precision,
+        # for the sniper). Light/batch mode relaxes it to gather more prices for
+        # a market average, relying on Subito's own relevance + outlier cleaning.
+        match_query = query if strict_match else None
 
         async with async_playwright() as playwright:
             browser_type = self._get_browser_type(playwright)
@@ -91,17 +96,41 @@ class SubitoScraper(BaseScraper):
             )
             page = await context.new_page()
 
+            listings: list[ScrapedListing] = []
+            seen_urls: set[str] = set()
+
             try:
                 await page.goto(self.HOME_URL, wait_until="domcontentloaded", timeout=self.timeout_ms)
                 await self._human_delay(page)
-                await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
-                await self._accept_cookies_if_present(page)
-                await self._human_delay(page)
-                await self._wait_for_listing_cards(page)
-                await page.mouse.wheel(0, random.randint(450, 900))
-                await self._human_delay(page, min_ms=700, max_ms=1_400)
-                html = await page.content()
-                listings = self._parse_results(html, max_results=max_results, query=query)
+
+                for page_num in range(1, max(1, pages) + 1):
+                    url = self._build_search_url(request, page=page_num)
+                    await page.goto(url, wait_until="domcontentloaded", timeout=self.timeout_ms)
+
+                    if page_num == 1:
+                        await self._accept_cookies_if_present(page)
+
+                    await self._human_delay(page)
+                    try:
+                        await self._wait_for_listing_cards(page)
+                    except RuntimeError:
+                        break  # No more results on this page: stop paginating.
+
+                    await page.mouse.wheel(0, random.randint(450, 900))
+                    await self._human_delay(page, min_ms=700, max_ms=1_400)
+                    html = await page.content()
+
+                    for listing in self._parse_results(
+                        html, max_results=max_results, query=match_query
+                    ):
+                        if listing.url not in seen_urls:
+                            seen_urls.add(listing.url)
+                            listings.append(listing)
+
+                    if len(listings) >= max_results:
+                        break
+
+                listings = listings[:max_results]
 
                 if deep and listings:
                     listings = await self._enrich_listings(page, listings)
@@ -117,13 +146,15 @@ class SubitoScraper(BaseScraper):
         except AttributeError as exc:
             raise ValueError(f"Unsupported Playwright browser: {self.browser_name}") from exc
 
-    def _build_search_url(self, request: SearchRequest) -> str:
+    def _build_search_url(self, request: SearchRequest, page: int = 1) -> str:
         params: dict[str, str | int] = {"q": request.query}
 
         if request.min_price is not None:
             params["ps"] = request.min_price
         if request.max_price is not None:
             params["pe"] = request.max_price
+        if page > 1:
+            params["o"] = page  # Subito paginates via the "o" (page number) param.
 
         return f"{self.BASE_URL}?{urlencode(params)}"
 
@@ -181,9 +212,8 @@ class SubitoScraper(BaseScraper):
                 )
                 await self._human_delay(page, min_ms=800, max_ms=1_500)
 
-                description = await self._extract_description(page)
-                image_url = await self._extract_main_image_url(page)
-                image_urls = await self._store_listing_image(image_url, listing.url)
+                description, gallery_urls = await self._extract_detail(page)
+                image_urls = await self._store_images(gallery_urls, listing.url)
 
                 enriched.append(
                     replace(listing, description=description, image_urls=image_urls)
@@ -193,6 +223,65 @@ class SubitoScraper(BaseScraper):
                 enriched.append(listing)
 
         return enriched
+
+    async def _extract_detail(self, page: Page) -> tuple[str | None, list[str]]:
+        """Return (description, high-res gallery image URLs) for a detail page.
+
+        JSON-LD is the reliable source: it lists exactly this ad's photos at
+        full resolution and carries the ad description. DOM/meta are fallbacks.
+        """
+        description, images = await self._extract_from_json_ld(page)
+
+        if not description:
+            description = await self._extract_description(page)
+        if not images:
+            images = await self._extract_gallery_from_dom(page)
+
+        return description, images
+
+    async def _extract_from_json_ld(self, page: Page) -> tuple[str | None, list[str]]:
+        try:
+            blocks = await page.evaluate(
+                """() => [...document.querySelectorAll('script[type=\"application/ld+json\"]')]
+                    .map((s) => s.textContent)"""
+            )
+        except Exception:
+            return None, []
+
+        description: str | None = None
+        images: list[str] = []
+
+        for block in blocks or []:
+            try:
+                data = json.loads(block)
+            except Exception:
+                continue
+
+            for obj in self._iter_ld_objects(data):
+                if not isinstance(obj, dict):
+                    continue
+
+                raw_image = obj.get("image")
+                if raw_image and not images:
+                    if isinstance(raw_image, str):
+                        images = [raw_image]
+                    elif isinstance(raw_image, list):
+                        images = [url for url in raw_image if isinstance(url, str)]
+
+                raw_desc = obj.get("description")
+                if raw_desc and not description and isinstance(raw_desc, str):
+                    description = raw_desc.strip()
+
+        return description, self._dedupe_preserving_order(images)
+
+    def _iter_ld_objects(self, data: Any):
+        if isinstance(data, dict):
+            if "@graph" in data and isinstance(data["@graph"], list):
+                yield from data["@graph"]
+            yield data
+        elif isinstance(data, list):
+            for item in data:
+                yield from self._iter_ld_objects(item)
 
     async def _extract_description(self, page: Page) -> str | None:
         try:
@@ -226,69 +315,84 @@ class SubitoScraper(BaseScraper):
 
         return None
 
-    async def _extract_main_image_url(self, page: Page) -> str | None:
+    async def _extract_gallery_from_dom(self, page: Page) -> list[str]:
         try:
-            node = page.locator("meta[property='og:image']").first
-            if await node.count() > 0:
-                content = await node.get_attribute("content")
-                if content and content.strip():
-                    return content.strip()
-        except Exception:
-            pass
-
-        try:
-            return await page.evaluate(
+            urls = await page.evaluate(
                 """() => {
-                    let best = null, area = 0;
-                    document.querySelectorAll('img').forEach((el) => {
-                        const a = (el.naturalWidth || 0) * (el.naturalHeight || 0);
-                        if (a > area) { area = a; best = el.currentSrc || el.src; }
+                    const out = [];
+                    document.querySelectorAll('img, source[srcset]').forEach((el) => {
+                        const candidates = el.srcset
+                            ? el.srcset.split(',').map((p) => p.trim().split(' ')[0])
+                            : [el.currentSrc || el.src || ''];
+                        candidates.forEach((u) => {
+                            if (/images\\.(sbito|subito)/.test(u)
+                                && /gallery-desktop/.test(u)
+                                && !/thumbnail/.test(u)) {
+                                out.push(u);
+                            }
+                        });
                     });
-                    return best;
+                    return out;
                 }"""
             )
         except Exception:
-            return None
+            return []
 
-    async def _store_listing_image(
+        return self._dedupe_preserving_order(urls or [])
+
+    def _dedupe_preserving_order(self, urls: list[str]) -> list[str]:
+        seen: set[str] = set()
+        unique: list[str] = []
+        for url in urls:
+            if url and url not in seen:
+                seen.add(url)
+                unique.append(url)
+        return unique
+
+    async def _store_images(
         self,
-        image_url: str | None,
+        image_urls: list[str],
         listing_url: str,
     ) -> list[str]:
-        """Download the main image and persist it to Supabase Storage."""
-        if not image_url:
+        """Download every gallery image and persist them to Supabase Storage."""
+        if not image_urls:
             return []
 
-        try:
-            async with httpx.AsyncClient(
-                timeout=30, headers={"User-Agent": self.USER_AGENT}, follow_redirects=True
-            ) as client:
-                response = await client.get(image_url)
-                response.raise_for_status()
-                content = response.content
-                content_type = (
-                    response.headers.get("content-type", "image/jpeg")
-                    .split(";")[0]
-                    .strip()
-                    .lower()
-                )
-        except Exception:
-            return []
+        slug = self._listing_slug(listing_url)
+        stored: list[str] = []
 
-        extension = self.CONTENT_TYPE_EXT.get(content_type, ".jpg")
-        filename = f"{self.source_name}/{self._listing_slug(listing_url)}{extension}"
+        async with httpx.AsyncClient(
+            timeout=30, headers={"User-Agent": self.USER_AGENT}, follow_redirects=True
+        ) as client:
+            for index, image_url in enumerate(image_urls):
+                try:
+                    response = await client.get(image_url)
+                    response.raise_for_status()
+                    content = response.content
+                    content_type = (
+                        response.headers.get("content-type", "image/jpeg")
+                        .split(";")[0]
+                        .strip()
+                        .lower()
+                    )
+                except Exception:
+                    continue
 
-        try:
-            public_url = await asyncio.to_thread(
-                upload_image_to_storage,
-                content,
-                filename,
-                content_type=content_type,
-            )
-        except Exception:
-            return []
+                extension = self.CONTENT_TYPE_EXT.get(content_type, ".jpg")
+                filename = f"{self.source_name}/{slug}/{index:02d}{extension}"
 
-        return [public_url]
+                try:
+                    public_url = await asyncio.to_thread(
+                        upload_image_to_storage,
+                        content,
+                        filename,
+                        content_type=content_type,
+                    )
+                    stored.append(public_url)
+                except Exception:
+                    continue
+
+        return stored
 
     def _listing_slug(self, listing_url: str) -> str:
         match = self.LISTING_ID_RE.search(listing_url)
