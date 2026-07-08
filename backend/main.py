@@ -1,10 +1,12 @@
 from fastapi import FastAPI
 
 from backend.api.health import router as health_router
+from backend.api.scrape import router as scrape_router
 
 app = FastAPI(title="Reseller SaaS Backend", version="0.1.0")
 
 app.include_router(health_router)
+app.include_router(scrape_router)
 
 
 @app.get("/")

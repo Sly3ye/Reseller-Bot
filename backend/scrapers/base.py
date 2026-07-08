@@ -17,6 +17,7 @@ class ScrapedListing:
     title: str
     url: str
     price: str | None = None
+    price_amount: int | None = None
     location: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
