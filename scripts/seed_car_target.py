@@ -3,10 +3,17 @@
 Prerequisito: applica prima database/04_add_automobile_category.sql (aggiunge
 il valore 'automobile' all'enum product_category), altrimenti l'insert fallisce.
 
-Esegui:  python scripts/seed_car_target.py
+Esegui dalla root del progetto:  python scripts/seed_car_target.py
 """
 
-from backend.tasks import get_or_create_product
+import sys
+from pathlib import Path
+
+# Permette di lanciare lo script direttamente: aggiunge la root del progetto
+# a sys.path così "import backend" funziona anche senza "python -m".
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from backend.tasks import get_or_create_product  # noqa: E402
 
 CATEGORY = "automobile"
 QUERY = "Golf VII GTI"
@@ -18,11 +25,23 @@ STRICT_FILTERS = {
 
 
 def main() -> None:
-    product, created = get_or_create_product(
-        QUERY,
-        CATEGORY,
-        specs={"strict_filters": STRICT_FILTERS},
-    )
+    try:
+        product, created = get_or_create_product(
+            QUERY,
+            CATEGORY,
+            specs={"strict_filters": STRICT_FILTERS},
+        )
+    except Exception as exc:
+        message = str(exc)
+        if "automobile" in message or "invalid input value for enum" in message:
+            print(
+                "ERRORE: la categoria 'automobile' non esiste ancora nel DB.\n"
+                "Applica prima database/04_add_automobile_category.sql "
+                "nell'SQL Editor di Supabase, poi rilancia questo script."
+            )
+            raise SystemExit(1)
+        raise
+
     action = "creato" if created else "già presente"
     print(f"Target auto {action}: id={product['id']}")
     print(f"  category={product.get('category')} | model={product.get('model')}")

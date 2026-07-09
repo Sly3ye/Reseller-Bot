@@ -175,10 +175,12 @@ async def scrape_subito_and_save(
 
     # 1) Blocco di annunci dall'API (con strict_filters già applicati in-blocco).
     #    max_pages=pages: esattamente 'pages' richieste al proxy, niente over-fetch.
+    #    Con strict_filters (auto) la precisione la danno i filtri nativi, non il
+    #    match del titolo: es. "Golf VII GTI" non compare mai letterale nei titoli.
     listings = await scraper.search_text(
         query=query,
         max_results=max_results,
-        strict_match=True,
+        strict_match=strict_filters is None,
         filters=strict_filters,
         max_pages=pages,
     )
