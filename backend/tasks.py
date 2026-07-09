@@ -324,7 +324,11 @@ def get_active_products(client: Client | None = None) -> list[dict[str, Any]]:
 
 async def run_nightly_batch_all_products() -> dict[str, Any]:
     """Motore Notturno (scheduled): refresh market trends for every active product."""
-    products = await asyncio.to_thread(get_active_products)
+    try:
+        products = await asyncio.to_thread(get_active_products)
+    except Exception:
+        logger.exception("Nightly batch: could not fetch active products")
+        return {"mode": "nightly_batch_all", "products": 0, "results": [], "error": True}
     logger.info("Nightly batch: %d active product(s)", len(products))
 
     results: list[dict[str, Any]] = []
@@ -353,7 +357,11 @@ async def run_sniper_all_products(max_results: int = 5) -> dict[str, Any]:
     Deep-scrapes each active product and saves new opportunities (with margins
     computed against the latest market trend) into live_opportunities.
     """
-    products = await asyncio.to_thread(get_active_products)
+    try:
+        products = await asyncio.to_thread(get_active_products)
+    except Exception:
+        logger.exception("Sniper live: could not fetch active products")
+        return {"mode": "sniper_all", "products": 0, "results": [], "error": True}
     logger.info("Sniper live: %d active product(s)", len(products))
 
     results: list[dict[str, Any]] = []
