@@ -60,7 +60,8 @@ export default function FlipRadar() {
   const [telegramEnabled, setTelegramEnabled] = useState(true);
   const [secondsToNextScan, setSecondsToNextScan] = useState(812);
 
-  const category: Category = vertical === "tech" ? "smartphone" : "auto";
+  // Il toggle mostra "Auto", ma il backend usa la categoria nativa "automobile".
+  const category: Category = vertical === "tech" ? "smartphone" : "automobile";
 
   // Fetch the feed + market intelligence whenever the business vertical changes.
   useEffect(() => {
