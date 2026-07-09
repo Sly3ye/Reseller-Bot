@@ -1,8 +1,6 @@
 fastapi
 uvicorn
 supabase
-playwright
-beautifulsoup4
 httpx
 apscheduler
 python-dotenv
