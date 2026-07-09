@@ -1,17 +1,23 @@
-"""Subito scraper — motore HTTP/JSON.
+"""Subito scraper — motore HTTP/JSON con split routing.
 
-Invece di caricare un browser Playwright, interroghiamo direttamente l'API JSON
-interna che il frontend di Subito usa via XHR (`hades.subito.it/v1/search/items`).
-Restituisce l'intero annuncio in JSON — titolo, descrizione, prezzo, immagini,
-geo e URL — in un'unica richiesta e in frazioni di secondo.
+Interroghiamo l'API JSON interna del frontend Subito (`hades.subito.it/v1/
+search/items`), che restituisce l'intero annuncio in JSON in frazioni di secondo.
+
+Split routing (per contenere il budget del proxy residenziale a consumo):
+- api_client  → chiamate di ricerca/paginazione verso hades, INSTRADATE dal
+  proxy residenziale rotante IPRoyal (con retry ed exponential backoff).
+- cdn_client  → download concorrente delle immagini dalla CDN, a connessione
+  DIRETTA e gratuita (mai attraverso il proxy).
 """
 
 import asyncio
 import re
 from dataclasses import replace
+from typing import Any
 
 import httpx
 
+from backend.core.config import settings
 from backend.core.database import upload_image_to_storage
 from backend.scrapers.base import BaseScraper, ScrapedListing, SearchRequest
 
@@ -25,7 +31,10 @@ class SubitoScraper(BaseScraper):
     IMAGE_RULE = "?rule=fullscreen-1x-auto"
     PAGE_SIZE = 100          # max annunci per richiesta all'API
     MAX_REQUESTS = 8         # tetto di sicurezza sulle pagine per una search
-    IMAGE_CONCURRENCY = 4    # download immagini paralleli in modalità deep
+    IMAGE_CONCURRENCY = 6    # download immagini paralleli (CDN diretta)
+
+    MAX_RETRIES = 3          # tentativi sull'api_client (nodo proxy che fallisce)
+    RETRY_BACKOFF_BASE = 0.5  # secondi: backoff 0.5s, 1.0s tra i tentativi
 
     LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
     CONTENT_TYPE_EXT = {
@@ -50,6 +59,29 @@ class SubitoScraper(BaseScraper):
     def source_name(self) -> str:
         return "subito"
 
+    # --------------------------------------------------------------- clients
+
+    def _make_api_client(self) -> httpx.AsyncClient:
+        """Client per l'API hades, instradato dal proxy residenziale (se configurato)."""
+        return httpx.AsyncClient(
+            timeout=self.timeout_s,
+            headers={"User-Agent": self.USER_AGENT, "Accept": "application/json"},
+            follow_redirects=True,
+            trust_env=False,          # ignora proxy d'ambiente: lo impostiamo noi
+            proxy=settings.proxy_url,  # None → connessione diretta
+        )
+
+    def _make_cdn_client(self) -> httpx.AsyncClient:
+        """Client per la CDN immagini: sempre diretto, mai dal proxy a consumo."""
+        return httpx.AsyncClient(
+            timeout=self.timeout_s,
+            headers={"User-Agent": self.USER_AGENT},
+            follow_redirects=True,
+            trust_env=False,  # nessun proxy per le immagini (banda gratuita)
+        )
+
+    # ---------------------------------------------------------------- search
+
     async def search(self, request: SearchRequest) -> list[ScrapedListing]:
         return await self.search_text(
             query=request.query,
@@ -64,31 +96,36 @@ class SubitoScraper(BaseScraper):
         max_results: int = 5,
         min_price: int | None = None,
         max_price: int | None = None,
-        deep: bool = False,
         strict_match: bool = True,
-        pages: int = 1,
+        filters: dict[str, Any] | None = None,
+        max_pages: int | None = None,
     ) -> list[ScrapedListing]:
-        # Strict match keeps only titles containing every query token (sniper);
-        # light/batch mode relaxes it — Subito's own relevance already scopes it.
+        """Fetch listings from the hades API (via proxy). Does NOT download images.
+
+        Applies, in-block: title strict-match, price bounds and category-native
+        strict_filters (year/km/transmission) so irrelevant ads are discarded
+        before margins/save. Raw CDN image URLs are kept in metadata for a
+        later, separate call to :meth:`store_images` over the direct CDN client.
+
+        ``max_pages`` caps the number of API requests (i.e. proxy calls): the
+        sniper processes exactly N blocks instead of paginating to fill a quota.
+        """
         match_query = query if strict_match else None
         page_size = min(self.PAGE_SIZE, max(max_results, 30))
+        request_cap = max_pages if max_pages is not None else self.MAX_REQUESTS
 
         listings: list[ScrapedListing] = []
-        raw_images: dict[str, list[str]] = {}
         seen_urls: set[str] = set()
 
-        headers = {"User-Agent": self.USER_AGENT, "Accept": "application/json"}
-        async with httpx.AsyncClient(
-            timeout=self.timeout_s, headers=headers, follow_redirects=True
-        ) as client:
+        async with self._make_api_client() as api_client:
             start = 0
-            count_all = None
-            for _ in range(self.MAX_REQUESTS):
+            count_all: int | None = None
+            for _ in range(request_cap):
                 if len(listings) >= max_results:
                     break
 
                 payload = await self._fetch_page(
-                    client, query, page_size, start, min_price, max_price
+                    api_client, query, page_size, start, min_price, max_price
                 )
                 ads = payload.get("ads") or []
                 if not ads:
@@ -97,7 +134,9 @@ class SubitoScraper(BaseScraper):
                     count_all = payload.get("count_all") or 0
 
                 for ad in ads:
-                    listing, images = self._parse_ad(ad)
+                    if filters and not self._passes_filters(ad, filters):
+                        continue
+                    listing = self._parse_ad(ad)
                     if listing is None or listing.url in seen_urls:
                         continue
                     if match_query and not self._matches_query(listing.title, match_query):
@@ -106,7 +145,6 @@ class SubitoScraper(BaseScraper):
                         continue
 
                     seen_urls.add(listing.url)
-                    raw_images[listing.url] = images
                     listings.append(listing)
                     if len(listings) >= max_results:
                         break
@@ -115,12 +153,7 @@ class SubitoScraper(BaseScraper):
                 if count_all and start >= count_all:
                     break
 
-            listings = listings[:max_results]
-
-            if deep and listings:
-                listings = await self._store_all_images(client, listings, raw_images)
-
-        return listings
+        return listings[:max_results]
 
     async def _fetch_page(
         self,
@@ -142,28 +175,52 @@ class SubitoScraper(BaseScraper):
         if max_price is not None:
             params["pe"] = str(max_price)
 
-        response = await client.get(self.HADES_URL, params=params)
-        response.raise_for_status()
+        response = await self._get_with_retry(client, self.HADES_URL, params)
         return response.json()
 
-    # ------------------------------------------------------------------ parse
+    async def _get_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict[str, str],
+    ) -> httpx.Response:
+        """GET con retry ed exponential backoff: se un nodo proxy fallisce, riprova."""
+        last_exc: Exception | None = None
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                return response
+            except (httpx.TransportError, httpx.TimeoutException) as exc:
+                last_exc = exc  # timeout/errori di rete del nodo residenziale
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code < 500:
+                    raise  # 4xx: errore nostro, inutile riprovare
+                last_exc = exc
 
-    def _parse_ad(self, ad: dict) -> tuple[ScrapedListing | None, list[str]]:
+            if attempt < self.MAX_RETRIES - 1:
+                await asyncio.sleep(self.RETRY_BACKOFF_BASE * (2**attempt))
+
+        assert last_exc is not None
+        raise last_exc
+
+    # ----------------------------------------------------------------- parse
+
+    def _parse_ad(self, ad: dict) -> ScrapedListing | None:
         url = (ad.get("urls") or {}).get("default")
         title = ad.get("subject")
         if not url or not title:
-            return None, []
+            return None
 
         features = ad.get("features") or []
         price_amount = self._parse_price(features)
-
         images = [
             img["cdn_base_url"] + self.IMAGE_RULE
             for img in ad.get("images") or []
             if img.get("cdn_base_url")
         ]
 
-        listing = ScrapedListing(
+        return ScrapedListing(
             source=self.source_name,
             title=title.strip(),
             url=url,
@@ -175,9 +232,38 @@ class SubitoScraper(BaseScraper):
             metadata={
                 "condition": self._feature(features, "/item_condition"),
                 "image_count": len(images),
+                "raw_images": images,
             },
         )
-        return listing, images
+
+    def _passes_filters(self, ad: dict, filters: dict[str, Any]) -> bool:
+        """Category-native strict filters (cars): year, mileage, transmission."""
+        features = ad.get("features") or []
+
+        min_year = filters.get("min_year")
+        if min_year is not None:
+            year = self._feature_int(features, "/year")
+            if year is None or year < int(min_year):
+                return False
+
+        max_km = filters.get("max_km")
+        if max_km is not None:
+            km = self._feature_int(features, "/mileage_scalar")
+            if km is None or km > int(max_km):
+                return False
+
+        transmission = filters.get("transmission")
+        if transmission:
+            gearbox = (self._feature(features, "/gearbox") or "").lower()
+            if not gearbox:
+                return False
+            is_manual = "manuale" in gearbox
+            if transmission == "automatic" and is_manual:
+                return False
+            if transmission == "manual" and not is_manual:
+                return False
+
+        return True
 
     def _feature(self, features: list[dict], uri: str) -> str | None:
         for feature in features:
@@ -187,12 +273,25 @@ class SubitoScraper(BaseScraper):
                     return values[0].get("value") or values[0].get("key")
         return None
 
+    def _feature_int(self, features: list[dict], uri: str) -> int | None:
+        for feature in features:
+            if feature.get("uri") == uri:
+                values = feature.get("values") or []
+                if values:
+                    digits = re.sub(r"\D", "", str(values[0].get("key") or ""))
+                    return int(digits) if digits else None
+        return None
+
     def _parse_price(self, features: list[dict]) -> int | None:
-        raw = self._feature(features, "/price")
-        if not raw:
-            return None
-        digits = re.sub(r"\D", "", raw.split(",")[0])
-        return int(digits) if digits else None
+        for feature in features:
+            if feature.get("uri") == "/price":
+                values = feature.get("values") or []
+                if not values:
+                    return None
+                raw = str(values[0].get("key") or values[0].get("value") or "")
+                digits = re.sub(r"\D", "", raw.split(",")[0])
+                return int(digits) if digits else None
+        return None
 
     def _parse_location(self, ad: dict) -> str | None:
         geo = ad.get("geo") or {}
@@ -223,30 +322,37 @@ class SubitoScraper(BaseScraper):
 
     # ------------------------------------------------------------ image store
 
-    async def _store_all_images(
-        self,
-        client: httpx.AsyncClient,
-        listings: list[ScrapedListing],
-        raw_images: dict[str, list[str]],
+    async def store_images(
+        self, listings: list[ScrapedListing]
     ) -> list[ScrapedListing]:
+        """Download every listing's gallery from the CDN (direct) and persist it.
+
+        Run this AFTER dedup/filtering so we only pay to store images for the
+        opportunities we actually keep. Uses the direct cdn_client, never the proxy.
+        """
+        if not listings:
+            return listings
+
         semaphore = asyncio.Semaphore(self.IMAGE_CONCURRENCY)
 
-        async def enrich(listing: ScrapedListing) -> ScrapedListing:
-            async with semaphore:
-                stored = await self._store_images(
-                    client, raw_images.get(listing.url, []), listing.url
-                )
-            return replace(listing, image_urls=stored)
+        async with self._make_cdn_client() as cdn_client:
 
-        return await asyncio.gather(*(enrich(item) for item in listings))
+            async def enrich(listing: ScrapedListing) -> ScrapedListing:
+                raw_images = list(listing.metadata.get("raw_images") or [])
+                async with semaphore:
+                    stored = await self._download_and_store(
+                        cdn_client, raw_images, listing.url
+                    )
+                return replace(listing, image_urls=stored)
 
-    async def _store_images(
+            return list(await asyncio.gather(*(enrich(item) for item in listings)))
+
+    async def _download_and_store(
         self,
         client: httpx.AsyncClient,
         image_urls: list[str],
         listing_url: str,
     ) -> list[str]:
-        """Download every gallery image and persist it to Supabase Storage."""
         if not image_urls:
             return []
 

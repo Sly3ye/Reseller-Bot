@@ -19,6 +19,7 @@ MARGIN_PCT_LIMIT = 999.99
 def get_or_create_product(
     name: str,
     category: str,
+    specs: dict[str, Any] | None = None,
     client: Client | None = None,
 ) -> tuple[dict[str, Any], bool]:
     db = client or get_supabase_client()
@@ -34,11 +35,15 @@ def get_or_create_product(
     if existing.data:
         return existing.data[0], False
 
-    created = (
-        db.table("products")
-        .insert({"model": name, "category": category, "brand": infer_brand(name)})
-        .execute()
-    )
+    payload: dict[str, Any] = {
+        "model": name,
+        "category": category,
+        "brand": infer_brand(name),
+    }
+    if specs:
+        payload["specs"] = specs
+
+    created = db.table("products").insert(payload).execute()
     if not created.data:
         raise RuntimeError("Supabase did not return the created product.")
 
@@ -148,33 +153,67 @@ def infer_brand(model: str) -> str:
     return model.strip().split()[0].title() if model.strip() else "Unknown"
 
 
+# Un blocco = una pagina API (~50 annunci restituiti istantaneamente).
+SNIPER_BLOCK_SIZE = 50
+
+
 async def scrape_subito_and_save(
     query: str = "iPhone 13 Pro",
     category: str = "smartphone",
-    max_results: int = 5,
+    pages: int = 1,
+    strict_filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    scraper = SubitoScraper(organic_only=True)
-    listings = await scraper.search_text(query=query, max_results=max_results, deep=True)
+    """Cecchino Live ottimizzato: processa in blocco 'pages' pagine dell'API.
 
-    product, product_created = await asyncio.to_thread(
-        get_or_create_product,
-        query,
-        category,
+    1) Fetch veloce del blocco via proxy (nessuna immagine, filtri applicati).
+    2) Dedup contro il DB → tiene solo gli annunci nuovi.
+    3) Download immagini SOLO dei nuovi, dalla CDN diretta (budget proxy salvo).
+    4) Calcolo margini e salvataggio.
+    """
+    scraper = SubitoScraper()
+    max_results = max(1, pages) * SNIPER_BLOCK_SIZE
+
+    # 1) Blocco di annunci dall'API (con strict_filters già applicati in-blocco).
+    #    max_pages=pages: esattamente 'pages' richieste al proxy, niente over-fetch.
+    listings = await scraper.search_text(
+        query=query,
+        max_results=max_results,
+        strict_match=True,
+        filters=strict_filters,
+        max_pages=pages,
     )
+
+    specs = {"strict_filters": strict_filters} if strict_filters else None
+    product, product_created = await asyncio.to_thread(
+        get_or_create_product, query, category, specs
+    )
+    product_id = str(product["id"])
+
+    # 2) Deduplica contro il DB PRIMA di scaricare le immagini.
+    db = get_supabase_client()
+    existing_urls = await asyncio.to_thread(
+        get_existing_listing_urls, db, [listing.url for listing in listings]
+    )
+    new_listings = [listing for listing in listings if listing.url not in existing_urls]
+
+    # 3) Download immagini solo per i nuovi (CDN diretta, concorrente).
+    new_listings = await scraper.store_images(new_listings)
+
+    # 4) Margini + salvataggio.
     saved = await asyncio.to_thread(
-        save_live_opportunities,
-        str(product["id"]),
-        listings,
+        save_live_opportunities, product_id, new_listings
     )
 
     return {
         "query": query,
         "category": category,
+        "pages": pages,
         "product": product,
         "product_created": product_created,
         "scraped_count": len(listings),
+        "new_count": len(new_listings),
         "saved_count": len(saved),
-        "listings": [asdict(listing) for listing in listings],
+        "listings": [asdict(listing) for listing in new_listings],
         "saved": saved,
     }
 
@@ -239,13 +278,11 @@ async def run_nightly_batch(
     Light mode only reads the search results page (no per-listing deep scrape),
     so it is fast enough to sweep many prices and compute a market average.
     """
-    scraper = SubitoScraper(organic_only=True)
+    scraper = SubitoScraper()
     listings = await scraper.search_text(
         query=query,
         max_results=max_results,
-        deep=False,
         strict_match=False,
-        pages=3,
     )
 
     prices = [
@@ -278,16 +315,24 @@ async def run_nightly_batch(
     }
 
 
-def get_active_products(client: Client | None = None) -> list[dict[str, Any]]:
-    """Fetch the products the scraping engines should track (is_active = true)."""
+def get_active_products(
+    category: str | None = None,
+    client: Client | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch the products the scraping engines should track (is_active = true).
+
+    Includes ``specs`` (which carries per-product ``strict_filters``). Pass
+    ``category`` to scope to a single vertical (e.g. the automobile sniper).
+    """
     db = client or get_supabase_client()
-    result = (
+    query = (
         db.table("products")
-        .select("id, model, category")
+        .select("id, model, category, specs")
         .eq("is_active", True)
-        .execute()
     )
-    return result.data or []
+    if category:
+        query = query.eq("category", category)
+    return query.execute().data or []
 
 
 async def run_nightly_batch_all_products() -> dict[str, Any]:
@@ -319,45 +364,60 @@ async def run_nightly_batch_all_products() -> dict[str, Any]:
     return {"mode": "nightly_batch_all", "products": len(products), "results": results}
 
 
-async def run_sniper_all_products(max_results: int = 5) -> dict[str, Any]:
-    """Cecchino Live (scheduled): hunt fresh opportunities for every active product.
+async def run_sniper_all_products(
+    category: str | None = None,
+    pages: int = 1,
+) -> dict[str, Any]:
+    """Cecchino Live (scheduled): hunt fresh opportunities for active products.
 
-    Deep-scrapes each active product and saves new opportunities (with margins
-    computed against the latest market trend) into live_opportunities.
+    Processes ``pages`` API blocks per product, applying each product's
+    ``strict_filters`` (from specs). ``category`` scopes to one vertical
+    (e.g. the dedicated automobile sniper).
     """
     try:
-        products = await asyncio.to_thread(get_active_products)
+        products = await asyncio.to_thread(get_active_products, category)
     except Exception:
         logger.exception("Sniper live: could not fetch active products")
         return {"mode": "sniper_all", "products": 0, "results": [], "error": True}
-    logger.info("Sniper live: %d active product(s)", len(products))
+    logger.info(
+        "Sniper live (%s): %d active product(s)", category or "all", len(products)
+    )
 
     results: list[dict[str, Any]] = []
     for product in products:
         model = product["model"]
+        strict_filters = (product.get("specs") or {}).get("strict_filters")
         try:
             outcome = await scrape_subito_and_save(
                 query=model,
                 category=product["category"],
-                max_results=max_results,
+                pages=pages,
+                strict_filters=strict_filters,
             )
             results.append(
                 {
                     "query": model,
                     "scraped_count": outcome["scraped_count"],
+                    "new_count": outcome["new_count"],
                     "saved_count": outcome["saved_count"],
                 }
             )
             logger.info(
-                "Sniper done for '%s' (new opportunities=%d)",
+                "Sniper done for '%s' (block=%d, new opportunities=%d)",
                 model,
+                outcome["scraped_count"],
                 outcome["saved_count"],
             )
         except Exception:
             logger.exception("Sniper failed for '%s'", model)
             results.append({"query": model, "error": True})
 
-    return {"mode": "sniper_all", "products": len(products), "results": results}
+    return {
+        "mode": "sniper_all",
+        "category": category,
+        "products": len(products),
+        "results": results,
+    }
 
 
 if __name__ == "__main__":

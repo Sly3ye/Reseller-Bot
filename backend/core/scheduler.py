@@ -13,13 +13,14 @@ SCHEDULER_TIMEZONE = "Europe/Rome"
 
 
 def create_scheduler() -> AsyncIOScheduler:
-    """Build the background scheduler with the two scraping engines.
+    """Build the background scheduler with the scraping engines.
 
     - Motore Notturno: recomputes market trends daily at 03:00.
-    - Cecchino Live: hunts fresh opportunities every 15 minutes.
+    - Cecchino Live: hunts fresh opportunities every 15 minutes (all verticals).
+    - Cecchino Auto: dedicated automobile sniper every 5 minutes, 2 API blocks
+      per run (the native JSON API is fast enough for a tight interval).
 
-    Both jobs are async and internally offload Playwright to a dedicated
-    worker loop, so they never block the FastAPI event loop this runs on.
+    All jobs are async httpx-based, so they never block the FastAPI event loop.
     """
     scheduler = AsyncIOScheduler(
         timezone=SCHEDULER_TIMEZONE,
@@ -43,6 +44,15 @@ def create_scheduler() -> AsyncIOScheduler:
         trigger=IntervalTrigger(minutes=15),
         id="sniper_live",
         name="Cecchino Live (opportunita)",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
+        run_sniper_all_products,
+        trigger=IntervalTrigger(minutes=5),
+        kwargs={"category": "automobile", "pages": 2},
+        id="sniper_auto_live",
+        name="Cecchino Auto (automobile, 5 min)",
         replace_existing=True,
     )
 
