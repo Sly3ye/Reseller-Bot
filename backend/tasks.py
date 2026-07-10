@@ -87,7 +87,7 @@ def get_existing_opportunities(
         return {}
     rows = (
         client.table(table)
-        .select("id, listing_url, asking_price")
+        .select("id, listing_url, asking_price, image_urls")
         .in_("listing_url", urls)
         .execute()
     )
@@ -97,6 +97,7 @@ def get_existing_opportunities(
         result[row["listing_url"]] = {
             "id": row["id"],
             "asking_price": float(price) if price is not None else None,
+            "has_images": bool(row.get("image_urls")),
         }
     return result
 
@@ -174,6 +175,11 @@ def apply_price_updates(
         new_price = listing.price_amount
 
         patch: dict[str, Any] = {"updated_at": now}
+        # Auto-riparazione immagini: righe già in DB ma senza foto (es. inserite
+        # dal Backfill con download_images=False) vengono riempite quando lo
+        # Sniper le rivede con la galleria scaricata.
+        if not row.get("has_images") and listing.image_urls:
+            patch["image_urls"] = listing.image_urls
         if new_price is not None and old_price is not None and new_price < old_price:
             patch["asking_price"] = new_price
             patch["original_price"] = old_price
@@ -238,6 +244,21 @@ async def persist_opportunities(
 
     if download_images and new_listings:
         new_listings = await scraper.store_images(new_listings)
+
+    # Auto-riparazione: duplicati la cui riga in DB è senza immagini → scarica
+    # ora la galleria così apply_price_updates può riempire image_urls.
+    if download_images and dup_listings:
+        needs_img = [
+            listing
+            for listing in dup_listings
+            if not existing[listing.url].get("has_images")
+        ]
+        if needs_img:
+            healed = {
+                listing.url: listing
+                for listing in await scraper.store_images(needs_img)
+            }
+            dup_listings = [healed.get(l.url, l) for l in dup_listings]
 
     inserted = await asyncio.to_thread(
         insert_opportunities, db, table, category, target_id, new_listings
@@ -335,19 +356,54 @@ def save_market_trend(
     stats: dict[str, float | int],
     client: Client | None = None,
 ) -> dict[str, Any] | None:
-    """Upsert today's market snapshot for a target (one row per target/day)."""
+    """Upsert today's market snapshot.
+
+    Isolamento pieno per target quando ``market_trends`` ha la colonna
+    ``target_id`` (uno snapshot per target/giorno). Se lo schema live non ce
+    l'ancora — non fa crashare il Motore Notturno: ripiega su un upsert manuale
+    idempotente per (product_id, giorno), così le medie di mercato vengono
+    comunque generate e la dashboard mostra i margini.
+    """
     db = client or get_supabase_client()
-    payload = {
-        "target_id": target_id,
-        "product_id": product_id,
-        "trend_date": date.today().isoformat(),
-        **stats,
-    }
-    result = (
+    today = date.today().isoformat()
+    base = {"product_id": product_id, "trend_date": today, **stats}
+
+    if target_id is not None:
+        try:
+            result = (
+                db.table("market_trends")
+                .upsert(
+                    {**base, "target_id": target_id},
+                    on_conflict="target_id,trend_date",
+                )
+                .execute()
+            )
+            return result.data[0] if result.data else None
+        except Exception:
+            logger.debug(
+                "market_trends senza target_id: fallback su (product_id, giorno) "
+                "per '%s' (applica la migrazione 08 per l'isolamento per target).",
+                product_id,
+            )
+
+    # Fallback: schema senza target_id → upsert manuale su (product_id, giorno).
+    existing = (
         db.table("market_trends")
-        .upsert(payload, on_conflict="target_id,trend_date")
+        .select("id")
+        .eq("product_id", product_id)
+        .eq("trend_date", today)
+        .limit(1)
         .execute()
     )
+    if existing.data:
+        result = (
+            db.table("market_trends")
+            .update(base)
+            .eq("id", existing.data[0]["id"])
+            .execute()
+        )
+    else:
+        result = db.table("market_trends").insert(base).execute()
     return result.data[0] if result.data else None
 
 

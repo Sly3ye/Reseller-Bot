@@ -16,9 +16,13 @@ def create_scheduler() -> AsyncIOScheduler:
     """Build the background scheduler with the scraping engines.
 
     - Motore Notturno: recomputes market trends daily at 03:00.
-    - Cecchino Live: hunts fresh opportunities every 15 minutes (all verticals).
-    - Cecchino Auto: dedicated automobile sniper every 5 minutes, 2 API blocks
-      per run (the native JSON API is fast enough for a tight interval).
+    - Cecchino Tech: smartphone sniper every 15 minutes.
+    - Cecchino Auto: dedicated automobile sniper every 15 minutes.
+
+    I due Cecchini sono scoping-disgiunti per categoria (tech vs automobile), così
+    non si scansionano gli stessi target due volte. La cadenza a 15' evita
+    l'accavallamento ("maximum number of running instances reached"): con molti
+    target auto + download immagini un giro può superare i 5 minuti.
 
     All jobs are async httpx-based, so they never block the FastAPI event loop.
     """
@@ -42,17 +46,18 @@ def create_scheduler() -> AsyncIOScheduler:
     scheduler.add_job(
         run_sniper_all_products,
         trigger=IntervalTrigger(minutes=15),
+        kwargs={"category": "smartphone"},
         id="sniper_live",
-        name="Cecchino Live (opportunita)",
+        name="Cecchino Tech (smartphone, 15 min)",
         replace_existing=True,
     )
 
     scheduler.add_job(
         run_sniper_all_products,
-        trigger=IntervalTrigger(minutes=5),
-        kwargs={"category": "automobile", "pages": 2},
+        trigger=IntervalTrigger(minutes=15),
+        kwargs={"category": "automobile", "pages": 1},
         id="sniper_auto_live",
-        name="Cecchino Auto (automobile, 5 min)",
+        name="Cecchino Auto (automobile, 15 min)",
         replace_existing=True,
     )
 
