@@ -2,7 +2,7 @@ import asyncio
 import logging
 import statistics
 from dataclasses import asdict
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from supabase import Client
@@ -176,11 +176,12 @@ async def scrape_subito_and_save(
     # 1) Blocco di annunci dall'API (con strict_filters già applicati in-blocco).
     #    max_pages=pages: esattamente 'pages' richieste al proxy, niente over-fetch.
     #    Con strict_filters (auto) la precisione la danno i filtri nativi, non il
-    #    match del titolo: es. "Golf VII GTI" non compare mai letterale nei titoli.
+    #    match del titolo: es. "Golf GTI" non deve filtrare per token del titolo.
+    #    strict_filters vuoti ({}) o None → smartphone → match preciso del modello.
     listings = await scraper.search_text(
         query=query,
         max_results=max_results,
-        strict_match=strict_filters is None,
+        strict_match=not strict_filters,
         filters=strict_filters,
         max_pages=pages,
     )
@@ -366,39 +367,70 @@ async def run_nightly_batch_all_products() -> dict[str, Any]:
     return {"mode": "nightly_batch_all", "products": len(products), "results": results}
 
 
+def get_active_targets(
+    category: str | None = None,
+    client: Client | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch the scraping fleet from target_models (is_active = true).
+
+    Pass ``category`` to scope to one vertical (e.g. the automobile sniper).
+    """
+    db = client or get_supabase_client()
+    query = (
+        db.table("target_models")
+        .select("id, category, query, strict_filters")
+        .eq("is_active", True)
+    )
+    if category:
+        query = query.eq("category", category)
+    return query.execute().data or []
+
+
+def update_target_last_scanned(
+    target_id: str, client: Client | None = None
+) -> None:
+    db = client or get_supabase_client()
+    db.table("target_models").update(
+        {"last_scanned": datetime.now(timezone.utc).isoformat()}
+    ).eq("id", target_id).execute()
+
+
 async def run_sniper_all_products(
     category: str | None = None,
     pages: int = 1,
 ) -> dict[str, Any]:
-    """Cecchino Live (scheduled): hunt fresh opportunities for active products.
+    """Cecchino Live (scheduled): hunt fresh opportunities for every active target.
 
-    Processes ``pages`` API blocks per product, applying each product's
-    ``strict_filters`` (from specs). ``category`` scopes to one vertical
-    (e.g. the dedicated automobile sniper).
+    Reads the scraping fleet from ``target_models`` (DB-driven, non hardcoded),
+    processes ``pages`` API blocks per target applying its ``strict_filters``,
+    then stamps ``last_scanned``. ``category`` scopes to one vertical.
     """
     try:
-        products = await asyncio.to_thread(get_active_products, category)
+        targets = await asyncio.to_thread(get_active_targets, category)
     except Exception:
-        logger.exception("Sniper live: could not fetch active products")
-        return {"mode": "sniper_all", "products": 0, "results": [], "error": True}
+        logger.exception("Sniper live: could not fetch target_models")
+        return {"mode": "sniper_targets", "targets": 0, "results": [], "error": True}
     logger.info(
-        "Sniper live (%s): %d active product(s)", category or "all", len(products)
+        "Sniper live (%s): %d active target(s)", category or "all", len(targets)
     )
 
     results: list[dict[str, Any]] = []
-    for product in products:
-        model = product["model"]
-        strict_filters = (product.get("specs") or {}).get("strict_filters")
+    for target in targets:
+        query = target["query"]
+        target_category = target["category"]
+        strict_filters = target.get("strict_filters") or None
         try:
             outcome = await scrape_subito_and_save(
-                query=model,
-                category=product["category"],
+                query=query,
+                category=target_category,
                 pages=pages,
                 strict_filters=strict_filters,
             )
+            await asyncio.to_thread(update_target_last_scanned, target["id"])
             results.append(
                 {
-                    "query": model,
+                    "query": query,
+                    "category": target_category,
                     "scraped_count": outcome["scraped_count"],
                     "new_count": outcome["new_count"],
                     "saved_count": outcome["saved_count"],
@@ -406,18 +438,18 @@ async def run_sniper_all_products(
             )
             logger.info(
                 "Sniper done for '%s' (block=%d, new opportunities=%d)",
-                model,
+                query,
                 outcome["scraped_count"],
                 outcome["saved_count"],
             )
         except Exception:
-            logger.exception("Sniper failed for '%s'", model)
-            results.append({"query": model, "error": True})
+            logger.exception("Sniper failed for '%s'", query)
+            results.append({"query": query, "error": True})
 
     return {
-        "mode": "sniper_all",
+        "mode": "sniper_targets",
         "category": category,
-        "products": len(products),
+        "targets": len(targets),
         "results": results,
     }
 

@@ -241,9 +241,14 @@ class SubitoScraper(BaseScraper):
         features = ad.get("features") or []
 
         min_year = filters.get("min_year")
-        if min_year is not None:
+        max_year = filters.get("max_year")
+        if min_year is not None or max_year is not None:
             year = self._feature_int(features, "/year")
-            if year is None or year < int(min_year):
+            if year is None:
+                return False
+            if min_year is not None and year < int(min_year):
+                return False
+            if max_year is not None and year > int(max_year):
                 return False
 
         max_km = filters.get("max_km")
