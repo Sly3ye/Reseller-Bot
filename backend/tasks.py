@@ -190,10 +190,25 @@ def apply_price_updates(
         client.table(table).update(patch).eq("id", listing_id).execute()
         updated += 1
 
+    stored_history = 0
     if history_rows:
-        client.table("price_history").insert(history_rows).execute()
+        try:
+            client.table("price_history").insert(history_rows).execute()
+            stored_history = len(history_rows)
+        except Exception:
+            # Lo storico è supplementare: se price_history manca/fallisce, i
+            # prezzi sono comunque aggiornati — non facciamo crashare il giro.
+            logger.warning(
+                "price_history non disponibile: %d cali di prezzo non "
+                "storicizzati (crea la tabella price_history per lo storico).",
+                len(history_rows),
+            )
 
-    return {"updated": updated, "price_drops": price_drops}
+    return {
+        "updated": updated,
+        "price_drops": price_drops,
+        "history_stored": stored_history,
+    }
 
 
 async def persist_opportunities(
