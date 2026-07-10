@@ -19,14 +19,22 @@ const API_BASE_URL =
 
 export type Category = "smartphone" | "automobile";
 
+export type PriceDrop = {
+  oldPrice: number | null;
+  newPrice: number | null;
+  changedAt: string | null;
+};
+
 export type ApiOpportunity = {
   id: string;
   title: string | null;
   location: string | null;
   askingPrice: number | null;
+  originalPrice: number | null;
   marketAvg: number | null;
   marginEur: number | null;
   marginPct: number | null;
+  priceDrop: PriceDrop | null;
   description: string | null;
   images: string[];
   foundAt: string | null;
