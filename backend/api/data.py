@@ -6,7 +6,7 @@ from backend.services import get_market_intelligence, list_opportunities
 
 router = APIRouter(prefix="/api", tags=["data"])
 
-Category = Literal["smartphone", "auto"]
+Category = Literal["smartphone", "auto", "automobile"]
 
 
 @router.get("/opportunities")
