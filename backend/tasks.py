@@ -53,6 +53,7 @@ def get_or_create_product(
 def save_live_opportunities(
     product_id: str,
     listings: list[ScrapedListing],
+    target_id: str | None = None,
     client: Client | None = None,
 ) -> list[dict[str, Any]]:
     if not listings:
@@ -63,12 +64,14 @@ def save_live_opportunities(
         db,
         [listing.url for listing in listings],
     )
-    # Latest market average for this product feeds the margin computation.
-    market_avg = get_latest_market_avg(db, product_id)
+    # Market average is isolated per target: a BMW 120d Gen 1 uses only the
+    # Gen 1 target's average, never a generic "BMW 120d" one.
+    market_avg = get_latest_market_avg(db, target_id) if target_id else None
 
     payloads = [
         {
             "product_id": product_id,
+            "target_id": target_id,
             "listing_url": listing.url,
             "title": listing.title,
             "location": listing.location,
@@ -88,11 +91,12 @@ def save_live_opportunities(
     return inserted.data or []
 
 
-def get_latest_market_avg(client: Client, product_id: str) -> float | None:
+def get_latest_market_avg(client: Client, target_id: str) -> float | None:
+    """Latest market average for a specific target (strict per-target isolation)."""
     result = (
         client.table("market_trends")
         .select("avg_price")
-        .eq("product_id", product_id)
+        .eq("target_id", target_id)
         .order("trend_date", desc=True)
         .limit(1)
         .execute()
@@ -162,6 +166,7 @@ async def scrape_subito_and_save(
     category: str = "smartphone",
     pages: int = 1,
     strict_filters: dict[str, Any] | None = None,
+    target_id: str | None = None,
 ) -> dict[str, Any]:
     """Cecchino Live ottimizzato: processa in blocco 'pages' pagine dell'API.
 
@@ -202,9 +207,9 @@ async def scrape_subito_and_save(
     # 3) Download immagini solo per i nuovi (CDN diretta, concorrente).
     new_listings = await scraper.store_images(new_listings)
 
-    # 4) Margini + salvataggio.
+    # 4) Margini (media isolata per target) + salvataggio con target_id.
     saved = await asyncio.to_thread(
-        save_live_opportunities, product_id, new_listings
+        save_live_opportunities, product_id, new_listings, target_id
     )
 
     return {
@@ -252,20 +257,22 @@ def compute_market_stats(prices: list[float]) -> dict[str, float | int] | None:
 
 
 def save_market_trend(
+    target_id: str | None,
     product_id: str,
     stats: dict[str, float | int],
     client: Client | None = None,
 ) -> dict[str, Any] | None:
-    """Upsert today's market snapshot for a product (one row per day)."""
+    """Upsert today's market snapshot for a target (one row per target/day)."""
     db = client or get_supabase_client()
     payload = {
+        "target_id": target_id,
         "product_id": product_id,
         "trend_date": date.today().isoformat(),
         **stats,
     }
     result = (
         db.table("market_trends")
-        .upsert(payload, on_conflict="product_id,trend_date")
+        .upsert(payload, on_conflict="target_id,trend_date")
         .execute()
     )
     return result.data[0] if result.data else None
@@ -275,17 +282,20 @@ async def run_nightly_batch(
     query: str = "iPhone 13 Pro",
     category: str = "smartphone",
     max_results: int = 50,
+    strict_filters: dict[str, Any] | None = None,
+    target_id: str | None = None,
 ) -> dict[str, Any]:
-    """Motore Notturno: light-scrape a product, clean prices, store the trend.
+    """Motore Notturno per UN target: media/IQR isolati per target_id.
 
-    Light mode only reads the search results page (no per-listing deep scrape),
-    so it is fast enough to sweep many prices and compute a market average.
+    Applica gli strict_filters del target durante lo scraping, così la media
+    è calcolata SOLO sugli annunci di quella generazione/variante specifica.
     """
     scraper = SubitoScraper()
     listings = await scraper.search_text(
         query=query,
         max_results=max_results,
-        strict_match=False,
+        strict_match=not strict_filters,
+        filters=strict_filters,
     )
 
     prices = [
@@ -302,13 +312,14 @@ async def run_nightly_batch(
     trend = None
     if stats is not None:
         trend = await asyncio.to_thread(
-            save_market_trend, str(product["id"]), stats
+            save_market_trend, target_id, str(product["id"]), stats
         )
 
     return {
         "mode": "nightly_batch",
         "query": query,
         "category": category,
+        "target_id": target_id,
         "product_id": str(product["id"]),
         "product_created": product_created,
         "scraped_count": len(listings),
@@ -318,53 +329,41 @@ async def run_nightly_batch(
     }
 
 
-def get_active_products(
-    category: str | None = None,
-    client: Client | None = None,
-) -> list[dict[str, Any]]:
-    """Fetch the products the scraping engines should track (is_active = true).
-
-    Includes ``specs`` (which carries per-product ``strict_filters``). Pass
-    ``category`` to scope to a single vertical (e.g. the automobile sniper).
-    """
-    db = client or get_supabase_client()
-    query = (
-        db.table("products")
-        .select("id, model, category, specs")
-        .eq("is_active", True)
-    )
-    if category:
-        query = query.eq("category", category)
-    return query.execute().data or []
-
-
 async def run_nightly_batch_all_products() -> dict[str, Any]:
-    """Motore Notturno (scheduled): refresh market trends for every active product."""
+    """Motore Notturno (scheduled): refresh market trends per TARGET.
+
+    Itera target_models (non i prodotti): la media/IQR è calcolata e salvata
+    per target_id usando i suoi strict_filters, così ogni generazione/variante
+    ha la propria statistica isolata.
+    """
     try:
-        products = await asyncio.to_thread(get_active_products)
+        targets = await asyncio.to_thread(get_active_targets)
     except Exception:
-        logger.exception("Nightly batch: could not fetch active products")
-        return {"mode": "nightly_batch_all", "products": 0, "results": [], "error": True}
-    logger.info("Nightly batch: %d active product(s)", len(products))
+        logger.exception("Nightly batch: could not fetch target_models")
+        return {"mode": "nightly_batch_all", "targets": 0, "results": [], "error": True}
+    logger.info("Nightly batch: %d active target(s)", len(targets))
 
     results: list[dict[str, Any]] = []
-    for product in products:
-        model = product["model"]
+    for target in targets:
+        query = target["query"]
         try:
             outcome = await run_nightly_batch(
-                query=model, category=product["category"]
+                query=query,
+                category=target["category"],
+                strict_filters=target.get("strict_filters") or None,
+                target_id=target["id"],
             )
             results.append(outcome)
             logger.info(
-                "Nightly batch done for '%s' (volume=%s)",
-                model,
+                "Nightly batch done for target '%s' (volume=%s)",
+                query,
                 (outcome.get("stats") or {}).get("volume"),
             )
         except Exception:
-            logger.exception("Nightly batch failed for '%s'", model)
-            results.append({"query": model, "error": True})
+            logger.exception("Nightly batch failed for target '%s'", query)
+            results.append({"query": query, "error": True})
 
-    return {"mode": "nightly_batch_all", "products": len(products), "results": results}
+    return {"mode": "nightly_batch_all", "targets": len(targets), "results": results}
 
 
 def get_active_targets(
@@ -425,6 +424,7 @@ async def run_sniper_all_products(
                 category=target_category,
                 pages=pages,
                 strict_filters=strict_filters,
+                target_id=target["id"],
             )
             await asyncio.to_thread(update_target_last_scanned, target["id"])
             results.append(
