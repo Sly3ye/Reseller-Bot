@@ -78,31 +78,41 @@ def _targets_for_category(db: Client, category: str) -> dict[str, str]:
     return {row["id"]: row["query"] for row in rows.data or []}
 
 
-def _market_avg_by_model(db: Client, category: str) -> dict[str, float]:
-    """Ultima media di mercato (market_trends) per nome modello.
+def _market_avgs(
+    db: Client, category: str
+) -> tuple[dict[str, float], dict[str, float]]:
+    """Ultime medie di mercato (market_trends): (per target_id, per modello).
 
-    market_trends è chiavata su product_id: passiamo per products per risalire
-    al nome modello, poi teniamo la media dello snapshot più recente.
+    L'isolamento vero è per target_id (una BMW 318d Gen1 non inquina la Gen3):
+    ``by_target`` è la mappa preferita. ``by_model`` (per nome modello, via
+    product_id→products) resta come fallback per gli snapshot legacy privi di
+    target_id. In entrambe teniamo lo snapshot più recente.
     """
     products = _products_for_category(db, category)  # id → model
     if not products:
-        return {}
+        return {}, {}
 
     trends = (
         db.table("market_trends")
-        .select("product_id, trend_date, avg_price")
+        .select("target_id, product_id, trend_date, avg_price")
         .in_("product_id", list(products))
         .order("trend_date", desc=True)
         .execute()
     )
-    avg_by_model: dict[str, float] = {}
+    by_target: dict[str, float] = {}
+    by_model: dict[str, float] = {}
     for row in trends.data or []:
-        model = products.get(row["product_id"])
         avg = _to_float(row.get("avg_price"))
-        # order desc → la prima occorrenza per modello è la più recente.
-        if model and avg is not None and model not in avg_by_model:
-            avg_by_model[model] = avg
-    return avg_by_model
+        if avg is None:
+            continue
+        # order desc → la prima occorrenza per chiave è la più recente.
+        target_id = row.get("target_id")
+        if target_id and target_id not in by_target:
+            by_target[target_id] = avg
+        model = products.get(row["product_id"])
+        if model and model not in by_model:
+            by_model[model] = avg
+    return by_target, by_model
 
 
 def _latest_price_history(
@@ -197,19 +207,19 @@ def list_opportunities(
         return []
 
     targets = _targets_for_category(db, target_cat)  # target_id → model name
-    market_avg = _market_avg_by_model(db, target_cat)  # model name → avg
+    avg_by_target, avg_by_model = _market_avgs(db, target_cat)
     price_history = _latest_price_history(db, [row["id"] for row in rows])
 
     result = []
     for row in rows:
-        model = targets.get(row.get("target_id"))
+        target_id = row.get("target_id")
+        model = targets.get(target_id)
+        # Media del target esatto (isolamento per generazione); fallback modello.
+        market_avg = avg_by_target.get(target_id)
+        if market_avg is None and model:
+            market_avg = avg_by_model.get(model)
         result.append(
-            _shape_opportunity(
-                row,
-                model,
-                market_avg.get(model) if model else None,
-                price_history.get(row["id"]),
-            )
+            _shape_opportunity(row, model, market_avg, price_history.get(row["id"]))
         )
     return result
 
