@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import re
 import statistics
 import uuid
+from collections import Counter
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from typing import Any
@@ -120,6 +122,11 @@ def _opportunity_payload(
         "status": "nuovo",
         "found_at": now,
         "updated_at": now,
+        # Comuni a entrambe le categorie (NLP + venditore + pHash).
+        "image_hash": meta.get("image_hash"),
+        "features": meta.get("features"),
+        "seller_id": meta.get("seller_id"),
+        "seller_type": meta.get("seller_type"),
     }
     if category == "automobile":
         payload.update(
@@ -128,9 +135,16 @@ def _opportunity_payload(
                 "km": meta.get("km"),
                 "transmission": meta.get("transmission"),
                 "fuel": meta.get("fuel"),
+                "defects_noted": meta.get("defects_noted"),
+                "urgency_flags": meta.get("urgency_flags"),
             }
         )
     return payload
+
+
+# Colonne introdotte dalle migrazioni 09/10: se lo schema live non le ha ancora,
+# l'insert le rimuove e riprova (lo sniper non si blocca in attesa della migrazione).
+_MISSING_COL_RE = re.compile(r"'([\w]+)' column")
 
 
 def insert_opportunities(
@@ -149,8 +163,35 @@ def insert_opportunities(
     ]
     if not payloads:
         return []
-    inserted = client.table(table).insert(payloads).execute()
-    return inserted.data or []
+
+    # Fino a N tentativi: a ogni PGRST204 su colonna assente la rimuoviamo e
+    # riproviamo (copre gli schemi non ancora migrati a 09/10).
+    for _ in range(8):
+        try:
+            inserted = client.table(table).insert(payloads).execute()
+            return inserted.data or []
+        except Exception as exc:
+            column = _missing_column(exc)
+            if column is None:
+                raise
+            logger.warning(
+                "Colonna '%s' assente in %s: la ignoro nell'insert "
+                "(applica le migrazioni 09/10 per abilitarla).",
+                column,
+                table,
+            )
+            for payload in payloads:
+                payload.pop(column, None)
+    # Ultimo tentativo, lasciando propagare un eventuale errore residuo.
+    return client.table(table).insert(payloads).execute().data or []
+
+
+def _missing_column(exc: Exception) -> str | None:
+    """Estrae il nome della colonna mancante da un errore PostgREST PGRST204."""
+    if "PGRST204" not in str(exc) and "schema cache" not in str(exc):
+        return None
+    match = _MISSING_COL_RE.search(str(exc))
+    return match.group(1) if match else None
 
 
 def apply_price_updates(
@@ -180,6 +221,9 @@ def apply_price_updates(
         # Sniper le rivede con la galleria scaricata.
         if not row.get("has_images") and listing.image_urls:
             patch["image_urls"] = listing.image_urls
+            image_hash = (listing.metadata or {}).get("image_hash")
+            if image_hash:
+                patch["image_hash"] = image_hash
         if new_price is not None and old_price is not None and new_price < old_price:
             patch["asking_price"] = new_price
             patch["original_price"] = old_price
@@ -217,6 +261,113 @@ def apply_price_updates(
     }
 
 
+ACTIVE_STATUSES = ("nuovo", "visto")
+
+
+def find_republished(
+    client: Client, table: str, new_listings: list[ScrapedListing]
+) -> dict[str, dict[str, Any]]:
+    """Mappa image_hash → {id, listing_url} per gli hash già presenti in `table`.
+
+    Un pHash già a DB sotto un altro listing_url = stesso annuncio ripubblicato.
+    """
+    hashes = list(
+        {
+            h
+            for listing in new_listings
+            if (h := (listing.metadata or {}).get("image_hash"))
+        }
+    )
+    if not hashes:
+        return {}
+    try:
+        rows = (
+            client.table(table)
+            .select("id, listing_url, image_hash")
+            .in_("image_hash", hashes)
+            .execute()
+        )
+    except Exception:
+        # Colonna image_hash non ancora presente (migrazione 09): niente dedup
+        # anti-ripubblicazione, ma lo sniper non si blocca.
+        logger.warning(
+            "image_hash assente in %s: dedup anti-ripubblicazione disattivata "
+            "(applica la migrazione 09).",
+            table,
+        )
+        return {}
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows.data or []:
+        h = row.get("image_hash")
+        if h and h not in result:
+            result[h] = {"id": row["id"], "listing_url": row["listing_url"]}
+    return result
+
+
+def apply_republish_updates(
+    client: Client,
+    table: str,
+    republished: list[tuple[str, ScrapedListing]],
+) -> int:
+    """Ripubblicazioni: sposta il record esistente sul nuovo URL (storico intatto,
+    nessun duplicato); rinfresca updated_at e la galleria."""
+    now = datetime.now(timezone.utc).isoformat()
+    for old_id, listing in republished:
+        patch: dict[str, Any] = {"listing_url": listing.url, "updated_at": now}
+        if listing.image_urls:
+            patch["image_urls"] = listing.image_urls
+        client.table(table).update(patch).eq("id", old_id).execute()
+    return len(republished)
+
+
+def apply_shadow_dealer(
+    client: Client, table: str, listings: list[ScrapedListing]
+) -> int:
+    """Smaschera i finti privati: un venditore marcato 'privato' con > 3 annunci
+    attivi in `table` viene riclassificato 'finto_privato' (in place sui metadata)."""
+    privati = [
+        listing
+        for listing in listings
+        if (listing.metadata or {}).get("seller_type") == "privato"
+        and (listing.metadata or {}).get("seller_id")
+    ]
+    if not privati:
+        return 0
+
+    batch_counts = Counter(listing.metadata["seller_id"] for listing in privati)
+    flagged: set[str] = set()
+    for seller_id, batch_n in batch_counts.items():
+        try:
+            db_n = (
+                client.table(table)
+                .select("id", count="exact")
+                .eq("seller_id", seller_id)
+                .in_("status", list(ACTIVE_STATUSES))
+                .limit(1)
+                .execute()
+                .count
+                or 0
+            )
+        except Exception:
+            # Colonna seller_id non ancora presente (migrazione 10): Shadow
+            # Dealer disattivato, sniper comunque operativo.
+            logger.warning(
+                "seller_id assente in %s: Shadow Dealer disattivato "
+                "(applica la migrazione 10).",
+                table,
+            )
+            return 0
+        if db_n + batch_n > 3:
+            flagged.add(seller_id)
+
+    reclassified = 0
+    for listing in privati:
+        if listing.metadata["seller_id"] in flagged:
+            listing.metadata["seller_type"] = "finto_privato"
+            reclassified += 1
+    return reclassified
+
+
 async def persist_opportunities(
     scraper: SubitoScraper,
     category: str,
@@ -231,7 +382,7 @@ async def persist_opportunities(
     aggiorna updated_at e gestisce i cali di prezzo (price_history).
     """
     if not listings:
-        return {"new": 0, "updated": 0, "price_drops": 0}
+        return {"new": 0, "updated": 0, "price_drops": 0, "republished": 0}
 
     table = opportunities_table(category)
     db = get_supabase_client()
@@ -242,6 +393,7 @@ async def persist_opportunities(
     new_listings = [listing for listing in listings if listing.url not in existing]
     dup_listings = [listing for listing in listings if listing.url in existing]
 
+    # Immagini + pHash per i nuovi (necessari alla dedup anti-ripubblicazione).
     if download_images and new_listings:
         new_listings = await scraper.store_images(new_listings)
 
@@ -260,8 +412,30 @@ async def persist_opportunities(
             }
             dup_listings = [healed.get(l.url, l) for l in dup_listings]
 
+    # Anti-ripubblicazione (pHash): se il nuovo URL ha una foto già a DB, è lo
+    # stesso annuncio ripubblicato → aggiorna il vecchio record, non duplicare.
+    republished_map = await asyncio.to_thread(find_republished, db, table, new_listings)
+    republished: list[tuple[str, ScrapedListing]] = []
+    truly_new: list[ScrapedListing] = []
+    claimed_ids: set[str] = set()
+    for listing in new_listings:
+        image_hash = (listing.metadata or {}).get("image_hash")
+        match = republished_map.get(image_hash) if image_hash else None
+        if match and match["id"] not in claimed_ids:
+            claimed_ids.add(match["id"])
+            republished.append((match["id"], listing))
+        else:
+            truly_new.append(listing)
+
+    # Shadow Dealer (solo auto): riclassifica i finti privati prima dell'insert.
+    if category == "automobile" and truly_new:
+        await asyncio.to_thread(apply_shadow_dealer, db, table, truly_new)
+
     inserted = await asyncio.to_thread(
-        insert_opportunities, db, table, category, target_id, new_listings
+        insert_opportunities, db, table, category, target_id, truly_new
+    )
+    republished_count = await asyncio.to_thread(
+        apply_republish_updates, db, table, republished
     )
     updates = await asyncio.to_thread(
         apply_price_updates, db, table, existing, dup_listings
@@ -271,6 +445,7 @@ async def persist_opportunities(
         "new": len(inserted),
         "updated": updates["updated"],
         "price_drops": updates["price_drops"],
+        "republished": republished_count,
     }
 
 
@@ -316,6 +491,7 @@ async def scrape_subito_and_save(
         "new_count": result["new"],
         "updated_count": result["updated"],
         "price_drops": result["price_drops"],
+        "republished": result.get("republished", 0),
         "saved_count": result["new"],
     }
 
@@ -430,11 +606,17 @@ async def run_nightly_batch(
         filters=strict_filters,
     )
 
+    # Escludiamo dalla media di mercato le auto squalificate dall'NLP
+    # (incidentata/fuso): inquinerebbero l'IQR verso il basso.
     prices = [
         float(listing.price_amount)
         for listing in listings
         if listing.price_amount is not None
+        and not (listing.metadata or {}).get("exclude_from_iqr")
     ]
+    excluded = sum(
+        1 for listing in listings if (listing.metadata or {}).get("exclude_from_iqr")
+    )
     stats = compute_market_stats(prices)
 
     product, product_created = await asyncio.to_thread(
@@ -456,6 +638,7 @@ async def run_nightly_batch(
         "product_created": product_created,
         "scraped_count": len(listings),
         "prices_considered": len(prices),
+        "excluded_wrecks": excluded,
         "stats": stats,
         "trend": trend,
     }

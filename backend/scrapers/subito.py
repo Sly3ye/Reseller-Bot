@@ -11,11 +11,14 @@ Split routing (per contenere il budget del proxy residenziale a consumo):
 """
 
 import asyncio
+import io
 import re
 from dataclasses import replace
 from typing import Any
 
 import httpx
+import imagehash
+from PIL import Image
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -26,6 +29,7 @@ from tenacity import (
 from backend.core.config import settings
 from backend.core.database import upload_image_to_storage
 from backend.scrapers.base import BaseScraper, ScrapedListing, SearchRequest
+from backend.scrapers.nlp_parser import parse_listing
 
 # Codici HTTP transitori (ban temporaneo / rate limit / errore server) su cui
 # vale la pena riprovare cambiando nodo residenziale.
@@ -232,6 +236,13 @@ class SubitoScraper(BaseScraper):
             if img.get("cdn_base_url")
         ]
 
+        description = (ad.get("body") or "").strip() or None
+        seller_id, seller_type = self._parse_seller(ad)
+
+        # Pre-parsing NLP su titolo+descrizione: difetti, urgenza, allestimenti
+        # normalizzati e fallback su km/anno quando l'API non li espone.
+        nlp = parse_listing(title, description)
+
         return ScrapedListing(
             source=self.source_name,
             title=title.strip(),
@@ -239,19 +250,41 @@ class SubitoScraper(BaseScraper):
             price=f"{price_amount} EUR" if price_amount is not None else None,
             price_amount=price_amount,
             location=self._parse_location(ad),
-            description=(ad.get("body") or "").strip() or None,
+            description=description,
             image_urls=[],
             metadata={
                 "condition": self._feature(features, "/item_condition"),
                 "image_count": len(images),
                 "raw_images": images,
-                # Campi strutturati auto (None per gli smartphone).
-                "year": self._feature_int(features, "/year"),
-                "km": self._feature_int(features, "/mileage_scalar"),
+                # Campi strutturati auto (None per gli smartphone). Preferiamo il
+                # dato nativo dell'API; se assente, ripieghiamo sull'NLP.
+                "year": self._feature_int(features, "/year") or nlp["year"],
+                "km": self._feature_int(features, "/mileage_scalar") or nlp["km"],
                 "transmission": self._feature(features, "/gearbox"),
                 "fuel": self._feature(features, "/fuel"),
+                # Segnale NLP.
+                "features": nlp["features"],
+                "defects_noted": nlp["defects_noted"],
+                "urgency_flags": nlp["urgency_flags"],
+                "exclude_from_iqr": nlp["exclude_from_iqr"],
+                # Venditore (Shadow Dealer).
+                "seller_id": seller_id,
+                "seller_type": seller_type,
             },
         )
+
+    def _parse_seller(self, ad: dict) -> tuple[str | None, str]:
+        """Estrae (seller_id, seller_type) da advertiser.
+
+        ``company`` true o la presenza di uno ``shop_id`` → concessionario;
+        altrimenti privato. Lo Shadow Dealer potrà riclassificare un privato con
+        troppi annunci attivi come ``finto_privato`` in fase di persistenza.
+        """
+        advertiser = ad.get("advertiser") or {}
+        seller_id = advertiser.get("user_id")
+        is_pro = bool(advertiser.get("company")) or bool(advertiser.get("shop_id"))
+        seller_type = "dealer" if is_pro else "privato"
+        return (str(seller_id) if seller_id is not None else None, seller_type)
 
     def _passes_filters(self, ad: dict, filters: dict[str, Any]) -> bool:
         """Category-native strict filters (cars): year, mileage, transmission."""
@@ -362,10 +395,14 @@ class SubitoScraper(BaseScraper):
             async def enrich(listing: ScrapedListing) -> ScrapedListing:
                 raw_images = list(listing.metadata.get("raw_images") or [])
                 async with semaphore:
-                    stored = await self._download_and_store(
+                    stored, image_hash = await self._download_and_store(
                         cdn_client, raw_images, listing.url
                     )
-                return replace(listing, image_urls=stored)
+                return replace(
+                    listing,
+                    image_urls=stored,
+                    metadata={**listing.metadata, "image_hash": image_hash},
+                )
 
             return list(await asyncio.gather(*(enrich(item) for item in listings)))
 
@@ -374,12 +411,14 @@ class SubitoScraper(BaseScraper):
         client: httpx.AsyncClient,
         image_urls: list[str],
         listing_url: str,
-    ) -> list[str]:
+    ) -> tuple[list[str], str | None]:
+        """Scarica e salva la galleria; ritorna (url_salvati, pHash prima foto)."""
         if not image_urls:
-            return []
+            return [], None
 
         slug = self._listing_slug(listing_url)
         stored: list[str] = []
+        image_hash: str | None = None
 
         for index, image_url in enumerate(image_urls):
             try:
@@ -395,6 +434,10 @@ class SubitoScraper(BaseScraper):
             except Exception:
                 continue
 
+            # pHash sulla PRIMA foto effettivamente scaricata (anti-ripubblicazione).
+            if image_hash is None:
+                image_hash = self._perceptual_hash(content)
+
             extension = self.CONTENT_TYPE_EXT.get(content_type, ".jpg")
             filename = f"{self.source_name}/{slug}/{index:02d}{extension}"
 
@@ -409,7 +452,16 @@ class SubitoScraper(BaseScraper):
             except Exception:
                 continue
 
-        return stored
+        return stored, image_hash
+
+    @staticmethod
+    def _perceptual_hash(content: bytes) -> str | None:
+        """Perceptual hash (pHash a 64 bit) dei byte immagine, come stringa esadecimale."""
+        try:
+            with Image.open(io.BytesIO(content)) as img:
+                return str(imagehash.phash(img))
+        except Exception:
+            return None
 
     def _listing_slug(self, listing_url: str) -> str:
         match = self.LISTING_ID_RE.search(listing_url)

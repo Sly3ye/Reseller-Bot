@@ -5,3 +5,5 @@ httpx
 tenacity
 apscheduler
 python-dotenv
+imagehash
+Pillow
