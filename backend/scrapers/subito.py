@@ -16,10 +16,24 @@ from dataclasses import replace
 from typing import Any
 
 import httpx
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from backend.core.config import settings
 from backend.core.database import upload_image_to_storage
 from backend.scrapers.base import BaseScraper, ScrapedListing, SearchRequest
+
+# Codici HTTP transitori (ban temporaneo / rate limit / errore server) su cui
+# vale la pena riprovare cambiando nodo residenziale.
+RETRYABLE_STATUS = frozenset({403, 429, 500})
+
+
+class RetryableHTTPError(Exception):
+    """Sollevata su uno status 403/429/500 per innescare il retry di tenacity."""
 
 
 class SubitoScraper(BaseScraper):
@@ -33,8 +47,7 @@ class SubitoScraper(BaseScraper):
     MAX_REQUESTS = 8         # tetto di sicurezza sulle pagine per una search
     IMAGE_CONCURRENCY = 6    # download immagini paralleli (CDN diretta)
 
-    MAX_RETRIES = 3          # tentativi sull'api_client (nodo proxy che fallisce)
-    RETRY_BACKOFF_BASE = 0.5  # secondi: backoff 0.5s, 1.0s tra i tentativi
+    MAX_RETRIES = 5          # tentativi sull'api_client (nodo proxy/ban/rate limit)
 
     LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
     CONTENT_TYPE_EXT = {
@@ -178,31 +191,30 @@ class SubitoScraper(BaseScraper):
         response = await self._get_with_retry(client, self.HADES_URL, params)
         return response.json()
 
+    @retry(
+        stop=stop_after_attempt(MAX_RETRIES),
+        wait=wait_exponential(multiplier=0.5, max=8),
+        retry=retry_if_exception_type(
+            (httpx.TransportError, httpx.TimeoutException, RetryableHTTPError)
+        ),
+        reraise=True,
+    )
     async def _get_with_retry(
         self,
         client: httpx.AsyncClient,
         url: str,
         params: dict[str, str],
     ) -> httpx.Response:
-        """GET con retry ed exponential backoff: se un nodo proxy fallisce, riprova."""
-        last_exc: Exception | None = None
-        for attempt in range(self.MAX_RETRIES):
-            try:
-                response = await client.get(url, params=params)
-                response.raise_for_status()
-                return response
-            except (httpx.TransportError, httpx.TimeoutException) as exc:
-                last_exc = exc  # timeout/errori di rete del nodo residenziale
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code < 500:
-                    raise  # 4xx: errore nostro, inutile riprovare
-                last_exc = exc
+        """GET con retry (tenacity): fino a 5 tentativi su 403/429/500 o errori di rete.
 
-            if attempt < self.MAX_RETRIES - 1:
-                await asyncio.sleep(self.RETRY_BACKOFF_BASE * (2**attempt))
-
-        assert last_exc is not None
-        raise last_exc
+        Un ban temporaneo / rate limit del nodo residenziale IPRoyal viene
+        ritentato con exponential backoff (cambiando IP a ogni giro).
+        """
+        response = await client.get(url, params=params)
+        if response.status_code in RETRYABLE_STATUS:
+            raise RetryableHTTPError(f"HTTP {response.status_code} da hades")
+        response.raise_for_status()  # altri 4xx/5xx: errore reale, non si ritenta
+        return response
 
     # ----------------------------------------------------------------- parse
 
@@ -233,6 +245,11 @@ class SubitoScraper(BaseScraper):
                 "condition": self._feature(features, "/item_condition"),
                 "image_count": len(images),
                 "raw_images": images,
+                # Campi strutturati auto (None per gli smartphone).
+                "year": self._feature_int(features, "/year"),
+                "km": self._feature_int(features, "/mileage_scalar"),
+                "transmission": self._feature(features, "/gearbox"),
+                "fuel": self._feature(features, "/fuel"),
             },
         )
 

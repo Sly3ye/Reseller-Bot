@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import statistics
+import uuid
 from dataclasses import asdict
 from datetime import date, datetime, timezone
 from typing import Any
@@ -12,8 +13,15 @@ from backend.scrapers import ScrapedListing, SubitoScraper
 
 logger = logging.getLogger(__name__)
 
-# numeric(5,2) in market_trends.margin_pct caps the storable percentage.
-MARGIN_PCT_LIMIT = 999.99
+def anti_spam_bounds(category: str) -> tuple[int, int | None]:
+    """Local anti-spam price bounds (min, max) by category.
+
+    Drops absurd listings before dedup/margins/save: cars outside 1k–200k,
+    phones under 50 EUR (spare parts, accessories, scam bait, wrong price).
+    """
+    if category == "automobile":
+        return 1000, 200000
+    return 50, None
 
 
 def get_or_create_product(
@@ -50,105 +58,6 @@ def get_or_create_product(
     return created.data[0], True
 
 
-def save_live_opportunities(
-    product_id: str,
-    listings: list[ScrapedListing],
-    target_id: str | None = None,
-    client: Client | None = None,
-) -> list[dict[str, Any]]:
-    if not listings:
-        return []
-
-    db = client or get_supabase_client()
-    existing_urls = get_existing_listing_urls(
-        db,
-        [listing.url for listing in listings],
-    )
-    # Market average is isolated per target: a BMW 120d Gen 1 uses only the
-    # Gen 1 target's average, never a generic "BMW 120d" one.
-    market_avg = get_latest_market_avg(db, target_id) if target_id else None
-
-    payloads = [
-        {
-            "product_id": product_id,
-            "target_id": target_id,
-            "listing_url": listing.url,
-            "title": listing.title,
-            "location": listing.location,
-            "asking_price": listing.price_amount,
-            "source": listing.source,
-            "description": listing.description,
-            "image_urls": listing.image_urls,
-            **compute_margin(market_avg, listing.price_amount),
-        }
-        for listing in listings
-        if listing.url not in existing_urls
-    ]
-    if not payloads:
-        return []
-
-    inserted = db.table("live_opportunities").insert(payloads).execute()
-    return inserted.data or []
-
-
-def get_latest_market_avg(client: Client, target_id: str) -> float | None:
-    """Latest market average for a specific target (strict per-target isolation)."""
-    result = (
-        client.table("market_trends")
-        .select("avg_price")
-        .eq("target_id", target_id)
-        .order("trend_date", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if result.data and result.data[0].get("avg_price") is not None:
-        return float(result.data[0]["avg_price"])
-    return None
-
-
-def compute_margin(
-    market_avg: float | None,
-    asking_price: float | None,
-) -> dict[str, float | None]:
-    """Margin of a deal vs. the current market average.
-
-    estimated_margin = market_avg - asking; margin_pct is that as a % of the
-    market average (positive = underpriced = good deal). Clamped to the
-    numeric(5,2) range so extreme outliers never break the insert.
-    """
-    if market_avg is None or asking_price is None:
-        return {
-            "market_avg_price": market_avg,
-            "estimated_margin": None,
-            "margin_pct": None,
-        }
-
-    estimated_margin = round(market_avg - asking_price, 2)
-    margin_pct: float | None = None
-    if market_avg:
-        margin_pct = round(estimated_margin / market_avg * 100, 2)
-        margin_pct = max(-MARGIN_PCT_LIMIT, min(MARGIN_PCT_LIMIT, margin_pct))
-
-    return {
-        "market_avg_price": round(market_avg, 2),
-        "estimated_margin": estimated_margin,
-        "margin_pct": margin_pct,
-    }
-
-
-def get_existing_listing_urls(client: Client, urls: list[str]) -> set[str]:
-    if not urls:
-        return set()
-
-    existing = (
-        client.table("live_opportunities")
-        .select("listing_url")
-        .in_("listing_url", urls)
-        .execute()
-    )
-    return {row["listing_url"] for row in existing.data or []}
-
-
 def infer_brand(model: str) -> str:
     normalized = model.strip().lower()
     if "iphone" in normalized or "ipad" in normalized:
@@ -161,6 +70,174 @@ def infer_brand(model: str) -> str:
 SNIPER_BLOCK_SIZE = 50
 
 
+def opportunities_table(category: str) -> str:
+    """Routing: 'automobile' → _auto, tutto il resto (smartphone/tech) → _tech."""
+    return (
+        "live_opportunities_auto"
+        if category == "automobile"
+        else "live_opportunities_tech"
+    )
+
+
+def get_existing_opportunities(
+    client: Client, table: str, urls: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Map listing_url → {id, asking_price} per le righe già presenti in `table`."""
+    if not urls:
+        return {}
+    rows = (
+        client.table(table)
+        .select("id, listing_url, asking_price")
+        .in_("listing_url", urls)
+        .execute()
+    )
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows.data or []:
+        price = row.get("asking_price")
+        result[row["listing_url"]] = {
+            "id": row["id"],
+            "asking_price": float(price) if price is not None else None,
+        }
+    return result
+
+
+def _opportunity_payload(
+    category: str, target_id: str | None, listing: ScrapedListing, now: str
+) -> dict[str, Any]:
+    # id e found_at/updated_at non hanno DEFAULT nel DDL → li forniamo noi.
+    meta = listing.metadata or {}
+    payload: dict[str, Any] = {
+        "id": str(uuid.uuid4()),
+        "target_id": target_id,
+        "listing_url": listing.url,
+        "title": listing.title,
+        "description": listing.description,
+        "asking_price": listing.price_amount,
+        "original_price": None,
+        "location": listing.location,
+        "image_urls": listing.image_urls,
+        "status": "nuovo",
+        "found_at": now,
+        "updated_at": now,
+    }
+    if category == "automobile":
+        payload.update(
+            {
+                "year": meta.get("year"),
+                "km": meta.get("km"),
+                "transmission": meta.get("transmission"),
+                "fuel": meta.get("fuel"),
+            }
+        )
+    return payload
+
+
+def insert_opportunities(
+    client: Client,
+    table: str,
+    category: str,
+    target_id: str | None,
+    listings: list[ScrapedListing],
+) -> list[dict[str, Any]]:
+    """Inserisce opportunità nuove (asking_price è NOT NULL → serve il prezzo)."""
+    now = datetime.now(timezone.utc).isoformat()
+    payloads = [
+        _opportunity_payload(category, target_id, listing, now)
+        for listing in listings
+        if listing.price_amount is not None
+    ]
+    if not payloads:
+        return []
+    inserted = client.table(table).insert(payloads).execute()
+    return inserted.data or []
+
+
+def apply_price_updates(
+    client: Client,
+    table: str,
+    existing: dict[str, dict[str, Any]],
+    listings: list[ScrapedListing],
+) -> dict[str, int]:
+    """Annunci già presenti: aggiorna updated_at; su CALO di prezzo salva lo
+    storico in price_history e sposta il vecchio prezzo in original_price."""
+    now = datetime.now(timezone.utc).isoformat()
+    updated = 0
+    price_drops = 0
+    history_rows: list[dict[str, Any]] = []
+
+    for listing in listings:
+        row = existing.get(listing.url)
+        if not row:
+            continue
+        listing_id = row["id"]
+        old_price = row["asking_price"]
+        new_price = listing.price_amount
+
+        patch: dict[str, Any] = {"updated_at": now}
+        if new_price is not None and old_price is not None and new_price < old_price:
+            patch["asking_price"] = new_price
+            patch["original_price"] = old_price
+            history_rows.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "listing_id": listing_id,
+                    "old_price": old_price,
+                    "new_price": new_price,
+                }
+            )
+            price_drops += 1
+
+        client.table(table).update(patch).eq("id", listing_id).execute()
+        updated += 1
+
+    if history_rows:
+        client.table("price_history").insert(history_rows).execute()
+
+    return {"updated": updated, "price_drops": price_drops}
+
+
+async def persist_opportunities(
+    scraper: SubitoScraper,
+    category: str,
+    target_id: str | None,
+    listings: list[ScrapedListing],
+    download_images: bool = True,
+) -> dict[str, int]:
+    """Routing + UPSERT condiviso da Sniper e Backfill.
+
+    Instrada sulla tabella per categoria, deduplica su listing_url, scarica le
+    immagini SOLO per i nuovi (se richiesto) e li inserisce; per gli esistenti
+    aggiorna updated_at e gestisce i cali di prezzo (price_history).
+    """
+    if not listings:
+        return {"new": 0, "updated": 0, "price_drops": 0}
+
+    table = opportunities_table(category)
+    db = get_supabase_client()
+    existing = await asyncio.to_thread(
+        get_existing_opportunities, db, table, [listing.url for listing in listings]
+    )
+
+    new_listings = [listing for listing in listings if listing.url not in existing]
+    dup_listings = [listing for listing in listings if listing.url in existing]
+
+    if download_images and new_listings:
+        new_listings = await scraper.store_images(new_listings)
+
+    inserted = await asyncio.to_thread(
+        insert_opportunities, db, table, category, target_id, new_listings
+    )
+    updates = await asyncio.to_thread(
+        apply_price_updates, db, table, existing, dup_listings
+    )
+
+    return {
+        "new": len(inserted),
+        "updated": updates["updated"],
+        "price_drops": updates["price_drops"],
+    }
+
+
 async def scrape_subito_and_save(
     query: str = "iPhone 13 Pro",
     category: str = "smartphone",
@@ -168,61 +245,42 @@ async def scrape_subito_and_save(
     strict_filters: dict[str, Any] | None = None,
     target_id: str | None = None,
 ) -> dict[str, Any]:
-    """Cecchino Live ottimizzato: processa in blocco 'pages' pagine dell'API.
+    """Cecchino Live: processa in blocco 'pages' pagine dell'API con routing/UPSERT.
 
-    1) Fetch veloce del blocco via proxy (nessuna immagine, filtri applicati).
-    2) Dedup contro il DB → tiene solo gli annunci nuovi.
-    3) Download immagini SOLO dei nuovi, dalla CDN diretta (budget proxy salvo).
-    4) Calcolo margini e salvataggio.
+    1) Fetch del blocco via proxy (filtri nativi + anti-spam applicati).
+    2) Routing su _auto/_tech, dedup su listing_url.
+    3) Immagini SOLO per i nuovi (CDN diretta) + insert; esistenti → updated_at
+       e price_history sui cali di prezzo.
     """
     scraper = SubitoScraper()
     max_results = max(1, pages) * SNIPER_BLOCK_SIZE
+    anti_min, anti_max = anti_spam_bounds(category)
 
-    # 1) Blocco di annunci dall'API (con strict_filters già applicati in-blocco).
-    #    max_pages=pages: esattamente 'pages' richieste al proxy, niente over-fetch.
-    #    Con strict_filters (auto) la precisione la danno i filtri nativi, non il
-    #    match del titolo: es. "Golf GTI" non deve filtrare per token del titolo.
-    #    strict_filters vuoti ({}) o None → smartphone → match preciso del modello.
     listings = await scraper.search_text(
         query=query,
         max_results=max_results,
+        min_price=anti_min,
+        max_price=anti_max,
         strict_match=not strict_filters,
         filters=strict_filters,
         max_pages=pages,
     )
 
-    specs = {"strict_filters": strict_filters} if strict_filters else None
-    product, product_created = await asyncio.to_thread(
-        get_or_create_product, query, category, specs
-    )
-    product_id = str(product["id"])
-
-    # 2) Deduplica contro il DB PRIMA di scaricare le immagini.
-    db = get_supabase_client()
-    existing_urls = await asyncio.to_thread(
-        get_existing_listing_urls, db, [listing.url for listing in listings]
-    )
-    new_listings = [listing for listing in listings if listing.url not in existing_urls]
-
-    # 3) Download immagini solo per i nuovi (CDN diretta, concorrente).
-    new_listings = await scraper.store_images(new_listings)
-
-    # 4) Margini (media isolata per target) + salvataggio con target_id.
-    saved = await asyncio.to_thread(
-        save_live_opportunities, product_id, new_listings, target_id
+    result = await persist_opportunities(
+        scraper, category, target_id, listings, download_images=True
     )
 
     return {
         "query": query,
         "category": category,
         "pages": pages,
-        "product": product,
-        "product_created": product_created,
+        "target_id": target_id,
+        "table": opportunities_table(category),
         "scraped_count": len(listings),
-        "new_count": len(new_listings),
-        "saved_count": len(saved),
-        "listings": [asdict(listing) for listing in new_listings],
-        "saved": saved,
+        "new_count": result["new"],
+        "updated_count": result["updated"],
+        "price_drops": result["price_drops"],
+        "saved_count": result["new"],
     }
 
 
@@ -291,9 +349,12 @@ async def run_nightly_batch(
     è calcolata SOLO sugli annunci di quella generazione/variante specifica.
     """
     scraper = SubitoScraper()
+    anti_min, anti_max = anti_spam_bounds(category)
     listings = await scraper.search_text(
         query=query,
         max_results=max_results,
+        min_price=anti_min,
+        max_price=anti_max,
         strict_match=not strict_filters,
         filters=strict_filters,
     )
