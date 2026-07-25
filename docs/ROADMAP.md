@@ -95,8 +95,14 @@ endpoint `/api/opportunities` con **filtri + paginazione + ordinamento server**,
 e la UI dei filtri. Attenzione al costo del calcolo BI su molti annunci
 (materializzare le medie/pool per variante).
 
-### 6. 🟡 Market Intelligence: più analitiche (proposte)
-Da aggiungere alla schermata (per iPhone):
+### 6. ✅ Market Intelligence: più analitiche — FATTO
+Implementate: ranking "Cosa comprare" (opportunità = margine potenziale ×
+liquidità), affari attivi/volume per modello, spread affare, box distribuzione
+prezzi, premio memoria, impatto condizione, prezzo→giorni, sell-through rate,
+distribuzione motivi AI, venditori/finti privati, KPI "miglior opportunità".
+Dettaglio per modello espandibile nella schermata.
+
+Lista originale (per riferimento):
 - **Distribuzione prezzi per variante** (box plot / istogramma) — la dispersione,
   non solo la media.
 - **Curva di deprezzamento** per modello nel tempo (dati già in `market_trends`).

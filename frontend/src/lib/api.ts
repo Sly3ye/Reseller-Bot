@@ -101,21 +101,52 @@ export type PriceBand = {
   count: number;
 };
 
+export type PriceBox = {
+  min: number;
+  q1: number;
+  median: number;
+  q3: number;
+  max: number;
+};
+
+export type AiDistribution = {
+  analyzed: number;
+  legittimo: number;
+  difetto: number;
+  sospetto: number;
+  riparabili: number;
+};
+
 export type ApiModelStat = {
   name: string;
   avg: number | null;
   sample: number | null;
   changePct: number | null;
+  series: { date: string; price: number }[];
+  // A — analitiche dai listing attivi
+  volume: number;
+  medianActive: number | null;
+  priceBox: PriceBox | null;
+  marginPotentialPct: number | null;
+  spreadEur: number | null;
+  activeDeals: number;
+  storagePremium: Record<string, number>;
+  conditionImpact: Record<string, number>;
+  sellers: number;
+  fintoPrivato: number;
+  ai: AiDistribution;
+  // C — vendite reali
   avgDaysToSell: number | null;
   sampleSold: number | null;
-  // Prezzo di vendita REALE (dai venduti) + fasce prezzo→giorni.
   soldMedian: number | null;
   soldMax: number | null;
   priceBands: PriceBand[];
-  // Prezzi dei listati attivi (fallback/confronto).
+  sellThroughRate: number | null;
+  // listati (fallback/confronto)
   fastSalePrice: number | null;
   maxSalePrice: number | null;
-  series: { date: string; price: number }[];
+  // ranking
+  opportunityScore: number | null;
 };
 
 export type ApiTrends = {
@@ -123,6 +154,7 @@ export type ApiTrends = {
   avgMarketPrice: number | null;
   outliersFiltered: number | null;
   avgDaysToSell: number | null;
+  topOpportunity: string | null;
   trend: { date: string; price: number }[];
   trendProduct: string | null;
   models: ApiModelStat[];

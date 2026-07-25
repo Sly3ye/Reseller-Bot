@@ -714,6 +714,113 @@ def _resale_suggestions(
     return result
 
 
+def _model_analytics(
+    db: Client, table: str, targets: dict[str, str]
+) -> dict[str, dict[str, Any]]:
+    """Analitiche per modello dai listing ATTIVI (#6 Market Intelligence).
+
+    Per modello: volume, box prezzi, margine potenziale (mediana↔p10), spread,
+    affari attivi (proxy: <85% mediana), premio memoria, impatto condizione,
+    venditori (distinti + finti privati) e distribuzione dell'analisi AI.
+    """
+    try:
+        rows = (
+            db.table(table)
+            .select(
+                "target_id, storage_gb, condition_tier, asking_price, "
+                "seller_id, seller_type, ai_analysis"
+            )
+            .in_("status", list(_ACTIVE_STATUSES))
+            .limit(20000)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return {}
+
+    agg: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        model = targets.get(row.get("target_id"))
+        if not model:
+            continue
+        d = agg.setdefault(
+            model,
+            {
+                "all": [], "healthy": [], "byStorage": {}, "byCond": {},
+                "sellers": set(), "fintoPrivato": 0,
+                "ai": {"analyzed": 0, "legittimo": 0, "difetto": 0,
+                       "sospetto": 0, "riparabili": 0},
+            },
+        )
+        price = _to_float(row.get("asking_price"))
+        if price and price > 0:
+            d["all"].append(price)
+            tier = row.get("condition_tier") or "buono"
+            d["byCond"].setdefault(tier, []).append(price)
+            if is_healthy(tier):
+                d["healthy"].append(price)
+                st = row.get("storage_gb")
+                if st:
+                    d["byStorage"].setdefault(st, []).append(price)
+        sid = row.get("seller_id")
+        if sid:
+            d["sellers"].add(sid)
+        if row.get("seller_type") == "finto_privato":
+            d["fintoPrivato"] += 1
+        ai = row.get("ai_analysis")
+        if isinstance(ai, dict):
+            d["ai"]["analyzed"] += 1
+            cat = ai.get("categoria_motivo")
+            if cat in ("legittimo", "difetto", "sospetto"):
+                d["ai"][cat] += 1
+            if ai.get("riparabile"):
+                d["ai"]["riparabili"] += 1
+
+    out: dict[str, dict[str, Any]] = {}
+    for model, d in agg.items():
+        healthy = sorted(d["healthy"])
+        box = None
+        median = spread = margin_pct = None
+        active_deals = 0
+        if len(healthy) >= 4:
+            q1, med, q3 = statistics.quantiles(healthy, n=4)
+            p10 = statistics.quantiles(healthy, n=10)[0]
+            median = med
+            box = {
+                "min": round(min(healthy)), "q1": round(q1), "median": round(med),
+                "q3": round(q3), "max": round(max(healthy)),
+            }
+            spread = round(med - p10)
+            margin_pct = round((med - p10) / med * 100, 1) if med else None
+            active_deals = sum(1 for p in healthy if p < med * 0.85)
+        elif healthy:
+            median = statistics.median(healthy)
+
+        out[model] = {
+            "volume": len(d["all"]),
+            "medianActive": round(median) if median else None,
+            "priceBox": box,
+            "marginPotentialPct": margin_pct,
+            "spreadEur": spread,
+            "activeDeals": active_deals,
+            "storagePremium": {
+                str(st): round(statistics.median(ps))
+                for st, ps in sorted(d["byStorage"].items())
+                if len(ps) >= 3
+            },
+            "conditionImpact": {
+                t: round(statistics.median(ps))
+                for t, ps in d["byCond"].items()
+                if len(ps) >= 3
+            },
+            "sellers": len(d["sellers"]),
+            "fintoPrivato": d["fintoPrivato"],
+            "ai": d["ai"],
+        }
+    return out
+
+
 def get_market_intelligence(
     category: str,
     client: Client | None = None,
@@ -722,16 +829,6 @@ def get_market_intelligence(
     db = client or get_db()
     target_cat = _target_category(category)
     products = _products_for_category(db, target_cat)
-
-    empty = {
-        "activeListings": 0,
-        "avgMarketPrice": None,
-        "outliersFiltered": None,
-        "avgDaysToSell": None,
-        "trend": [],
-        "trendProduct": None,
-        "models": [],
-    }
 
     # Annunci attivi: conteggio reale sulla tabella per-tipo (chiavata su target).
     table = _opportunities_table(category)
@@ -742,98 +839,134 @@ def get_market_intelligence(
     except Exception:
         active_listings = 0
 
-    # Statistiche dai VENDUTI (prezzo reale + giorni) e prezzi dei listati attivi.
+    # Statistiche dai VENDUTI (prezzo reale + giorni), prezzi dei listati attivi
+    # e analitiche per modello (#6) dai listing attivi.
     targets = _targets_for_category(db, target_cat)
     sold_by_model, overall_tts = _sold_stats(db, table, targets)
     resale_by_model = _resale_suggestions(db, table, targets)
+    analytics_by_model = _model_analytics(db, table, targets)
 
-    if not products:
-        return {
-            **empty,
-            "activeListings": active_listings,
-            "avgDaysToSell": overall_tts,
-        }
-
-    product_ids = list(products)
-
-    trends = (
-        db.table("market_trends")
-        .select("product_id, trend_date, avg_price, volume")
-        .in_("product_id", product_ids)
-        .order("trend_date", desc=False)
-        .execute()
-    )
-    trend_rows = trends.data or []
-
-    # Group trend rows by product to build per-model stats and the chart series.
-    by_product: dict[str, list[dict[str, Any]]] = {}
-    for row in trend_rows:
-        by_product.setdefault(row["product_id"], []).append(row)
-
-    models: list[dict[str, Any]] = []
-    latest_avgs: list[float] = []
-    for product_id, rows in by_product.items():
-        rows_sorted = sorted(rows, key=lambda r: r["trend_date"])
-        latest = rows_sorted[-1]
-        latest_avg = _to_float(latest.get("avg_price"))
-        if latest_avg is not None:
-            latest_avgs.append(latest_avg)
-        change_pct: float | None = None
-        if len(rows_sorted) >= 2 and latest_avg:
-            prev_avg = _to_float(rows_sorted[0].get("avg_price"))
-            if prev_avg:
-                change_pct = round((latest_avg - prev_avg) / prev_avg * 100, 1)
-        name = products.get(product_id, "—")
-        sold = sold_by_model.get(name) or {}
-        resale = resale_by_model.get(name) or {}
-        models.append(
-            {
-                "name": name,
+    # Trend storici per modello (curva di deprezzamento) da market_trends.
+    trend_by_model: dict[str, dict[str, Any]] = {}
+    if products:
+        trend_rows = (
+            db.table("market_trends")
+            .select("product_id, trend_date, avg_price, volume")
+            .in_("product_id", list(products))
+            .order("trend_date", desc=False)
+            .execute()
+        ).data or []
+        by_product: dict[str, list[dict[str, Any]]] = {}
+        for row in trend_rows:
+            by_product.setdefault(row["product_id"], []).append(row)
+        for product_id, rows in by_product.items():
+            name = products.get(product_id)
+            if not name:
+                continue
+            rows_sorted = sorted(rows, key=lambda r: r["trend_date"])
+            latest_avg = _to_float(rows_sorted[-1].get("avg_price"))
+            change_pct = None
+            if len(rows_sorted) >= 2 and latest_avg:
+                prev_avg = _to_float(rows_sorted[0].get("avg_price"))
+                if prev_avg:
+                    change_pct = round((latest_avg - prev_avg) / prev_avg * 100, 1)
+            trend_by_model[name] = {
                 "avg": latest_avg,
-                "sample": latest.get("volume"),
                 "changePct": change_pct,
-                # Liquidità: giorni medi di vendita (dai venduti).
-                "avgDaysToSell": sold.get("avgDaysToSell"),
-                "sampleSold": sold.get("sampleSold"),
-                # Prezzo di vendita REALE (dai venduti, non dai listati) + fasce.
-                "soldMedian": sold.get("soldMedian"),
-                "soldMax": sold.get("soldMax"),
-                "priceBands": sold.get("priceBands") or [],
-                # Prezzi dei LISTATI attivi (fallback / confronto).
-                "fastSalePrice": resale.get("fastSalePrice"),
-                "maxSalePrice": resale.get("maxSalePrice"),
-                # Serie storica completa: curva di deprezzamento.
                 "series": [
                     {"date": r["trend_date"], "price": _to_float(r.get("avg_price"))}
                     for r in rows_sorted
                     if _to_float(r.get("avg_price")) is not None
                 ],
             }
+
+    # Unione di tutti i modelli visti: attivi ∪ venduti ∪ con storico.
+    names = set(analytics_by_model) | set(sold_by_model) | set(trend_by_model)
+    models: list[dict[str, Any]] = []
+    for name in names:
+        a = analytics_by_model.get(name) or {}
+        sold = sold_by_model.get(name) or {}
+        resale = resale_by_model.get(name) or {}
+        t = trend_by_model.get(name) or {}
+
+        volume = a.get("volume") or 0
+        sample_sold = sold.get("sampleSold") or 0
+        sell_through = (
+            round(sample_sold / (sample_sold + volume) * 100, 1)
+            if (sample_sold + volume) > 0
+            else None
+        )
+        # Opportunity score = margine potenziale × fattore di liquidità.
+        margin_pot = a.get("marginPotentialPct")
+        opportunity = (
+            round(margin_pot * (0.3 + (sell_through or 0) / 100), 1)
+            if margin_pot is not None
+            else None
         )
 
-    models.sort(key=lambda m: (m["sample"] or 0), reverse=True)
-    avg_market_price = (
-        round(sum(latest_avgs) / len(latest_avgs), 2) if latest_avgs else None
+        models.append(
+            {
+                "name": name,
+                "avg": t.get("avg"),
+                "changePct": t.get("changePct"),
+                "series": t.get("series") or [],
+                "sample": volume or sample_sold,
+                # A — analitiche dai listing attivi
+                "volume": volume,
+                "medianActive": a.get("medianActive"),
+                "priceBox": a.get("priceBox"),
+                "marginPotentialPct": margin_pot,
+                "spreadEur": a.get("spreadEur"),
+                "activeDeals": a.get("activeDeals") or 0,
+                "storagePremium": a.get("storagePremium") or {},
+                "conditionImpact": a.get("conditionImpact") or {},
+                "sellers": a.get("sellers") or 0,
+                "fintoPrivato": a.get("fintoPrivato") or 0,
+                "ai": a.get("ai") or {},
+                # C — vendite reali
+                "avgDaysToSell": sold.get("avgDaysToSell"),
+                "sampleSold": sold.get("sampleSold"),
+                "soldMedian": sold.get("soldMedian"),
+                "soldMax": sold.get("soldMax"),
+                "priceBands": sold.get("priceBands") or [],
+                "sellThroughRate": sell_through,
+                # listati (fallback/confronto)
+                "fastSalePrice": resale.get("fastSalePrice"),
+                "maxSalePrice": resale.get("maxSalePrice"),
+                # ranking
+                "opportunityScore": opportunity,
+            }
+        )
+
+    # Ordina per opportunità (poi volume) — il "cosa comprare".
+    models.sort(
+        key=lambda m: (m.get("opportunityScore") or -1, m.get("volume") or 0),
+        reverse=True,
     )
 
-    # Chart: the trend series of the most-sampled product in this vertical.
+    active_medians = [m["medianActive"] for m in models if m.get("medianActive")]
+    avg_market_price = (
+        round(sum(active_medians) / len(active_medians)) if active_medians else None
+    )
+    top_opportunity = (
+        models[0]["name"] if models and models[0].get("opportunityScore") else None
+    )
+
+    # Chart: serie storica del primo modello (per opportunità) che ha uno storico.
     trend_series: list[dict[str, Any]] = []
     trend_product: str | None = None
-    if models:
-        top_name = models[0]["name"]
-        top_id = next((pid for pid, m in products.items() if m == top_name), None)
-        if top_id and top_id in by_product:
-            trend_product = top_name
-            for row in sorted(by_product[top_id], key=lambda r: r["trend_date"]):
-                price = _to_float(row.get("avg_price"))
-                if price is not None:
-                    trend_series.append({"date": row["trend_date"], "price": price})
+    for m in models:
+        if m.get("series"):
+            trend_series = m["series"]
+            trend_product = m["name"]
+            break
 
     return {
         "activeListings": active_listings,
         "avgMarketPrice": avg_market_price,
         "outliersFiltered": None,
         "avgDaysToSell": overall_tts,
+        "topOpportunity": top_opportunity,
         "trend": trend_series,
         "trendProduct": trend_product,
         "models": models,

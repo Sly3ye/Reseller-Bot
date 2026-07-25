@@ -12,6 +12,7 @@ import {
   fetchTrends,
   patchOpportunityStatus,
   updateDeal,
+  type ApiModelStat,
   type ApiOpportunity,
   type ApiTrends,
   type Category,
@@ -2043,7 +2044,7 @@ function IntelScreen(props: {
         <ErrorBanner message={props.error} />
       ) : (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
             <div style={card}>
               <div style={cardLabel}>Annunci attivi</div>
               <div style={cardValue}>{props.loading ? "…" : (intel?.activeListings ?? 0)}</div>
@@ -2057,7 +2058,7 @@ function IntelScreen(props: {
                 {props.loading ? "…" : intel?.avgMarketPrice != null ? eur(intel.avgMarketPrice) : "—"}
               </div>
               <div style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)", marginTop: "4px" }}>
-                media IQR-pulita sui modelli tracciati
+                mediana dei prezzi attivi per modello
               </div>
             </div>
             <div style={card}>
@@ -2070,7 +2071,16 @@ function IntelScreen(props: {
                     : "—"}
               </div>
               <div style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)", marginTop: "4px" }}>
-                giorni medi found→venduto (time-to-sale)
+                giorni medi di vendita (dai venduti)
+              </div>
+            </div>
+            <div style={card}>
+              <div style={cardLabel}>Miglior opportunità</div>
+              <div style={{ ...cardValue, fontSize: "20px", color: "oklch(0.75 0.15 150)" }}>
+                {props.loading ? "…" : (intel?.topOpportunity ?? "—")}
+              </div>
+              <div style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)", marginTop: "4px" }}>
+                miglior margine × liquidità ora
               </div>
             </div>
           </div>
@@ -2139,122 +2149,243 @@ function IntelScreen(props: {
             )}
           </div>
 
-          <div
-            style={{
-              background: "oklch(0.19 0.008 250)",
-              border: "1px solid oklch(0.27 0.01 250)",
-              borderRadius: "12px",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1.8fr 1fr 0.8fr 0.9fr 1fr 1.2fr",
-                gap: "12px",
-                padding: "10px 20px",
-                background: "oklch(0.20 0.008 250)",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "oklch(0.46 0.01 250)",
-                textTransform: "uppercase",
-                letterSpacing: "0.05em",
-              }}
-            >
-              <div>Modello</div>
-              <div>Prezzo medio</div>
-              <div>Campione</div>
-              <div title="Variazione a 7 giorni">7g</div>
-              <div title="Giorni medi di vendita (dai venduti). Passa sopra per le fasce prezzo→giorni">Liquidità</div>
-              <div title="Prezzo di vendita REALE (mediana / max dai venduti)">Venduto reale</div>
-            </div>
-            {(intel?.models ?? []).length === 0 ? (
-              <div style={{ padding: "16px 20px", fontSize: "13px", color: "oklch(0.46 0.01 250)" }}>
-                {props.loading ? "Caricamento…" : "Nessun dato di mercato per questa categoria."}
-              </div>
-            ) : (
-              (intel?.models ?? []).map((m) => {
-                const positive = (m.changePct ?? 0) >= 0;
-                return (
-                  <div
-                    key={m.name}
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1.8fr 1fr 0.8fr 0.9fr 1fr 1.2fr",
-                      gap: "12px",
-                      padding: "12px 20px",
-                      borderTop: "1px solid oklch(0.24 0.008 250)",
-                      alignItems: "center",
-                      fontSize: "13px",
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>{m.name}</div>
-                    <div style={{ fontFamily: MONO }}>{m.avg != null ? eur(m.avg) : "—"}</div>
-                    <div style={{ fontFamily: MONO, color: "oklch(0.46 0.01 250)" }}>{m.sample ?? "—"}</div>
-                    <div
-                      style={{
-                        fontFamily: MONO,
-                        fontWeight: 600,
-                        color:
-                          m.changePct == null
-                            ? "oklch(0.46 0.01 250)"
-                            : positive
-                              ? "oklch(0.72 0.16 150)"
-                              : "oklch(0.68 0.19 25)",
-                      }}
-                    >
-                      {m.changePct == null ? "—" : (positive ? "+" : "") + m.changePct + "%"}
-                    </div>
-                    <div
-                      style={{ fontFamily: MONO }}
-                      title={
-                        m.priceBands.length
-                          ? m.priceBands
-                              .map(
-                                (b) =>
-                                  `${b.band} ${eur(b.priceFrom)}–${eur(b.priceTo)}: ${b.avgDays}gg (${b.count})`,
-                              )
-                              .join("\n")
-                          : undefined
-                      }
-                    >
-                      {m.avgDaysToSell != null ? (
-                        <>
-                          {m.avgDaysToSell}gg
-                          <span style={{ fontSize: "10px", color: "oklch(0.46 0.01 250)", marginLeft: "3px" }}>
-                            ({m.sampleSold ?? 0})
-                          </span>
-                        </>
-                      ) : (
-                        <span style={{ color: "oklch(0.46 0.01 250)" }}>—</span>
-                      )}
-                    </div>
-                    <div style={{ fontFamily: MONO, fontSize: "12px" }}>
-                      {m.soldMedian != null ? (
-                        <>
-                          <span style={{ color: "oklch(0.72 0.16 150)" }}>{eur(m.soldMedian)}</span>
-                          {m.soldMax != null && (
-                            <span style={{ color: "oklch(0.46 0.01 250)" }}> / {eur(m.soldMax)}</span>
-                          )}
-                        </>
-                      ) : m.fastSalePrice != null && m.maxSalePrice != null ? (
-                        <span
-                          style={{ color: "oklch(0.55 0.01 250)" }}
-                          title="Dai listati attivi (nessun venduto sufficiente)"
-                        >
-                          {eur(m.fastSalePrice)} / {eur(m.maxSalePrice)} <span style={{ fontSize: "9px" }}>list.</span>
-                        </span>
-                      ) : (
-                        <span style={{ color: "oklch(0.46 0.01 250)" }}>—</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+          <BuyRanking models={intel?.models ?? []} loading={props.loading} />
         </>
       )}
+    </div>
+  );
+}
+
+/* -------------------------------- "Cosa comprare": ranking + dettaglio (#6) */
+
+const BUY_COLS = "1.7fr 0.8fr 0.9fr 1fr 0.9fr 0.8fr 0.7fr 28px";
+
+function BuyRanking(props: { models: ApiModelStat[]; loading: boolean }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const header: CSSProperties = {
+    fontSize: "11px",
+    fontWeight: 600,
+    color: "oklch(0.46 0.01 250)",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+  return (
+    <div>
+      <div style={{ fontSize: "15px", fontWeight: 700, marginBottom: "4px" }}>
+        Cosa comprare
+      </div>
+      <div style={{ fontSize: "12.5px", color: "oklch(0.62 0.01 250)", marginBottom: "10px" }}>
+        Modelli ordinati per opportunità (margine potenziale × liquidità). Clicca una riga per il dettaglio.
+      </div>
+      <div style={{ border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflow: "hidden" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: BUY_COLS,
+            gap: "10px",
+            padding: "10px 16px",
+            background: "oklch(0.20 0.008 250)",
+            ...header,
+          }}
+        >
+          <div>Modello</div>
+          <div title="Margine potenziale × liquidità">Opp.</div>
+          <div title="Mediana ↔ 10° percentile: quanto margine c'è">Margine pot.</div>
+          <div title="Prezzo di vendita reale (mediana venduti)">Venduto</div>
+          <div title="Giorni medi di vendita">Giorni</div>
+          <div title="% annunci venduti su visti">Sell-thru</div>
+          <div title="Annunci affare attivi ora / volume totale">Affari</div>
+          <div />
+        </div>
+        {props.models.length === 0 ? (
+          <div style={{ padding: "16px", fontSize: "13px", color: "oklch(0.46 0.01 250)" }}>
+            {props.loading ? "Caricamento…" : "Nessun dato per questa categoria."}
+          </div>
+        ) : (
+          props.models.map((m) => (
+            <BuyRow
+              key={m.name}
+              m={m}
+              open={open === m.name}
+              onToggle={() => setOpen((cur) => (cur === m.name ? null : m.name))}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BuyRow(props: { m: ApiModelStat; open: boolean; onToggle: () => void }) {
+  const { m } = props;
+  const oppColor =
+    (m.opportunityScore ?? 0) >= 15
+      ? "oklch(0.75 0.15 150)"
+      : (m.opportunityScore ?? 0) >= 7
+        ? "oklch(0.75 0.14 75)"
+        : "oklch(0.62 0.01 250)";
+  return (
+    <div style={{ borderTop: "1px solid oklch(0.24 0.008 250)" }}>
+      <div
+        onClick={props.onToggle}
+        style={{
+          display: "grid",
+          gridTemplateColumns: BUY_COLS,
+          gap: "10px",
+          padding: "12px 16px",
+          alignItems: "center",
+          fontSize: "13px",
+          cursor: "pointer",
+          background: props.open ? "oklch(0.22 0.008 250)" : "transparent",
+        }}
+      >
+        <div style={{ fontWeight: 600 }}>{m.name}</div>
+        <div style={{ fontFamily: MONO, fontWeight: 700, color: oppColor }}>
+          {m.opportunityScore != null ? m.opportunityScore : "—"}
+        </div>
+        <div style={{ fontFamily: MONO }}>
+          {m.marginPotentialPct != null ? `${m.marginPotentialPct}%` : "—"}
+        </div>
+        <div style={{ fontFamily: MONO }}>
+          {m.soldMedian != null ? (
+            eur(m.soldMedian)
+          ) : m.medianActive != null ? (
+            <span style={{ color: "oklch(0.55 0.01 250)" }} title="mediana listati (no venduti)">
+              {eur(m.medianActive)}
+            </span>
+          ) : (
+            "—"
+          )}
+        </div>
+        <div style={{ fontFamily: MONO }}>
+          {m.avgDaysToSell != null ? `${m.avgDaysToSell}gg` : "—"}
+        </div>
+        <div style={{ fontFamily: MONO }}>
+          {m.sellThroughRate != null ? `${m.sellThroughRate}%` : "—"}
+        </div>
+        <div style={{ fontFamily: MONO }}>
+          <span style={{ color: m.activeDeals > 0 ? "oklch(0.75 0.15 150)" : "oklch(0.62 0.01 250)" }}>
+            {m.activeDeals}
+          </span>
+          <span style={{ color: "oklch(0.46 0.01 250)" }}>/{m.volume}</span>
+        </div>
+        <div style={{ color: "oklch(0.55 0.01 250)", textAlign: "center" }}>
+          {props.open ? "▾" : "▸"}
+        </div>
+      </div>
+      {props.open && <BuyDetail m={m} />}
+    </div>
+  );
+}
+
+function BuyDetail(props: { m: ApiModelStat }) {
+  const { m } = props;
+  const block: CSSProperties = {
+    background: "oklch(0.16 0.008 250)",
+    border: "1px solid oklch(0.27 0.01 250)",
+    borderRadius: "8px",
+    padding: "12px 14px",
+  };
+  const blkLabel: CSSProperties = {
+    fontSize: "10.5px",
+    fontWeight: 700,
+    color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    marginBottom: "8px",
+  };
+  const storages = Object.entries(m.storagePremium).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const conds = Object.entries(m.conditionImpact);
+  const ai = m.ai;
+  return (
+    <div
+      style={{
+        padding: "0 16px 16px",
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: "12px",
+        background: "oklch(0.185 0.008 250)",
+      }}
+    >
+      {/* Box prezzi */}
+      {m.priceBox && (
+        <div style={block}>
+          <div style={blkLabel}>Distribuzione prezzi attivi</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+            <div>min {eur(m.priceBox.min)} · max {eur(m.priceBox.max)}</div>
+            <div>25° {eur(m.priceBox.q1)} · mediana <b>{eur(m.priceBox.median)}</b> · 75° {eur(m.priceBox.q3)}</div>
+            {m.spreadEur != null && (
+              <div style={{ color: "oklch(0.75 0.15 150)" }}>
+                spread affare ~{eur(m.spreadEur)} ({m.marginPotentialPct}%)
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Premio memoria */}
+      {storages.length > 0 && (
+        <div style={block}>
+          <div style={blkLabel}>Premio memoria (mediana)</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+            {storages.map(([st, price]) => (
+              <div key={st}>
+                {Number(st) >= 1024 ? "1TB" : `${st}GB`}: {eur(price)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Impatto condizione */}
+      {conds.length > 0 && (
+        <div style={block}>
+          <div style={blkLabel}>Impatto condizione (mediana)</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+            {conds.map(([tier, price]) => (
+              <div key={tier}>
+                {tier}: {eur(price)}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Prezzo → giorni */}
+      {m.priceBands.length > 0 && (
+        <div style={block}>
+          <div style={blkLabel}>Prezzo → giorni di vendita</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+            {m.priceBands.map((b) => (
+              <div key={b.band}>
+                {b.band} {eur(b.priceFrom)}–{eur(b.priceTo)}: <b>{b.avgDays}gg</b> ({b.count})
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* AI motivi */}
+      {ai.analyzed > 0 && (
+        <div style={block}>
+          <div style={blkLabel}>🤖 Motivi di vendita (AI, {ai.analyzed})</div>
+          <div style={{ fontSize: "12px", lineHeight: 1.7 }}>
+            <div>legittimi: {ai.legittimo} · difetti: {ai.difetto} · sospetti: {ai.sospetto}</div>
+            <div style={{ color: "oklch(0.80 0.13 75)" }}>riparabili: {ai.riparabili}</div>
+          </div>
+        </div>
+      )}
+
+      {/* Venditori */}
+      <div style={block}>
+        <div style={blkLabel}>Venditori</div>
+        <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+          <div>distinti: {m.sellers}</div>
+          {m.fintoPrivato > 0 && (
+            <div style={{ color: "oklch(0.75 0.16 30)" }}>finti privati: {m.fintoPrivato}</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
