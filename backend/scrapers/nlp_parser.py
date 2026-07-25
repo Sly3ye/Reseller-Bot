@@ -4,12 +4,16 @@ Analizza ``title`` + ``description`` di un annuncio e ne estrae segnale
 strutturato che l'API di Subito non fornisce (o fornisce sporco):
 
 - ``km`` / ``year``    → fallback testuale quando i campi strutturati mancano.
-- ``features``         → termini chiave normalizzati (allestimenti/optional), con
-                         un dizionario di sinonimi ("M Sport"/"MSport" → "M-Sport").
-- ``defects_noted``    → difetti dichiarati (penalità di prezzo).
+- ``features``         → termini chiave normalizzati (allestimenti/optional auto
+                         e corredo tech), con un dizionario di sinonimi
+                         ("M Sport"/"MSport" → "M-Sport").
+- ``defects_noted``    → difetti dichiarati (penalità di prezzo), auto e tech.
 - ``urgency_flags``    → segnali di vendita urgente (leva di trattativa).
-- ``exclude_from_iqr`` → True se l'auto è "incidentata"/"fuso": va tenuta fuori
-                         dal calcolo della media di mercato (inquina l'IQR).
+- ``storage_gb``       → taglio di memoria (64/128/256/512/1024) per il tech.
+- ``battery_pct``      → salute batteria dichiarata ("batteria 87%") per il tech.
+- ``exclude_from_iqr`` → True se l'annuncio va tenuto fuori dal calcolo della
+                         media di mercato (auto incidentata/fusa; telefono con
+                         schermo rotto, iCloud bloccato, per ricambi...).
 
 Tutto è case-insensitive e accent-insensitive dove serve.
 """
@@ -22,12 +26,17 @@ from typing import Any
 
 # ---------------------------------------------------------------- estrazione km/anno
 
-# "150.000 km", "150000km", "150 mila km", "km 150000"
+# "150.000 km", "150000km", "150 mila km", "km 150000".
+# Il lookbehind (?<![\d.]) impedisce al numero di iniziare A METÀ di un altro
+# numero (es. "2018 150.000 km": senza guardia matcha "018 150.000" → valore
+# assurdo che oscura il vero chilometraggio).
 _KM_RE = re.compile(
-    r"(?:km[\s.:]*)?(\d{1,3}(?:[.\s]\d{3})+|\d{2,7})\s*(?:mila\s*)?k[m ]",
+    r"(?:km[\s.:]*)?(?<![\d.])(\d{1,3}(?:[.\s]\d{3})+|\d{2,7})\s*(?:mila\s*)?k[m ]",
     re.IGNORECASE,
 )
-_KM_PREFIX_RE = re.compile(r"km[\s.:]*(\d{1,3}(?:[.\s]\d{3})+|\d{2,7})", re.IGNORECASE)
+_KM_PREFIX_RE = re.compile(
+    r"km[\s.:]*(?<![\d.])(\d{1,3}(?:[.\s]\d{3})+|\d{2,7})", re.IGNORECASE
+)
 # Anno a 4 cifre plausibile per un'auto usata (1980–2029).
 _YEAR_RE = re.compile(r"\b(19[89]\d|20[0-2]\d)\b")
 
@@ -70,8 +79,58 @@ _DEFECT_SYNONYMS: dict[str, tuple[str, ...]] = {
     "fuso": ("fuso", "motore fuso", "testata", "guarnizione testata", "biella"),
 }
 
-# Difetti che squalificano l'auto dal calcolo della media di mercato.
-_IQR_EXCLUSION_DEFECTS = frozenset({"incidentata", "fuso"})
+# ------------------------------------------------------------ difetti tech
+
+# canonico → sinonimi (smartphone). schermo-rotto/icloud/per-ricambi sono anche
+# criterio di esclusione IQR: un telefono rotto inquina la media verso il basso.
+_TECH_DEFECT_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "schermo-rotto": ("schermo rotto", "display rotto", "vetro rotto",
+                      "schermo crepato", "display crepato", "vetro crepato",
+                      "vetro incrinato", "schermo incrinato", "crepa sul",
+                      "schermo danneggiato", "display danneggiato"),
+    "batteria-esausta": ("batteria da cambiare", "batteria da sostituire",
+                         "batteria esausta", "batteria degradata",
+                         "batteria ko", "batteria scarsa"),
+    "icloud-bloccato": ("icloud bloccato", "blocco icloud", "blocco attivazione",
+                        "account icloud attivo", "id apple bloccato"),
+    "per-ricambi": ("per ricambi", "per pezzi", "pezzi di ricambio",
+                    "solo ricambi", "come ricambio"),
+    "da-riparare": ("da riparare", "non funzionante", "non si accende"),
+    "face-id-rotto": ("face id non funziona", "face id rotto",
+                      "face id non funzionante", "faceid non funziona"),
+    "back-rotto": ("scocca rotta", "vetro posteriore rotto", "retro rotto",
+                   "back rotto"),
+}
+
+# ----------------------------------------------------------- corredo tech
+
+_TECH_FEATURE_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "Scatola": ("scatola", "box originale", "confezione originale",
+                "con la sua scatola"),
+    "Fattura": ("fattura", "scontrino", "prova d'acquisto", "prova di acquisto"),
+    "Garanzia-Apple": ("applecare", "apple care", "garanzia apple",
+                       "garanzia residua", "ancora in garanzia apple"),
+    "Caricatore": ("caricatore", "caricabatterie", "cavo originale",
+                   "alimentatore originale"),
+    "Pari-al-Nuovo": ("pari al nuovo", "come nuovo", "come nuova",
+                      "perfette condizioni", "condizioni perfette",
+                      "mai caduto", "sempre con custodia", "sempre in custodia"),
+    "Batteria-Cambiata": ("batteria nuova", "batteria cambiata",
+                          "batteria sostituita", "batteria appena sostituita"),
+}
+
+# Difetti che squalificano l'annuncio dal calcolo della media di mercato.
+_IQR_EXCLUSION_DEFECTS = frozenset({
+    # auto
+    "incidentata", "fuso",
+    # tech: telefoni rotti/bloccati non fanno mercato del funzionante
+    "schermo-rotto", "icloud-bloccato", "per-ricambi", "da-riparare",
+    "batteria-esausta",
+})
+
+# Difetti "riparabili" (radar riparazioni): il margine si ricalcola al netto
+# del costo di riparazione noto, vedi backend/services/scoring.py.
+REPAIRABLE_DEFECTS = frozenset({"schermo-rotto", "batteria-esausta", "back-rotto"})
 
 # ---------------------------------------------------------------- urgenza (leva)
 
@@ -83,6 +142,39 @@ _URGENCY_SYNONYMS: dict[str, tuple[str, ...]] = {
     "inutilizzo": ("inutilizzo", "non la uso", "poco utilizzata", "causa inutilizzo",
                    "non utilizzata"),
 }
+
+
+# ------------------------------------------------- estrazione storage/batteria
+
+# "128GB", "128 gb", "256 giga", "1TB", "1 tb"
+_STORAGE_RE = re.compile(r"\b(64|128|256|512)\s*(?:gb|giga)\b", re.IGNORECASE)
+_STORAGE_TB_RE = re.compile(r"\b1\s*(?:tb|tera)\b", re.IGNORECASE)
+
+# "batteria 87%", "batteria al 91 %", "salute batteria: 88%", "87% batteria",
+# "battery health 90%". Range plausibile 50–100.
+_BATTERY_RE = re.compile(
+    r"(?:batteria|battery)[^%\d]{0,25}?(\d{2,3})\s*%", re.IGNORECASE
+)
+_BATTERY_PRE_RE = re.compile(
+    r"(\d{2,3})\s*%[^\w]{0,5}(?:di\s+)?batteria", re.IGNORECASE
+)
+
+
+def _extract_storage_gb(text: str) -> int | None:
+    if _STORAGE_TB_RE.search(text):
+        return 1024
+    match = _STORAGE_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def _extract_battery_pct(text: str) -> int | None:
+    for regex in (_BATTERY_RE, _BATTERY_PRE_RE):
+        match = regex.search(text)
+        if match:
+            value = int(match.group(1))
+            if 50 <= value <= 100:
+                return value
+    return None
 
 
 def _normalize(text: str) -> str:
@@ -104,9 +196,11 @@ def _match_dictionary(
 
 
 def _extract_km(text: str) -> int | None:
+    # finditer (non search): il primo match può partire "dentro" un altro
+    # numero (es. l'anno in "2018 150.000 km") e produrre un valore
+    # implausibile — in quel caso si prova il match successivo.
     for regex in (_KM_PREFIX_RE, _KM_RE):
-        match = regex.search(text)
-        if match:
+        for match in regex.finditer(text):
             digits = re.sub(r"\D", "", match.group(1))
             if digits:
                 value = int(digits)
@@ -131,17 +225,35 @@ def parse_listing(
 ) -> dict[str, Any]:
     """Analizza titolo+descrizione e ritorna il dict di segnale strutturato.
 
-    Chiavi: ``km``, ``year`` (int|None), ``features``, ``defects_noted``,
-    ``urgency_flags`` (list[str]), ``exclude_from_iqr`` (bool).
+    Chiavi: ``km``, ``year``, ``storage_gb``, ``battery_pct`` (int|None),
+    ``features``, ``defects_noted``, ``urgency_flags`` (list[str]),
+    ``exclude_from_iqr`` (bool).
+
+    Il parser è unificato auto+tech: le regex sono economiche e i dizionari
+    dell'altro verticale quasi mai producono falsi positivi (un'auto non
+    dichiara "iCloud bloccato", un telefono non è "grandinato").
     """
     raw = " ".join(part for part in (title, description) if part)
     norm = _normalize(raw)
 
-    defects = _match_dictionary(norm, _DEFECT_SYNONYMS)
+    defects = _match_dictionary(norm, _DEFECT_SYNONYMS) + _match_dictionary(
+        norm, _TECH_DEFECT_SYNONYMS
+    )
+    features = _match_dictionary(norm, _FEATURE_SYNONYMS) + _match_dictionary(
+        norm, _TECH_FEATURE_SYNONYMS
+    )
+    # "Batteria-Cambiata" nel corredo smentisce "batteria-esausta" letta altrove
+    # (es. "batteria appena sostituita" contiene... nulla di negativo, ma testi
+    # tipo "batteria da cambiare? No, appena sostituita" esistono).
+    if "Batteria-Cambiata" in features and "batteria-esausta" in defects:
+        defects.remove("batteria-esausta")
+
     return {
         "km": _extract_km(raw),
         "year": _extract_year(raw),
-        "features": _match_dictionary(norm, _FEATURE_SYNONYMS),
+        "storage_gb": _extract_storage_gb(raw),
+        "battery_pct": _extract_battery_pct(raw),
+        "features": features,
         "defects_noted": defects,
         "urgency_flags": _match_dictionary(norm, _URGENCY_SYNONYMS),
         "exclude_from_iqr": any(d in _IQR_EXCLUSION_DEFECTS for d in defects),

@@ -71,7 +71,8 @@ async def backfill_target(
 
             # Routing + UPSERT identico al Cecchino (senza immagini).
             result = await persist_opportunities(
-                scraper, category, target["id"], listings, download_images=False
+                scraper, category, target["id"], listings, download_images=False,
+                query=query, strict_filters=filters,
             )
             totals["scraped"] += len(listings)
             totals["new"] += result["new"]

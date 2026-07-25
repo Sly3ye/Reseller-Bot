@@ -4,19 +4,35 @@ Routing table-per-type: le opportunità vivono in ``live_opportunities_auto``
 (categoria 'automobile') o ``live_opportunities_tech`` (smartphone/tech), sono
 chiavate su ``target_id`` (→ ``target_models.query`` = nome modello) e i cali di
 prezzo sono storicizzati in ``price_history`` (listing_id = id opportunità).
+
+Oltre al feed grezzo, questo modulo produce l'intelligence azionabile:
+Deal Score + assistente trattativa (scoring.py), valutazione km-aware per le
+auto (regressione prezzo~km per target), storico venditore, time-to-sale per
+modello (dai ``venduto_rimosso`` del Garbage Collector) e prezzi di
+rivendita suggeriti dalla distribuzione dei prezzi attivi.
 """
 
 from __future__ import annotations
 
+import logging
 import re
+import statistics
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
-from supabase import Client
+from backend.core.database import Client
 
-from backend.core.database import get_supabase_client
+from backend.core.database import get_db
+from backend.services.scoring import evaluate_opportunity
+from backend.services.variants import is_healthy
+
+logger = logging.getLogger(__name__)
 
 _LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
+
+_ACTIVE_STATUSES = ("nuovo", "visto")
+_SOLD_STATUSES = ("venduto_rimosso", "scaduto")
 
 # I target_model salvano la categoria come 'automobile' / 'smartphone'; il
 # frontend può passare anche l'alias 'auto'.
@@ -135,6 +151,89 @@ def _latest_price_history(
     return latest
 
 
+def _parse_ts(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _seller_active_counts(
+    db: Client, table: str, rows: list[dict[str, Any]]
+) -> dict[str, int]:
+    """seller_id → n. annunci ATTIVI in `table` (storico venditore, A3).
+
+    Un "privato" con 6 annunci attivi si tratta come un commerciante.
+    """
+    seller_ids = list({r.get("seller_id") for r in rows if r.get("seller_id")})
+    if not seller_ids:
+        return {}
+    try:
+        found = (
+            db.table(table)
+            .select("seller_id")
+            .in_("seller_id", seller_ids)
+            .in_("status", list(_ACTIVE_STATUSES))
+            .execute()
+        )
+    except Exception:
+        return {}
+    counts: dict[str, int] = {}
+    for row in found.data or []:
+        sid = row.get("seller_id")
+        if sid:
+            counts[sid] = counts.get(sid, 0) + 1
+    return counts
+
+
+_KM_MODEL_MIN_SAMPLES = 8
+
+
+def _km_price_models(
+    db: Client, table: str, target_ids: list[str]
+) -> dict[str, tuple[float, float, int]]:
+    """Regressione lineare prezzo~km per target (A1, solo auto).
+
+    target_id → (slope, intercept, n). Il modello è accettato solo con ≥ 8
+    campioni e pendenza negativa (il prezzo DEVE scendere coi km: una
+    pendenza positiva indica dati sporchi, meglio nessuna stima).
+    """
+    models: dict[str, tuple[float, float, int]] = {}
+    for target_id in target_ids:
+        try:
+            rows = (
+                db.table(table)
+                .select("km, asking_price")
+                .eq("target_id", target_id)
+                .in_("status", list(_ACTIVE_STATUSES))
+                .not_.is_("km", "null")
+                .limit(500)
+                .execute()
+            ).data or []
+        except Exception:
+            continue
+        points = [
+            (float(r["km"]), float(r["asking_price"]))
+            for r in rows
+            if r.get("km") and r.get("asking_price")
+            and float(r["asking_price"]) > 0
+        ]
+        if len(points) < _KM_MODEL_MIN_SAMPLES:
+            continue
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        try:
+            slope, intercept = statistics.linear_regression(xs, ys)
+        except statistics.StatisticsError:
+            continue
+        if slope >= 0:
+            continue
+        models[target_id] = (slope, intercept, len(points))
+    return models
+
+
 def _shape_opportunity(
     row: dict[str, Any],
     model: str | None,
@@ -163,6 +262,11 @@ def _shape_opportunity(
     elif original is not None and asking is not None and original > asking:
         drop = {"oldPrice": original, "newPrice": asking, "changedAt": None}
 
+    found = _parse_ts(row.get("found_at"))
+    days_online = (
+        max(0, (datetime.now(timezone.utc) - found).days) if found else None
+    )
+
     return {
         "id": row["id"],
         "title": row.get("title") or _title_from_url(row.get("listing_url")) or model,
@@ -176,10 +280,78 @@ def _shape_opportunity(
         "description": row.get("description"),
         "images": row.get("image_urls") or [],
         "foundAt": row.get("found_at"),
+        "daysOnline": days_online,
         "source": "Subito",
         "status": row.get("status"),
         "url": row.get("listing_url"),
+        # Segnale NLP + venditore (per score/trattativa e UI).
+        "sellerType": row.get("seller_type"),
+        "defects": row.get("defects_noted") or [],
+        "urgencyFlags": row.get("urgency_flags") or [],
+        "features": row.get("features") or [],
+        # Verticale-specifici (None dove non pertinenti).
+        "year": row.get("year"),
+        "km": row.get("km"),
+        "transmission": row.get("transmission"),
+        "fuel": row.get("fuel"),
+        "storageGb": row.get("storage_gb"),
+        "batteryPct": row.get("battery_pct"),
+        # Variante canonica (scrematura) + fascia di condizione.
+        "variantKey": row.get("variant_key"),
+        "conditionTier": row.get("condition_tier"),
     }
+
+
+def _iqr_clean(values: list[float]) -> list[float]:
+    """Rimuove gli outlier con la regola 1.5*IQR (serve >= 4 campioni)."""
+    vals = sorted(v for v in values if v and v > 0)
+    if len(vals) < 4:
+        return vals
+    q1, _, q3 = statistics.quantiles(vals, n=4)
+    iqr = q3 - q1
+    if iqr <= 0:
+        return vals
+    low, high = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+    return [v for v in vals if low <= v <= high]
+
+
+def _variant_market_avgs(db: Client, table: str) -> dict[str, float]:
+    """Media di mercato per VARIANTE canonica — la scrematura pulita.
+
+    Calcolata dai listing ATTIVI e SANI (esclude rotti/incidentati), raggruppati
+    per ``variant_key`` (modello+memoria tech / modello+generazione auto) e
+    ripuliti con IQR. Così un iPhone 13 Pro non inquina la media del 13 base.
+    """
+    try:
+        rows = (
+            db.table(table)
+            .select("variant_key, asking_price, condition_tier")
+            .in_("status", list(_ACTIVE_STATUSES))
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return {}
+
+    buckets: dict[str, list[float]] = {}
+    for row in rows:
+        vk = row.get("variant_key")
+        price = _to_float(row.get("asking_price"))
+        if not vk or vk == "auto" or price is None or price <= 0:
+            # "auto" = catch-all di righe storiche senza target: media mista,
+            # inutile → si ripiega sulla media del target.
+            continue
+        if not is_healthy(row.get("condition_tier") or "buono"):
+            continue
+        buckets.setdefault(vk, []).append(price)
+
+    avgs: dict[str, float] = {}
+    for vk, prices in buckets.items():
+        cleaned = _iqr_clean(prices)
+        if len(cleaned) >= 3:
+            avgs[vk] = round(statistics.fmean(cleaned), 2)
+    return avgs
 
 
 def list_opportunities(
@@ -192,7 +364,7 @@ def list_opportunities(
     Instrada sulla tabella per-tipo, risolve il nome modello via target_id,
     arricchisce con la media di mercato (margini) e i cali di prezzo storici.
     """
-    db = client or get_supabase_client()
+    db = client or get_db()
     table = _opportunities_table(category)
     target_cat = _target_category(category)
 
@@ -208,19 +380,157 @@ def list_opportunities(
 
     targets = _targets_for_category(db, target_cat)  # target_id → model name
     avg_by_target, avg_by_model = _market_avgs(db, target_cat)
+    variant_avgs = _variant_market_avgs(db, table)  # scrematura per variante
     price_history = _latest_price_history(db, [row["id"] for row in rows])
+    seller_counts = _seller_active_counts(db, table, rows)
+
+    # Valutazione km-aware (solo auto): un modello di regressione per target.
+    km_models: dict[str, tuple[float, float, int]] = {}
+    if target_cat == "automobile":
+        auto_targets = list(
+            {row["target_id"] for row in rows if row.get("target_id") and row.get("km")}
+        )
+        km_models = _km_price_models(db, table, auto_targets)
 
     result = []
     for row in rows:
         target_id = row.get("target_id")
         model = targets.get(target_id)
-        # Media del target esatto (isolamento per generazione); fallback modello.
-        market_avg = avg_by_target.get(target_id)
+        # Media per VARIANTE canonica (scrematura pulita) come primaria; fallback
+        # al target (isolamento per generazione) e poi al modello.
+        variant_key = row.get("variant_key")
+        market_avg = variant_avgs.get(variant_key) if variant_key else None
+        if market_avg is None:
+            market_avg = avg_by_target.get(target_id)
         if market_avg is None and model:
             market_avg = avg_by_model.get(model)
-        result.append(
-            _shape_opportunity(row, model, market_avg, price_history.get(row["id"]))
+        shaped = _shape_opportunity(
+            row, model, market_avg, price_history.get(row["id"])
         )
+
+        # Storico venditore (A3): quanti annunci attivi ha questo venditore.
+        seller_id = row.get("seller_id")
+        shaped["sellerActiveCount"] = (
+            seller_counts.get(seller_id) if seller_id else None
+        )
+
+        # Valutazione km-aware (A1): prezzo atteso PER QUESTI km e margine vero.
+        shaped["expectedPrice"] = None
+        shaped["marginVsExpected"] = None
+        km_model = km_models.get(target_id) if target_id else None
+        if km_model and row.get("km") and shaped["askingPrice"]:
+            slope, intercept, _n = km_model
+            expected = intercept + slope * float(row["km"])
+            if expected > 0:
+                shaped["expectedPrice"] = round(expected, 2)
+                shaped["marginVsExpected"] = round(
+                    expected - shaped["askingPrice"], 2
+                )
+
+        # Deal Score + assistente trattativa (C2/C4/T3/A2).
+        shaped.update(
+            evaluate_opportunity(
+                category=target_cat,
+                title=shaped["title"],
+                asking=shaped["askingPrice"],
+                market_avg=market_avg,
+                margin_pct=shaped["marginPct"],
+                found_at=row.get("found_at"),
+                seller_type=row.get("seller_type"),
+                defects=shaped["defects"],
+                urgency=shaped["urgencyFlags"],
+                features=shaped["features"],
+                battery_pct=shaped["batteryPct"],
+                has_price_drop=shaped["priceDrop"] is not None,
+            )
+        )
+        result.append(shaped)
+    return result
+
+
+def _time_to_sale(
+    db: Client, table: str, targets: dict[str, str]
+) -> tuple[dict[str, dict[str, Any]], float | None]:
+    """Time-to-sale (C3): giorni medi found_at→rimozione, per modello.
+
+    Il Garbage Collector marca 'venduto_rimosso' aggiornando updated_at: la
+    differenza con found_at misura in quanti giorni l'annuncio è sparito dal
+    mercato → liquidità reale del modello. Ritorna (per_modello, mediana
+    complessiva del verticale).
+    """
+    try:
+        rows = (
+            db.table(table)
+            .select("target_id, found_at, updated_at")
+            .in_("status", list(_SOLD_STATUSES))
+            .order("updated_at", desc=True)
+            .limit(2000)
+            .execute()
+        ).data or []
+    except Exception:
+        return {}, None
+
+    samples_by_model: dict[str, list[float]] = {}
+    all_samples: list[float] = []
+    for row in rows:
+        found = _parse_ts(row.get("found_at"))
+        removed = _parse_ts(row.get("updated_at"))
+        if not found or not removed:
+            continue
+        days = (removed - found).total_seconds() / 86400
+        if not (0 <= days <= 365):
+            continue
+        model = targets.get(row.get("target_id"))
+        if model:
+            samples_by_model.setdefault(model, []).append(days)
+        all_samples.append(days)
+
+    per_model = {
+        model: {
+            "avgDaysToSell": round(statistics.fmean(days), 1),
+            "sampleSold": len(days),
+        }
+        for model, days in samples_by_model.items()
+    }
+    overall = round(statistics.median(all_samples), 1) if all_samples else None
+    return per_model, overall
+
+
+def _resale_suggestions(
+    db: Client, table: str, targets: dict[str, str]
+) -> dict[str, dict[str, float]]:
+    """Prezzo di rivendita suggerito (C7) dalla distribuzione dei prezzi attivi.
+
+    Per modello: 'fastSalePrice' = 25° percentile (ti posizioni tra i più
+    economici → vendita rapida), 'maxSalePrice' = mediana (prezzo pieno).
+    """
+    try:
+        rows = (
+            db.table(table)
+            .select("target_id, asking_price")
+            .in_("status", list(_ACTIVE_STATUSES))
+            .limit(2000)
+            .execute()
+        ).data or []
+    except Exception:
+        return {}
+
+    prices_by_model: dict[str, list[float]] = {}
+    for row in rows:
+        model = targets.get(row.get("target_id"))
+        price = _to_float(row.get("asking_price"))
+        if model and price and price > 0:
+            prices_by_model.setdefault(model, []).append(price)
+
+    result: dict[str, dict[str, float]] = {}
+    for model, prices in prices_by_model.items():
+        if len(prices) < 4:
+            continue
+        q1, q2, _q3 = statistics.quantiles(sorted(prices), n=4)
+        result[model] = {
+            "fastSalePrice": round(q1, 0),
+            "maxSalePrice": round(q2, 0),
+        }
     return result
 
 
@@ -229,7 +539,7 @@ def get_market_intelligence(
     client: Client | None = None,
 ) -> dict[str, Any]:
     """KPIs, price trend series and per-model stats for a vertical."""
-    db = client or get_supabase_client()
+    db = client or get_db()
     target_cat = _target_category(category)
     products = _products_for_category(db, target_cat)
 
@@ -237,6 +547,7 @@ def get_market_intelligence(
         "activeListings": 0,
         "avgMarketPrice": None,
         "outliersFiltered": None,
+        "avgDaysToSell": None,
         "trend": [],
         "trendProduct": None,
         "models": [],
@@ -251,8 +562,17 @@ def get_market_intelligence(
     except Exception:
         active_listings = 0
 
+    # Liquidità (time-to-sale) e prezzi di rivendita suggeriti, per modello.
+    targets = _targets_for_category(db, target_cat)
+    tts_by_model, overall_tts = _time_to_sale(db, table, targets)
+    resale_by_model = _resale_suggestions(db, table, targets)
+
     if not products:
-        return {**empty, "activeListings": active_listings}
+        return {
+            **empty,
+            "activeListings": active_listings,
+            "avgDaysToSell": overall_tts,
+        }
 
     product_ids = list(products)
 
@@ -283,12 +603,27 @@ def get_market_intelligence(
             prev_avg = _to_float(rows_sorted[0].get("avg_price"))
             if prev_avg:
                 change_pct = round((latest_avg - prev_avg) / prev_avg * 100, 1)
+        name = products.get(product_id, "—")
+        tts = tts_by_model.get(name) or {}
+        resale = resale_by_model.get(name) or {}
         models.append(
             {
-                "name": products.get(product_id, "—"),
+                "name": name,
                 "avg": latest_avg,
                 "sample": latest.get("volume"),
                 "changePct": change_pct,
+                # Liquidità (C3): in quanti giorni ruota questo modello.
+                "avgDaysToSell": tts.get("avgDaysToSell"),
+                "sampleSold": tts.get("sampleSold"),
+                # Prezzi di rivendita suggeriti (C7).
+                "fastSalePrice": resale.get("fastSalePrice"),
+                "maxSalePrice": resale.get("maxSalePrice"),
+                # Serie storica completa (C6): curva di deprezzamento.
+                "series": [
+                    {"date": r["trend_date"], "price": _to_float(r.get("avg_price"))}
+                    for r in rows_sorted
+                    if _to_float(r.get("avg_price")) is not None
+                ],
             }
         )
 
@@ -314,6 +649,7 @@ def get_market_intelligence(
         "activeListings": active_listings,
         "avgMarketPrice": avg_market_price,
         "outliersFiltered": None,
+        "avgDaysToSell": overall_tts,
         "trend": trend_series,
         "trendProduct": trend_product,
         "models": models,

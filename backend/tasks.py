@@ -8,10 +8,12 @@ from dataclasses import asdict
 from datetime import date, datetime, timezone
 from typing import Any
 
-from supabase import Client
+from backend.core.database import Client
 
-from backend.core.database import get_supabase_client
+from backend.core.database import get_db
 from backend.scrapers import ScrapedListing, SubitoScraper
+from backend.services.notifications import notify_round
+from backend.services.variants import resolve_variant
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,7 @@ def get_or_create_product(
     specs: dict[str, Any] | None = None,
     client: Client | None = None,
 ) -> tuple[dict[str, Any], bool]:
-    db = client or get_supabase_client()
+    db = client or get_db()
 
     existing = (
         db.table("products")
@@ -55,7 +57,7 @@ def get_or_create_product(
 
     created = db.table("products").insert(payload).execute()
     if not created.data:
-        raise RuntimeError("Supabase did not return the created product.")
+        raise RuntimeError("Il DB non ha restituito il prodotto creato.")
 
     return created.data[0], True
 
@@ -105,10 +107,20 @@ def get_existing_opportunities(
 
 
 def _opportunity_payload(
-    category: str, target_id: str | None, listing: ScrapedListing, now: str
+    category: str,
+    target_id: str | None,
+    listing: ScrapedListing,
+    now: str,
+    query: str | None = None,
+    strict_filters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     # id e found_at/updated_at non hanno DEFAULT nel DDL → li forniamo noi.
     meta = listing.metadata or {}
+    # Variante canonica (scrematura BI): bucket pulito per (modello,memoria) tech
+    # / (modello,generazione) auto + fascia di condizione.
+    variant = resolve_variant(
+        category, listing.title, meta, query=query, strict_filters=strict_filters
+    )
     payload: dict[str, Any] = {
         "id": str(uuid.uuid4()),
         "target_id": target_id,
@@ -122,11 +134,13 @@ def _opportunity_payload(
         "status": "nuovo",
         "found_at": now,
         "updated_at": now,
-        # Comuni a entrambe le categorie (NLP + venditore + pHash).
+        # Comuni a entrambe le categorie (NLP + venditore + pHash + variante).
         "image_hash": meta.get("image_hash"),
         "features": meta.get("features"),
         "seller_id": meta.get("seller_id"),
         "seller_type": meta.get("seller_type"),
+        "variant_key": variant["variant_key"],
+        "condition_tier": variant["condition_tier"],
     }
     if category == "automobile":
         payload.update(
@@ -135,6 +149,16 @@ def _opportunity_payload(
                 "km": meta.get("km"),
                 "transmission": meta.get("transmission"),
                 "fuel": meta.get("fuel"),
+                "defects_noted": meta.get("defects_noted"),
+                "urgency_flags": meta.get("urgency_flags"),
+            }
+        )
+    else:
+        # Variante tech (migrazioni 12/15): segmentazione + segnale NLP.
+        payload.update(
+            {
+                "storage_gb": meta.get("storage_gb"),
+                "battery_pct": meta.get("battery_pct"),
                 "defects_noted": meta.get("defects_noted"),
                 "urgency_flags": meta.get("urgency_flags"),
             }
@@ -153,11 +177,13 @@ def insert_opportunities(
     category: str,
     target_id: str | None,
     listings: list[ScrapedListing],
+    query: str | None = None,
+    strict_filters: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Inserisce opportunità nuove (asking_price è NOT NULL → serve il prezzo)."""
     now = datetime.now(timezone.utc).isoformat()
     payloads = [
-        _opportunity_payload(category, target_id, listing, now)
+        _opportunity_payload(category, target_id, listing, now, query, strict_filters)
         for listing in listings
         if listing.price_amount is not None
     ]
@@ -206,6 +232,7 @@ def apply_price_updates(
     updated = 0
     price_drops = 0
     history_rows: list[dict[str, Any]] = []
+    drop_events: list[dict[str, Any]] = []
 
     for listing in listings:
         row = existing.get(listing.url)
@@ -235,6 +262,16 @@ def apply_price_updates(
                     "new_price": new_price,
                 }
             )
+            # Evento dettagliato per le notifiche Telegram (calo di prezzo).
+            drop_events.append(
+                {
+                    "listing_id": listing_id,
+                    "title": listing.title,
+                    "listing_url": listing.url,
+                    "old_price": float(old_price),
+                    "new_price": float(new_price),
+                }
+            )
             price_drops += 1
 
         client.table(table).update(patch).eq("id", listing_id).execute()
@@ -258,6 +295,7 @@ def apply_price_updates(
         "updated": updated,
         "price_drops": price_drops,
         "history_stored": stored_history,
+        "drop_events": drop_events,
     }
 
 
@@ -374,6 +412,8 @@ async def persist_opportunities(
     target_id: str | None,
     listings: list[ScrapedListing],
     download_images: bool = True,
+    query: str | None = None,
+    strict_filters: dict[str, Any] | None = None,
 ) -> dict[str, int]:
     """Routing + UPSERT condiviso da Sniper e Backfill.
 
@@ -382,10 +422,17 @@ async def persist_opportunities(
     aggiorna updated_at e gestisce i cali di prezzo (price_history).
     """
     if not listings:
-        return {"new": 0, "updated": 0, "price_drops": 0, "republished": 0}
+        return {
+            "new": 0,
+            "updated": 0,
+            "price_drops": 0,
+            "republished": 0,
+            "inserted_rows": [],
+            "drop_events": [],
+        }
 
     table = opportunities_table(category)
-    db = get_supabase_client()
+    db = get_db()
     existing = await asyncio.to_thread(
         get_existing_opportunities, db, table, [listing.url for listing in listings]
     )
@@ -432,7 +479,8 @@ async def persist_opportunities(
         await asyncio.to_thread(apply_shadow_dealer, db, table, truly_new)
 
     inserted = await asyncio.to_thread(
-        insert_opportunities, db, table, category, target_id, truly_new
+        insert_opportunities,
+        db, table, category, target_id, truly_new, query, strict_filters,
     )
     republished_count = await asyncio.to_thread(
         apply_republish_updates, db, table, republished
@@ -446,6 +494,8 @@ async def persist_opportunities(
         "updated": updates["updated"],
         "price_drops": updates["price_drops"],
         "republished": republished_count,
+        "inserted_rows": inserted,
+        "drop_events": updates.get("drop_events", []),
     }
 
 
@@ -478,8 +528,27 @@ async def scrape_subito_and_save(
     )
 
     result = await persist_opportunities(
-        scraper, category, target_id, listings, download_images=True
+        scraper, category, target_id, listings, download_images=True,
+        query=query, strict_filters=strict_filters,
     )
+
+    # Telegram: nuove opportunità sopra soglia + cali di prezzo rilevanti.
+    # Serve la media di mercato del target per calcolare il margine.
+    alerts = {"sent": 0, "skipped": 0}
+    if target_id is not None:
+        db = get_db()
+        market_avg = await asyncio.to_thread(get_target_market_avg, db, target_id)
+        try:
+            alerts = await notify_round(
+                db,
+                category,
+                result.get("inserted_rows", []),
+                result.get("drop_events", []),
+                market_avg,
+            )
+        except Exception:
+            # Le notifiche sono supplementari: mai far fallire il giro sniper.
+            logger.exception("Notifiche Telegram fallite per target %s", target_id)
 
     return {
         "query": query,
@@ -492,8 +561,31 @@ async def scrape_subito_and_save(
         "updated_count": result["updated"],
         "price_drops": result["price_drops"],
         "republished": result.get("republished", 0),
+        "alerts_sent": alerts["sent"],
         "saved_count": result["new"],
     }
+
+
+def get_target_market_avg(client: Client, target_id: str) -> float | None:
+    """Ultima media di mercato (market_trends) per il target, se esiste."""
+    try:
+        rows = (
+            client.table("market_trends")
+            .select("avg_price, trend_date")
+            .eq("target_id", target_id)
+            .order("trend_date", desc=True)
+            .limit(1)
+            .execute()
+        )
+    except Exception:
+        return None
+    if not rows.data:
+        return None
+    avg = rows.data[0].get("avg_price")
+    try:
+        return float(avg) if avg is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def filter_price_outliers(prices: list[float]) -> list[float]:
@@ -540,7 +632,7 @@ def save_market_trend(
     idempotente per (product_id, giorno), così le medie di mercato vengono
     comunque generate e la dashboard mostra i margini.
     """
-    db = client or get_supabase_client()
+    db = client or get_db()
     today = date.today().isoformat()
     base = {"product_id": product_id, "trend_date": today, **stats}
 
@@ -689,7 +781,7 @@ def get_active_targets(
 
     Pass ``category`` to scope to one vertical (e.g. the automobile sniper).
     """
-    db = client or get_supabase_client()
+    db = client or get_db()
     query = (
         db.table("target_models")
         .select("id, category, query, strict_filters")
@@ -703,7 +795,7 @@ def get_active_targets(
 def update_target_last_scanned(
     target_id: str, client: Client | None = None
 ) -> None:
-    db = client or get_supabase_client()
+    db = client or get_db()
     db.table("target_models").update(
         {"last_scanned": datetime.now(timezone.utc).isoformat()}
     ).eq("id", target_id).execute()

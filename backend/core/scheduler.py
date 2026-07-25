@@ -4,6 +4,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from backend.services.garbage_collector import run_garbage_collector
 from backend.tasks import run_nightly_batch_all_products, run_sniper_all_products
 
 logger = logging.getLogger(__name__)
@@ -16,13 +17,16 @@ def create_scheduler() -> AsyncIOScheduler:
     """Build the background scheduler with the scraping engines.
 
     - Motore Notturno: recomputes market trends daily at 03:00.
-    - Cecchino Tech: smartphone sniper every 15 minutes.
+    - Garbage Collector: verifica annunci rimossi ogni notte alle 04:30
+      (alimenta il time-to-sale oltre a pulire il feed).
+    - Cecchino Tech: smartphone sniper every 5 minutes — su Subito il primo
+      che scrive vince, e una pagina API tech costa pochissimo proxy.
     - Cecchino Auto: dedicated automobile sniper every 15 minutes.
 
-    I due Cecchini sono scoping-disgiunti per categoria (tech vs automobile), così
-    non si scansionano gli stessi target due volte. La cadenza a 15' evita
-    l'accavallamento ("maximum number of running instances reached"): con molti
-    target auto + download immagini un giro può superare i 5 minuti.
+    I due Cecchini sono scoping-disgiunti per categoria (tech vs automobile),
+    così non si scansionano gli stessi target due volte. La cadenza auto resta
+    a 15' per evitare l'accavallamento: con molti target auto + download
+    immagini un giro può superare i 5 minuti.
 
     All jobs are async httpx-based, so they never block the FastAPI event loop.
     """
@@ -44,11 +48,19 @@ def create_scheduler() -> AsyncIOScheduler:
     )
 
     scheduler.add_job(
+        run_garbage_collector,
+        trigger=CronTrigger(hour=4, minute=30),
+        id="garbage_collector",
+        name="Garbage Collector (annunci rimossi → time-to-sale)",
+        replace_existing=True,
+    )
+
+    scheduler.add_job(
         run_sniper_all_products,
-        trigger=IntervalTrigger(minutes=15),
+        trigger=IntervalTrigger(minutes=5),
         kwargs={"category": "smartphone"},
         id="sniper_live",
-        name="Cecchino Tech (smartphone, 15 min)",
+        name="Cecchino Tech (smartphone, 5 min)",
         replace_existing=True,
     )
 

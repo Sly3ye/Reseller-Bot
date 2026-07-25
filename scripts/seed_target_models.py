@@ -1,8 +1,8 @@
-"""Seed idempotente dei target pilota nella tabella target_models (via API Supabase).
+"""Seed idempotente dei target pilota nella tabella target_models.
 
-Prerequisito: applica prima database/05_target_models.sql (crea la tabella; la
-migrazione stessa fa già il seed). Questo script è utile per re-seedare o
-aggiornare i target a comando.
+Prerequisito: lo schema deve essere applicato (database/selfhosted/init.sql,
+automatico con docker compose; init.sql fa già il seed dei pilota). Questo
+script serve per re-seedare o aggiornare i target a comando.
 
 Esegui dalla root:  python scripts/seed_target_models.py
 """
@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend.core.database import get_supabase_client  # noqa: E402
+from backend.core.database import get_db  # noqa: E402
 
 TARGETS = [
     {
@@ -36,7 +36,7 @@ TARGETS = [
 
 
 def main() -> None:
-    db = get_supabase_client()
+    db = get_db()
     try:
         result = (
             db.table("target_models")
@@ -47,8 +47,8 @@ def main() -> None:
         if "target_models" in str(exc):
             print(
                 "ERRORE: la tabella 'target_models' non esiste ancora.\n"
-                "Applica prima database/05_target_models.sql nell'SQL Editor "
-                "di Supabase, poi rilancia questo script."
+                "Applica lo schema (database/selfhosted/init.sql) — con Docker è "
+                "automatico: 'docker compose up' — poi rilancia questo script."
             )
             raise SystemExit(1)
         raise

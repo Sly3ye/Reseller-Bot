@@ -5,9 +5,11 @@ search/items`), che restituisce l'intero annuncio in JSON in frazioni di secondo
 
 Split routing (per contenere il budget del proxy residenziale a consumo):
 - api_client  → chiamate di ricerca/paginazione verso hades, INSTRADATE dal
-  proxy residenziale rotante IPRoyal (con retry ed exponential backoff).
+  proxy residenziale rotante IPRoyal (con retry ed exponential backoff). Usa
+  curl_cffi con impronta TLS di un browser reale: hades è protetto da Akamai
+  Bot Manager, che blocca (403) i client dall'impronta "non-browser" come httpx.
 - cdn_client  → download concorrente delle immagini dalla CDN, a connessione
-  DIRETTA e gratuita (mai attraverso il proxy).
+  DIRETTA e gratuita (httpx, mai attraverso il proxy).
 """
 
 import asyncio
@@ -18,6 +20,8 @@ from typing import Any
 
 import httpx
 import imagehash
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.exceptions import CurlError
 from PIL import Image
 from tenacity import (
     retry,
@@ -78,14 +82,23 @@ class SubitoScraper(BaseScraper):
 
     # --------------------------------------------------------------- clients
 
-    def _make_api_client(self) -> httpx.AsyncClient:
-        """Client per l'API hades, instradato dal proxy residenziale (se configurato)."""
-        return httpx.AsyncClient(
+    def _make_api_client(self) -> AsyncSession:
+        """Sessione per l'API hades con impronta TLS di un browser reale (curl_cffi).
+
+        Subito è dietro Akamai Bot Manager, che blocca con 403 i client
+        dall'impronta TLS "non-browser" come httpx, a prescindere da IP e header.
+        curl_cffi imita il fingerprint di Safari/Firefox (configurabile via
+        SCRAPER_IMPERSONATE) e passa. Instradata dal proxy residenziale se
+        configurato; le immagini restano su httpx diretto (vedi _make_cdn_client).
+        """
+        proxies = None
+        if settings.proxy_url:
+            proxies = {"http": settings.proxy_url, "https": settings.proxy_url}
+        return AsyncSession(
+            impersonate=settings.scraper_impersonate,
+            proxies=proxies,
             timeout=self.timeout_s,
-            headers={"User-Agent": self.USER_AGENT, "Accept": "application/json"},
-            follow_redirects=True,
-            trust_env=False,          # ignora proxy d'ambiente: lo impostiamo noi
-            proxy=settings.proxy_url,  # None → connessione diretta
+            headers={"Accept": "application/json"},
         )
 
     def _make_cdn_client(self) -> httpx.AsyncClient:
@@ -156,6 +169,8 @@ class SubitoScraper(BaseScraper):
                     listing = self._parse_ad(ad)
                     if listing is None or listing.url in seen_urls:
                         continue
+                    if filters and not self._passes_listing_filters(listing, filters):
+                        continue
                     if match_query and not self._matches_query(listing.title, match_query):
                         continue
                     if not self._within_price(listing.price_amount, min_price, max_price):
@@ -174,7 +189,7 @@ class SubitoScraper(BaseScraper):
 
     async def _fetch_page(
         self,
-        client: httpx.AsyncClient,
+        client: AsyncSession,
         query: str,
         limit: int,
         start: int,
@@ -184,6 +199,8 @@ class SubitoScraper(BaseScraper):
         params: dict[str, str] = {
             "q": query,
             "t": "s",              # t=s → vendita
+            "sort": "datedesc",    # più recenti prima: ogni giro dello sniper
+                                   # vede gli ultimi pubblicati, non i "rilevanti"
             "lim": str(limit),
             "start": str(start),
         }
@@ -198,18 +215,17 @@ class SubitoScraper(BaseScraper):
     @retry(
         stop=stop_after_attempt(MAX_RETRIES),
         wait=wait_exponential(multiplier=0.5, max=8),
-        retry=retry_if_exception_type(
-            (httpx.TransportError, httpx.TimeoutException, RetryableHTTPError)
-        ),
+        retry=retry_if_exception_type((CurlError, RetryableHTTPError)),
         reraise=True,
     )
     async def _get_with_retry(
         self,
-        client: httpx.AsyncClient,
+        client: AsyncSession,
         url: str,
         params: dict[str, str],
-    ) -> httpx.Response:
-        """GET con retry (tenacity): fino a 5 tentativi su 403/429/500 o errori di rete.
+    ):
+        """GET con retry (tenacity): fino a 5 tentativi su 403/429/500 o errori di
+        rete/proxy (CurlError copre timeout, connessione, ProxyError).
 
         Un ban temporaneo / rate limit del nodo residenziale IPRoyal viene
         ritentato con exponential backoff (cambiando IP a ogni giro).
@@ -217,7 +233,9 @@ class SubitoScraper(BaseScraper):
         response = await client.get(url, params=params)
         if response.status_code in RETRYABLE_STATUS:
             raise RetryableHTTPError(f"HTTP {response.status_code} da hades")
-        response.raise_for_status()  # altri 4xx/5xx: errore reale, non si ritenta
+        if response.status_code >= 400:
+            # altri 4xx/5xx: errore reale, non si ritenta (fuori dal retry set)
+            raise RuntimeError(f"HTTP {response.status_code} da hades (non ritentabile)")
         return response
 
     # ----------------------------------------------------------------- parse
@@ -262,6 +280,9 @@ class SubitoScraper(BaseScraper):
                 "km": self._feature_int(features, "/mileage_scalar") or nlp["km"],
                 "transmission": self._feature(features, "/gearbox"),
                 "fuel": self._feature(features, "/fuel"),
+                # Variante tech (None per le auto): segmentazione di mercato.
+                "storage_gb": nlp["storage_gb"],
+                "battery_pct": nlp["battery_pct"],
                 # Segnale NLP.
                 "features": nlp["features"],
                 "defects_noted": nlp["defects_noted"],
@@ -316,6 +337,30 @@ class SubitoScraper(BaseScraper):
             if transmission == "automatic" and is_manual:
                 return False
             if transmission == "manual" and not is_manual:
+                return False
+
+        return True
+
+    def _passes_listing_filters(
+        self, listing: ScrapedListing, filters: dict[str, Any]
+    ) -> bool:
+        """Strict filters basati sull'NLP (tech): variante memoria e batteria.
+
+        ``storage_gb``: l'annuncio deve dichiarare ESATTAMENTE quel taglio —
+        chi non lo dichiara viene scartato, così la media del target resta
+        pura per variante (un 13 128GB non si mescola col 256GB).
+        ``min_battery``: applicato solo quando la batteria è dichiarata.
+        """
+        meta = listing.metadata or {}
+
+        storage = filters.get("storage_gb")
+        if storage is not None and meta.get("storage_gb") != int(storage):
+            return False
+
+        min_battery = filters.get("min_battery")
+        if min_battery is not None:
+            battery = meta.get("battery_pct")
+            if battery is not None and battery < int(min_battery):
                 return False
 
         return True
