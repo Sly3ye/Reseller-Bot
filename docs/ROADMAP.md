@@ -45,12 +45,21 @@ distribuzione dei prezzi **listati (attivi)**, che è un segnale distorto.
 rimozione. Sostituire/affiancare `_resale_suggestions` (basato sui listati) con
 un calcolo sui venduti.
 
-### 2. ⚪ Popup immagine richiudibile (X / ESC)
+### 2. ✅ Popup immagine richiudibile (X / ESC) — FATTO
+Lightbox overlay con X, ESC, click sfondo e frecce ←/→.
+
 Nel frontend, cliccando un'immagine non deve aprirsi una nuova finestra/scheda,
 ma un **modal (lightbox)** sopra la dashboard, chiudibile con la **X** o con
 **ESC** (e click sullo sfondo). Riguarda la galleria nella card espansa del feed.
 
-### 3. 🔴 AI locale per l'analisi delle descrizioni
+### 3. ✅ AI locale per l'analisi delle descrizioni — FATTO (v1)
+Ollama (llama3) analizza titolo+descrizione → {motivo_prezzo, categoria_motivo,
+riparabile, nota_riparazione, rischio_truffa, sintesi}. Integrato: un prezzo
+"sospetto" con motivo legittimo (AI) → declassato ad affare; rischio truffa alto
+(AI) → forzato sospetto. Enrichment schedulato (10') + `scripts/enrich_ai.py`.
+Prossimi affinamenti: usare l'AI anche per estrarre storage/colore mancanti,
+e tarare il prompt sui casi reali.
+
 **Obiettivo:** far leggere titolo+descrizione a un **LLM locale** (es. Ollama con
 un modello piccolo) per capire *semanticamente* ciò che le regex non colgono:
 - Il **motivo** di un prezzo basso → così un annuncio a buon prezzo con una

@@ -4,6 +4,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
+from backend.core.config import settings
+from backend.services.ai_analysis import enrich_missing
 from backend.services.garbage_collector import run_garbage_collector
 from backend.tasks import run_nightly_batch_all_products, run_sniper_all_products
 
@@ -72,5 +74,17 @@ def create_scheduler() -> AsyncIOScheduler:
         name="Cecchino Auto (automobile, 15 min)",
         replace_existing=True,
     )
+
+    # AI locale: consuma il backlog delle descrizioni un po' alla volta (solo se
+    # abilitata). Batch piccolo per non saturare l'LLM locale.
+    if settings.ai_enabled:
+        scheduler.add_job(
+            enrich_missing,
+            trigger=IntervalTrigger(minutes=10),
+            kwargs={"limit": 30, "category": "smartphone"},
+            id="ai_enrich",
+            name="AI enrich descrizioni (smartphone, 10 min)",
+            replace_existing=True,
+        )
 
     return scheduler

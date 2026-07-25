@@ -50,6 +50,9 @@ create index if not exists idx_tech_variant on public.live_opportunities_tech (v
 alter table public.live_opportunities_auto add column if not exists color text;
 alter table public.live_opportunities_tech add column if not exists color text;
 create index if not exists idx_tech_color on public.live_opportunities_tech (color);
+-- AI locale (Ollama): analisi semantica delle descrizioni.
+alter table public.live_opportunities_tech add column if not exists ai_analysis jsonb;
+alter table public.live_opportunities_auto add column if not exists ai_analysis jsonb;
 
 -- 2c. scrape_runs (Fase 3): salute dello scraper, un record per giro Sniper.
 create table if not exists public.scrape_runs (

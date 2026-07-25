@@ -73,6 +73,7 @@ export default function FlipRadar() {
   const [screen, setScreen] = useState<Screen>("sniper");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [flaggedIds, setFlaggedIds] = useState<Record<string, boolean>>({});
+  const [lightbox, setLightbox] = useState<{ images: string[]; index: number } | null>(null);
   const [search, setSearch] = useState("");
   const [marginFilter, setMarginFilter] = useState<MarginFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("score");
@@ -167,6 +168,28 @@ export default function FlipRadar() {
     }, 1000);
     return () => clearInterval(tick);
   }, [sniperInterval]);
+
+  // Lightbox: chiusura con ESC, navigazione con frecce.
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+      else if (e.key === "ArrowRight")
+        setLightbox((lb) =>
+          lb ? { ...lb, index: (lb.index + 1) % lb.images.length } : lb,
+        );
+      else if (e.key === "ArrowLeft")
+        setLightbox((lb) =>
+          lb ? { ...lb, index: (lb.index - 1 + lb.images.length) % lb.images.length } : lb,
+        );
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+
+  const openLightbox = useCallback((images: string[], index: number) => {
+    setLightbox({ images, index });
+  }, []);
 
   const reloadDeals = useCallback(() => {
     Promise.all([fetchDeals(), fetchDealsSummary()])
@@ -599,6 +622,7 @@ export default function FlipRadar() {
               }}
               onToggleFlag={(id) => setFlaggedIds((cur) => ({ ...cur, [id]: !cur[id] }))}
               onAddToPipeline={addToPipeline}
+              onImageClick={openLightbox}
             />
           )}
 
@@ -640,11 +664,136 @@ export default function FlipRadar() {
           )}
         </div>
       </div>
+
+      {lightbox && (
+        <Lightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onNav={(delta) =>
+            setLightbox((lb) =>
+              lb
+                ? { ...lb, index: (lb.index + delta + lb.images.length) % lb.images.length }
+                : lb,
+            )
+          }
+        />
+      )}
     </div>
   );
 }
 
 /* --------------------------------------------------------------- shared */
+
+/** Lightbox immagini: overlay a schermo, chiudibile con X, ESC o click sfondo. */
+function Lightbox(props: {
+  images: string[];
+  index: number;
+  onClose: () => void;
+  onNav: (delta: number) => void;
+}) {
+  const src = props.images[props.index];
+  return (
+    <div
+      onClick={props.onClose}
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 1000,
+        background: "oklch(0.08 0.008 250 / 0.9)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "40px",
+      }}
+    >
+      <button
+        onClick={props.onClose}
+        aria-label="Chiudi"
+        style={{
+          position: "absolute",
+          top: "18px",
+          right: "22px",
+          width: "40px",
+          height: "40px",
+          borderRadius: "50%",
+          border: "1px solid oklch(0.4 0.01 250)",
+          background: "oklch(0.18 0.008 250)",
+          color: "oklch(0.94 0.004 250)",
+          fontSize: "20px",
+          cursor: "pointer",
+        }}
+      >
+        ✕
+      </button>
+      {props.images.length > 1 && (
+        <>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onNav(-1);
+            }}
+            aria-label="Precedente"
+            style={{ ...LIGHTBOX_ARROW, left: "18px" }}
+          >
+            ‹
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onNav(1);
+            }}
+            aria-label="Successiva"
+            style={{ ...LIGHTBOX_ARROW, right: "18px" }}
+          >
+            ›
+          </button>
+        </>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt=""
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          maxWidth: "100%",
+          maxHeight: "100%",
+          objectFit: "contain",
+          borderRadius: "8px",
+          boxShadow: "0 8px 40px oklch(0 0 0 / 0.5)",
+        }}
+      />
+      {props.images.length > 1 && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: "20px",
+            fontFamily: MONO,
+            fontSize: "13px",
+            color: "oklch(0.7 0.01 250)",
+          }}
+        >
+          {props.index + 1} / {props.images.length}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const LIGHTBOX_ARROW: CSSProperties = {
+  position: "absolute",
+  top: "50%",
+  transform: "translateY(-50%)",
+  width: "44px",
+  height: "44px",
+  borderRadius: "50%",
+  border: "1px solid oklch(0.4 0.01 250)",
+  background: "oklch(0.18 0.008 250)",
+  color: "oklch(0.94 0.004 250)",
+  fontSize: "26px",
+  lineHeight: 1,
+  cursor: "pointer",
+};
 
 function ErrorBanner({ message }: { message: string }) {
   return (
@@ -700,6 +849,7 @@ function SniperScreen(props: {
   onToggleExpand: (id: string) => void;
   onToggleFlag: (id: string) => void;
   onAddToPipeline: (item: ApiOpportunity) => void;
+  onImageClick: (images: string[], index: number) => void;
 }) {
   const pageCount = Math.max(1, Math.ceil(props.total / props.pageSize));
   return (
@@ -927,6 +1077,7 @@ function SniperScreen(props: {
               onToggle={() => props.onToggleExpand(item.id)}
               onFlag={() => props.onToggleFlag(item.id)}
               onAddToPipeline={() => props.onAddToPipeline(item)}
+              onImageClick={props.onImageClick}
             />
           ))}
         </div>
@@ -1032,6 +1183,7 @@ function SniperRow(props: {
   onToggle: () => void;
   onFlag: () => void;
   onAddToPipeline: () => void;
+  onImageClick: (images: string[], index: number) => void;
 }) {
   const { item, expanded, flagged } = props;
   const tier = marginTier(item.marginPct);
@@ -1330,11 +1482,9 @@ function SniperRow(props: {
             {item.images.length > 0 ? (
               <div style={{ display: "flex", gap: "10px", overflowX: "auto", paddingBottom: "4px" }}>
                 {item.images.map((src, i) => (
-                  <a
+                  <div
                     key={item.id + "-" + i}
-                    href={src}
-                    target="_blank"
-                    rel="noreferrer"
+                    onClick={() => props.onImageClick(item.images, i)}
                     style={{
                       minWidth: "140px",
                       width: "140px",
@@ -1344,6 +1494,7 @@ function SniperRow(props: {
                       overflow: "hidden",
                       border: "1px solid oklch(0.32 0.01 250)",
                       display: "block",
+                      cursor: "zoom-in",
                     }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1352,7 +1503,7 @@ function SniperRow(props: {
                       alt={`foto ${i + 1}`}
                       style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                     />
-                  </a>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -1534,6 +1685,45 @@ function NegotiationAssistant(props: {
           </div>
         ))}
       </div>
+
+      {item.ai && (
+        <div
+          style={{
+            background: "oklch(0.16 0.008 250)",
+            border: "1px solid oklch(0.27 0.01 250)",
+            borderRadius: "8px",
+            padding: "10px 12px",
+            fontSize: "12.5px",
+            color: "oklch(0.82 0.008 250)",
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontSize: "11px", fontWeight: 700, color: "oklch(0.70 0.13 300)", marginBottom: "4px" }}>
+            🤖 Analisi AI
+          </div>
+          {item.ai.sintesi && <div>{item.ai.sintesi}</div>}
+          <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
+            {item.ai.motivo_prezzo && (
+              <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "5px", background: "oklch(0.24 0.008 250)" }}>
+                Motivo: {item.ai.motivo_prezzo}
+                {item.ai.categoria_motivo && item.ai.categoria_motivo !== "nessuno"
+                  ? ` (${item.ai.categoria_motivo})`
+                  : ""}
+              </span>
+            )}
+            {item.ai.riparabile && (
+              <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "5px", background: "oklch(0.75 0.14 75 / 0.16)", color: "oklch(0.80 0.13 75)" }}>
+                🔧 riparabile{item.ai.nota_riparazione ? `: ${item.ai.nota_riparazione}` : ""}
+              </span>
+            )}
+            {item.ai.rischio_truffa === "alto" && (
+              <span style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "5px", background: "oklch(0.68 0.19 25 / 0.16)", color: "oklch(0.75 0.16 30)" }}>
+                ⚠️ rischio truffa alto
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {item.scoreBreakdown.length > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>

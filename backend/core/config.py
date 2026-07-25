@@ -47,6 +47,12 @@ class Settings:
     # ripiega sulle chat dei verticali; se anche quelle mancano, no-op.
     telegram_chat_ops: str | None = os.getenv("TELEGRAM_CHAT_ID_OPS") or None
 
+    # AI locale (Ollama) per l'analisi semantica delle descrizioni. Dal backend
+    # in Docker, Ollama sul Mac/host si raggiunge via host.docker.internal.
+    ai_enabled: bool = os.getenv("AI_ENABLED", "true").lower() in ("1", "true", "yes")
+    ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
+
     # Telegram alerts — un bot, due chat (una per verticale). Lascia vuoto
     # per disattivare le notifiche di quel verticale.
     telegram_bot_token: str | None = os.getenv("TELEGRAM_BOT_TOKEN") or None

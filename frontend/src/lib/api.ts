@@ -76,6 +76,15 @@ export type ApiOpportunity = {
   marginVsFairEur: number | null;
   marginVsFairPct: number | null;
   dealClass: "affare" | "in-linea" | "caro" | "sospetto" | "n/d";
+  // AI locale (Ollama): analisi semantica della descrizione (null se non processata)
+  ai: {
+    motivo_prezzo: string;
+    categoria_motivo: string;
+    riparabile: boolean;
+    nota_riparazione: string;
+    rischio_truffa: string;
+    sintesi: string;
+  } | null;
   // Deal Score + assistente trattativa
   score: number;
   scoreBreakdown: ScorePoint[];

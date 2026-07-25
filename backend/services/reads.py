@@ -302,6 +302,8 @@ def _shape_opportunity(
         "variantKey": row.get("variant_key"),
         "conditionTier": row.get("condition_tier"),
         "color": row.get("color"),
+        # Analisi AI locale della descrizione (None finché non processata).
+        "ai": row.get("ai_analysis"),
     }
 
 
@@ -477,7 +479,21 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             has_price_drop=shaped["priceDrop"] is not None,
         )
     )
-    if valuation["dealClass"] == "sospetto":
+    # Anti-truffa affinato con l'AI locale:
+    #  - se l'AI vede un rischio truffa ALTO → forza sospetto (anche se il prezzo
+    #    sembra normale);
+    #  - se il prezzo è "sospetto" (troppo basso) MA l'AI trova un motivo
+    #    LEGITTIMO (upgrade, regalo non gradito, urgenza) → NON è una truffa ma
+    #    un vero affare: si toglie il flag e si tiene lo score.
+    ai = row.get("ai_analysis") or {}
+    ai_scam_high = ai.get("rischio_truffa") == "alto"
+    ai_legit = ai.get("categoria_motivo") == "legittimo"
+
+    is_suspect = valuation["dealClass"] == "sospetto"
+    if is_suspect and ai_legit and not ai_scam_high:
+        shaped["dealClass"] = "affare"  # motivo legittimo → affare, non truffa
+    elif is_suspect or ai_scam_high:
+        shaped["dealClass"] = "sospetto"
         shaped["score"] = 0
         shaped["scoreBreakdown"] = [
             {"label": "⚠️ Prezzo sospetto (possibile truffa/errore)", "points": 0}

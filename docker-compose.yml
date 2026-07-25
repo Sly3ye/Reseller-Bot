@@ -50,6 +50,10 @@ services:
       - media:/data/media
     ports:
       - "8000:8000"
+    # Per raggiungere Ollama (AI locale) in esecuzione sull'HOST via
+    # host.docker.internal, anche su Linux/VPS (su Docker Desktop è già presente).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   pgdata:

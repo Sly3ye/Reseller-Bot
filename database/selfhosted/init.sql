@@ -151,6 +151,7 @@ create table if not exists public.live_opportunities_tech (
   urgency_flags  jsonb,
   variant_key    text,
   condition_tier text,
+  ai_analysis    jsonb,
   constraint uq_opportunities_tech_url unique (listing_url)
 );
 create index if not exists idx_tech_status_found on public.live_opportunities_tech (status, found_at desc);
