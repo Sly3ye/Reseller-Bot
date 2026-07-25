@@ -20,11 +20,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 from datetime import datetime, timezone
 
-import httpx
+from curl_cffi.requests import AsyncSession
+from curl_cffi.requests.exceptions import CurlError
 
+from backend.core.config import settings
 from backend.core.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -74,11 +77,11 @@ def fetch_active(db, table: str) -> list[dict]:
     return rows
 
 
-async def is_removed(client: httpx.AsyncClient, url: str) -> bool:
+async def is_removed(client: AsyncSession, url: str) -> bool:
     """True se l'annuncio non è più disponibile (404/410 o redirect fuori)."""
     try:
-        response = await client.get(url)
-    except httpx.HTTPError:
+        response = await client.get(url, allow_redirects=True)
+    except CurlError:
         return False  # errore di rete transitorio: non marchiamo, riproveremo
 
     # Subito risponde 410 Gone (talvolta 404) quando l'annuncio non esiste più.
@@ -129,11 +132,11 @@ async def collect_table(db, table: str) -> dict[str, int]:
     semaphore = asyncio.Semaphore(CHECK_CONCURRENCY)
     removed_ids: list[str] = []
 
-    async with httpx.AsyncClient(
+    # curl_cffi con impronta browser: le pagine annuncio di Subito sono dietro
+    # Akamai (httpx → 403). Connessione DIRETTA (niente proxy: pagine pubbliche).
+    async with AsyncSession(
+        impersonate=random.choice(settings.impersonate_pool or ["safari"]),
         timeout=20,
-        follow_redirects=True,
-        headers={"User-Agent": USER_AGENT},
-        trust_env=False,
     ) as client:
 
         async def check(row: dict) -> None:
