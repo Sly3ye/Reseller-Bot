@@ -44,3 +44,12 @@ export function marginColor(pct: number | null): string {
   if (pct < 0) return "oklch(0.68 0.19 25)";
   return "oklch(0.75 0.13 80)";
 }
+
+/** Colour for the 0–100 Deal Score badge. */
+export function scoreColor(score: number): { color: string; bg: string } {
+  if (score >= 70)
+    return { color: "oklch(0.72 0.16 150)", bg: "oklch(0.72 0.16 150 / 0.15)" };
+  if (score >= 45)
+    return { color: "oklch(0.75 0.14 75)", bg: "oklch(0.75 0.14 75 / 0.15)" };
+  return { color: "oklch(0.62 0.01 250)", bg: "oklch(0.46 0.01 250 / 0.14)" };
+}

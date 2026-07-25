@@ -1,22 +1,38 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 
 import {
+  createDeal,
+  deleteDeal,
+  fetchDeals,
+  fetchDealsSummary,
   fetchOpportunities,
   fetchTrends,
+  patchOpportunityStatus,
+  updateDeal,
   type ApiOpportunity,
   type ApiTrends,
   type Category,
+  type Deal,
+  type DealStage,
+  type DealsSummary,
 } from "@/lib/api";
-import { eur, marginColor, marginTier, relativeTime } from "@/lib/flipradar-data";
+import {
+  eur,
+  marginColor,
+  marginTier,
+  relativeTime,
+  scoreColor,
+} from "@/lib/flipradar-data";
 
 const MONO = "var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace";
 
 type Vertical = "tech" | "auto";
-type Screen = "sniper" | "intel" | "automations";
+type Screen = "sniper" | "intel" | "pipeline" | "automations";
 type MarginFilter = "all" | "high";
+type SortMode = "recent" | "score";
 
 function buildTrendPaths(values: number[]) {
   if (values.length < 2) return null;
@@ -48,6 +64,7 @@ export default function FlipRadar() {
   const [flaggedIds, setFlaggedIds] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const [marginFilter, setMarginFilter] = useState<MarginFilter>("all");
+  const [sortMode, setSortMode] = useState<SortMode>("score");
 
   const [opportunities, setOpportunities] = useState<ApiOpportunity[]>([]);
   const [intel, setIntel] = useState<ApiTrends | null>(null);
@@ -60,15 +77,25 @@ export default function FlipRadar() {
   const [telegramEnabled, setTelegramEnabled] = useState(true);
   const [secondsToNextScan, setSecondsToNextScan] = useState(812);
 
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [dealsSummary, setDealsSummary] = useState<DealsSummary | null>(null);
+  const [pipelineIds, setPipelineIds] = useState<Set<string>>(new Set());
+
   // Il toggle mostra "Auto", ma il backend usa la categoria nativa "automobile".
   const category: Category = vertical === "tech" ? "smartphone" : "automobile";
 
   // Fetch the feed + market intelligence whenever the business vertical changes.
   useEffect(() => {
     const controller = new AbortController();
-    setLoading(true);
-    setError(null);
-    setExpandedId(null);
+
+    // I reset di stato sono in un microtask: evita il setState sincrono nel
+    // corpo dell'effect (cascading render) mantenendo lo stesso comportamento.
+    void Promise.resolve().then(() => {
+      if (controller.signal.aborted) return;
+      setLoading(true);
+      setError(null);
+      setExpandedId(null);
+    });
 
     Promise.all([
       fetchOpportunities(category, controller.signal),
@@ -98,6 +125,56 @@ export default function FlipRadar() {
     return () => clearInterval(tick);
   }, [sniperInterval]);
 
+  const reloadDeals = useCallback(() => {
+    Promise.all([fetchDeals(), fetchDealsSummary()])
+      .then(([d, s]) => {
+        setDeals(d);
+        setDealsSummary(s);
+        setPipelineIds(
+          new Set(d.map((x) => x.listing_id).filter((x): x is string => !!x)),
+        );
+      })
+      .catch(() => {
+        /* pipeline vuota o backend giù: non è un errore bloccante */
+      });
+  }, []);
+
+  useEffect(() => {
+    reloadDeals();
+  }, [reloadDeals]);
+
+  const addToPipeline = useCallback(
+    async (item: ApiOpportunity) => {
+      try {
+        await createDeal({
+          category,
+          listing_id: item.id,
+          title: item.title ?? undefined,
+          listing_url: item.url,
+          asking_price: item.askingPrice ?? undefined,
+          market_avg: item.marketAvg ?? undefined,
+          offer_price: item.suggestedOffer ?? undefined,
+        });
+        setPipelineIds((cur) => new Set(cur).add(item.id));
+        reloadDeals();
+      } catch {
+        /* già in pipeline o backend giù: ignora */
+      }
+    },
+    [category, reloadDeals],
+  );
+
+  const markSeen = useCallback(
+    (item: ApiOpportunity) => {
+      if (item.status === "visto") return;
+      patchOpportunityStatus(item.id, category, "visto").catch(() => {});
+      setOpportunities((cur) =>
+        cur.map((o) => (o.id === item.id ? { ...o, status: "visto" } : o)),
+      );
+    },
+    [category],
+  );
+
   const toggleVertical = () => setVertical((v) => (v === "tech" ? "auto" : "tech"));
 
   const isTech = vertical === "tech";
@@ -119,8 +196,11 @@ export default function FlipRadar() {
     if (marginFilter === "high") {
       list = list.filter((it) => it.marginPct !== null && it.marginPct >= 20);
     }
+    if (sortMode === "score") {
+      list = [...list].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    }
     return list;
-  }, [opportunities, search, marginFilter]);
+  }, [opportunities, search, marginFilter, sortMode]);
 
   const hasResults = filteredListings.length > 0;
 
@@ -351,6 +431,39 @@ export default function FlipRadar() {
             Market Intelligence
           </div>
 
+          <div onClick={() => setScreen("pipeline")} style={navItem(screen === "pipeline")}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                width: "16px",
+                height: "16px",
+                flexShrink: 0,
+              }}
+            >
+              <div style={{ width: "16px", height: "3px", borderRadius: "2px", background: "currentColor" }} />
+              <div style={{ width: "11px", height: "3px", borderRadius: "2px", background: "currentColor" }} />
+              <div style={{ width: "6px", height: "3px", borderRadius: "2px", background: "currentColor" }} />
+            </div>
+            Pipeline P&amp;L
+            {deals.length > 0 && (
+              <span
+                style={{
+                  marginLeft: "auto",
+                  fontSize: "11px",
+                  fontFamily: MONO,
+                  padding: "1px 7px",
+                  borderRadius: "10px",
+                  background: "var(--accent-soft)",
+                  color: "var(--accent-text)",
+                }}
+              >
+                {deals.length}
+              </span>
+            )}
+          </div>
+
           <div onClick={() => setScreen("automations")} style={navItem(screen === "automations")}>
             <div
               style={{
@@ -408,18 +521,27 @@ export default function FlipRadar() {
           {screen === "sniper" && (
             <SniperScreen
               resultCount={filteredListings.length}
+              category={category}
               search={search}
               onSearchChange={setSearch}
               marginFilter={marginFilter}
               onFilterChange={setMarginFilter}
+              sortMode={sortMode}
+              onSortChange={setSortMode}
               loading={loading}
               error={error}
               hasResults={hasResults}
               listings={filteredListings}
               expandedId={expandedId}
               flaggedIds={flaggedIds}
-              onToggleExpand={(id) => setExpandedId((cur) => (cur === id ? null : id))}
+              pipelineIds={pipelineIds}
+              onToggleExpand={(id) => {
+                setExpandedId((cur) => (cur === id ? null : id));
+                const item = filteredListings.find((x) => x.id === id);
+                if (item && expandedId !== id) markSeen(item);
+              }}
               onToggleFlag={(id) => setFlaggedIds((cur) => ({ ...cur, [id]: !cur[id] }))}
+              onAddToPipeline={addToPipeline}
             />
           )}
 
@@ -430,6 +552,21 @@ export default function FlipRadar() {
               intel={intel}
               trendPaths={trendPaths}
               batchLastRun={batchLastRun}
+            />
+          )}
+
+          {screen === "pipeline" && (
+            <PipelineScreen
+              deals={deals}
+              summary={dealsSummary}
+              onUpdate={async (id, patch) => {
+                await updateDeal(id, patch);
+                reloadDeals();
+              }}
+              onDelete={async (id) => {
+                await deleteDeal(id);
+                reloadDeals();
+              }}
             />
           )}
 
@@ -472,22 +609,27 @@ function ErrorBanner({ message }: { message: string }) {
 
 /* ---------------------------------------------------------------- SNIPER */
 
-const GRID_COLUMNS = "64px 2.4fr 1fr 1fr 1.1fr 90px 60px";
+const GRID_COLUMNS = "56px 60px 2.1fr 1fr 1fr 1.1fr 84px 54px";
 
 function SniperScreen(props: {
   resultCount: number;
+  category: Category;
   search: string;
   onSearchChange: (v: string) => void;
   marginFilter: MarginFilter;
   onFilterChange: (v: MarginFilter) => void;
+  sortMode: SortMode;
+  onSortChange: (v: SortMode) => void;
   loading: boolean;
   error: string | null;
   hasResults: boolean;
   listings: ApiOpportunity[];
   expandedId: string | null;
   flaggedIds: Record<string, boolean>;
+  pipelineIds: Set<string>;
   onToggleExpand: (id: string) => void;
   onToggleFlag: (id: string) => void;
+  onAddToPipeline: (item: ApiOpportunity) => void;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px", animation: "fadeIn 0.2s ease" }}>
@@ -563,6 +705,35 @@ function SniperScreen(props: {
               Margin &gt; 20%
             </div>
           </div>
+          <div
+            style={{
+              display: "flex",
+              background: "oklch(0.20 0.008 250)",
+              border: "1px solid oklch(0.32 0.01 250)",
+              borderRadius: "8px",
+              padding: "3px",
+              gap: "2px",
+            }}
+          >
+            {(["score", "recent"] as SortMode[]).map((mode) => (
+              <div
+                key={mode}
+                onClick={() => props.onSortChange(mode)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: "6px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  background: props.sortMode === mode ? "var(--accent)" : "transparent",
+                  color: props.sortMode === mode ? "oklch(0.12 0.008 250)" : "oklch(0.62 0.01 250)",
+                }}
+              >
+                {mode === "score" ? "Deal Score" : "Recenti"}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -609,6 +780,7 @@ function SniperScreen(props: {
             }}
           >
             <div />
+            <div>Score</div>
             <div>Item</div>
             <div>Asking</div>
             <div>Market Avg</div>
@@ -621,10 +793,13 @@ function SniperScreen(props: {
             <SniperRow
               key={item.id}
               item={item}
+              category={props.category}
               expanded={props.expandedId === item.id}
               flagged={!!props.flaggedIds[item.id]}
+              inPipeline={props.pipelineIds.has(item.id)}
               onToggle={() => props.onToggleExpand(item.id)}
               onFlag={() => props.onToggleFlag(item.id)}
+              onAddToPipeline={() => props.onAddToPipeline(item)}
             />
           ))}
         </div>
@@ -656,14 +831,18 @@ function SniperScreen(props: {
 
 function SniperRow(props: {
   item: ApiOpportunity;
+  category: Category;
   expanded: boolean;
   flagged: boolean;
+  inPipeline: boolean;
   onToggle: () => void;
   onFlag: () => void;
+  onAddToPipeline: () => void;
 }) {
   const { item, expanded, flagged } = props;
   const tier = marginTier(item.marginPct);
   const mColor = marginColor(item.marginPct);
+  const sColor = scoreColor(item.score ?? 0);
   const rowBg = expanded
     ? "oklch(0.22 0.008 250)"
     : flagged
@@ -714,6 +893,27 @@ function SniperRow(props: {
             />
           )}
         </div>
+        <div
+          title="Deal Score (0–100)"
+          style={{
+            width: "44px",
+            height: "44px",
+            borderRadius: "10px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            background: sColor.bg,
+            border: `1px solid ${sColor.color}`,
+          }}
+        >
+          <div style={{ fontFamily: MONO, fontSize: "16px", fontWeight: 700, color: sColor.color, lineHeight: 1 }}>
+            {item.score ?? 0}
+          </div>
+          <div style={{ fontSize: "8px", color: sColor.color, textTransform: "uppercase", letterSpacing: "0.05em", marginTop: "1px" }}>
+            score
+          </div>
+        </div>
         <div style={{ minWidth: 0 }}>
           <div
             style={{
@@ -741,6 +941,38 @@ function SniperRow(props: {
             >
               {tier.label}
             </div>
+            {item.urgencyFlags.length > 0 && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  padding: "1px 7px",
+                  borderRadius: "4px",
+                  background: "oklch(0.68 0.19 25 / 0.14)",
+                  color: "oklch(0.78 0.16 30)",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                🔥 urgente
+              </div>
+            )}
+            {item.repair && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  padding: "1px 7px",
+                  borderRadius: "4px",
+                  background: "oklch(0.75 0.14 75 / 0.16)",
+                  color: "oklch(0.80 0.13 75)",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+              >
+                🔧 da riparare
+              </div>
+            )}
             <div
               style={{
                 fontSize: "11.5px",
@@ -751,7 +983,14 @@ function SniperRow(props: {
                 minWidth: 0,
               }}
             >
-              {locationLabel}
+              {[
+                item.storageGb ? `${item.storageGb} GB` : null,
+                item.batteryPct ? `🔋${item.batteryPct}%` : null,
+                item.km ? `${Math.round(item.km / 1000)}k km` : null,
+                locationLabel,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
             </div>
           </div>
         </div>
@@ -826,6 +1065,12 @@ function SniperRow(props: {
             gap: "14px",
           }}
         >
+          <NegotiationAssistant
+            item={item}
+            category={props.category}
+            inPipeline={props.inPipeline}
+            onAddToPipeline={props.onAddToPipeline}
+          />
           <div>
             <div
               style={{
@@ -918,6 +1163,423 @@ function SniperRow(props: {
   );
 }
 
+/* ------------------------------------------------- NEGOTIATION ASSISTANT */
+
+function NegotiationAssistant(props: {
+  item: ApiOpportunity;
+  category: Category;
+  inPipeline: boolean;
+  onAddToPipeline: () => void;
+}) {
+  const { item } = props;
+
+  const stats: { label: string; value: string; hint?: string; color?: string }[] = [];
+  if (item.suggestedOffer !== null) {
+    stats.push({
+      label: "Offerta consigliata",
+      value: eur(item.suggestedOffer),
+      hint: "prezzo di apertura trattativa",
+      color: "var(--accent-text)",
+    });
+  }
+  if (item.daysOnline !== null) {
+    stats.push({
+      label: "Online da",
+      value: `${item.daysOnline} ${item.daysOnline === 1 ? "giorno" : "giorni"}`,
+      hint: item.daysOnline >= 14 ? "invenduto: più margine di trattativa" : "annuncio recente",
+    });
+  }
+  if (item.priceDrop && item.priceDrop.oldPrice && item.priceDrop.newPrice) {
+    stats.push({
+      label: "Già ribassato",
+      value: `${eur(item.priceDrop.oldPrice)} → ${eur(item.priceDrop.newPrice)}`,
+      hint: "il venditore sta scendendo",
+      color: "oklch(0.72 0.16 150)",
+    });
+  }
+  if (item.sellerType) {
+    const label =
+      item.sellerType === "finto_privato"
+        ? "⚠️ finto privato"
+        : item.sellerType === "dealer"
+          ? "concessionario"
+          : "privato";
+    stats.push({
+      label: "Venditore",
+      value: label,
+      hint:
+        item.sellerActiveCount != null
+          ? `${item.sellerActiveCount} annunci attivi`
+          : undefined,
+    });
+  }
+  if (item.repair) {
+    stats.push({
+      label: "Margine netto post-riparazione",
+      value:
+        item.repair.netMarginEur !== null
+          ? `+${eur(item.repair.netMarginEur)}` +
+            (item.repair.netMarginPct !== null ? ` (${item.repair.netMarginPct}%)` : "")
+          : "—",
+      hint: `riparazione stimata ${eur(item.repair.total)}`,
+      color: "oklch(0.80 0.13 75)",
+    });
+  }
+  if (props.category === "automobile" && item.expectedPrice !== null) {
+    stats.push({
+      label: "Prezzo atteso per questi km",
+      value: eur(item.expectedPrice),
+      hint:
+        item.marginVsExpected !== null
+          ? `${item.marginVsExpected >= 0 ? "+" : ""}${eur(item.marginVsExpected)} vs richiesto`
+          : undefined,
+      color: "var(--accent-text)",
+    });
+  }
+
+  return (
+    <div
+      style={{
+        background: "oklch(0.16 0.008 250)",
+        border: "1px solid var(--accent-border)",
+        borderRadius: "10px",
+        padding: "14px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: "12px",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+        <div style={{ fontSize: "13px", fontWeight: 700, color: "var(--accent-text)" }}>
+          🤝 Assistente trattativa
+        </div>
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!props.inPipeline) props.onAddToPipeline();
+          }}
+          style={{
+            padding: "7px 14px",
+            borderRadius: "8px",
+            fontSize: "12.5px",
+            fontWeight: 700,
+            cursor: props.inPipeline ? "default" : "pointer",
+            background: props.inPipeline ? "oklch(0.24 0.008 250)" : "var(--accent)",
+            color: props.inPipeline ? "oklch(0.62 0.01 250)" : "oklch(0.12 0.008 250)",
+          }}
+        >
+          {props.inPipeline ? "✓ In pipeline" : "+ Aggiungi a pipeline"}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: "10px",
+        }}
+      >
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              background: "oklch(0.19 0.008 250)",
+              border: "1px solid oklch(0.27 0.01 250)",
+              borderRadius: "8px",
+              padding: "10px 12px",
+            }}
+          >
+            <div style={{ fontSize: "10.5px", color: "oklch(0.46 0.01 250)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              {s.label}
+            </div>
+            <div style={{ fontFamily: MONO, fontSize: "15px", fontWeight: 700, marginTop: "3px", color: s.color ?? "oklch(0.94 0.004 250)" }}>
+              {s.value}
+            </div>
+            {s.hint && (
+              <div style={{ fontSize: "10.5px", color: "oklch(0.46 0.01 250)", marginTop: "2px" }}>{s.hint}</div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {item.scoreBreakdown.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          {item.scoreBreakdown.map((b) => (
+            <div
+              key={b.label}
+              style={{
+                fontSize: "11px",
+                padding: "2px 8px",
+                borderRadius: "5px",
+                background: b.points >= 0 ? "oklch(0.72 0.16 150 / 0.12)" : "oklch(0.68 0.19 25 / 0.12)",
+                color: b.points >= 0 ? "oklch(0.75 0.14 150)" : "oklch(0.72 0.16 30)",
+                fontWeight: 600,
+              }}
+            >
+              {b.label} {b.points >= 0 ? "+" : ""}
+              {b.points}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {(item.defects.length > 0 || item.features.length > 0) && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          {item.features.map((f) => (
+            <span key={f} style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "5px", background: "oklch(0.24 0.008 250)", color: "oklch(0.78 0.01 250)" }}>
+              ✓ {f}
+            </span>
+          ))}
+          {item.defects.map((d) => (
+            <span key={d} style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "5px", background: "oklch(0.68 0.19 25 / 0.12)", color: "oklch(0.75 0.14 30)" }}>
+              ✕ {d}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* --------------------------------------------------------------- PIPELINE */
+
+const STAGES: { key: DealStage; label: string }[] = [
+  { key: "interessante", label: "Interessante" },
+  { key: "contattato", label: "Contattato" },
+  { key: "offerta", label: "Offerta" },
+  { key: "comprato", label: "Comprato" },
+  { key: "in_vendita", label: "In vendita" },
+  { key: "venduto", label: "Venduto" },
+  { key: "sfumato", label: "Sfumato" },
+];
+
+function PipelineScreen(props: {
+  deals: Deal[];
+  summary: DealsSummary | null;
+  onUpdate: (
+    id: string,
+    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price">>,
+  ) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const { deals, summary } = props;
+
+  const card: CSSProperties = {
+    background: "oklch(0.19 0.008 250)",
+    border: "1px solid oklch(0.27 0.01 250)",
+    borderRadius: "12px",
+    padding: "18px 20px",
+  };
+  const cardLabel: CSSProperties = {
+    fontSize: "12px",
+    color: "oklch(0.46 0.01 250)",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+  };
+  const cardValue: CSSProperties = { fontFamily: MONO, fontSize: "26px", fontWeight: 700, marginTop: "8px" };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px", animation: "fadeIn 0.2s ease" }}>
+      <div>
+        <div style={{ fontSize: "22px", fontWeight: 700 }}>Pipeline P&amp;L</div>
+        <div style={{ fontSize: "13px", color: "oklch(0.62 0.01 250)", marginTop: "4px" }}>
+          Dal feed alla rivendita: profitto netto reale di ogni affare
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px" }}>
+        <div style={card}>
+          <div style={cardLabel}>Profitto realizzato</div>
+          <div style={{ ...cardValue, color: "oklch(0.72 0.16 150)" }}>
+            {summary ? eur(summary.realizedProfit) : "—"}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={cardLabel}>Capitale in gioco</div>
+          <div style={cardValue}>{summary ? eur(summary.investedOpen) : "—"}</div>
+        </div>
+        <div style={card}>
+          <div style={cardLabel}>Margine reale medio</div>
+          <div style={cardValue}>
+            {summary?.avgRealMarginPct != null ? `${summary.avgRealMarginPct}%` : "—"}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={cardLabel}>Affari · venduti</div>
+          <div style={cardValue}>
+            {summary ? `${summary.totalDeals} · ${summary.sold}` : "—"}
+          </div>
+        </div>
+      </div>
+
+      {deals.length === 0 ? (
+        <div
+          style={{
+            padding: "50px 20px",
+            border: "1px dashed oklch(0.32 0.01 250)",
+            borderRadius: "12px",
+            textAlign: "center",
+            color: "oklch(0.62 0.01 250)",
+            fontSize: "13.5px",
+          }}
+        >
+          Nessun affare in pipeline. Espandi un&apos;opportunità nel Live Sniper e premi
+          «Aggiungi a pipeline».
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflow: "hidden" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "2.2fr 1.3fr 1fr 1fr 1fr 40px",
+              gap: "12px",
+              padding: "10px 16px",
+              background: "oklch(0.20 0.008 250)",
+              fontSize: "11px",
+              fontWeight: 600,
+              color: "oklch(0.46 0.01 250)",
+              textTransform: "uppercase",
+              letterSpacing: "0.05em",
+            }}
+          >
+            <div>Affare</div>
+            <div>Stato</div>
+            <div>Comprato</div>
+            <div>Venduto</div>
+            <div>Profitto</div>
+            <div />
+          </div>
+          {deals.map((deal) => (
+            <PipelineRow key={deal.id} deal={deal} onUpdate={props.onUpdate} onDelete={props.onDelete} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PipelineRow(props: {
+  deal: Deal;
+  onUpdate: (
+    id: string,
+    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price">>,
+  ) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+}) {
+  const { deal } = props;
+
+  const numberCell = (
+    value: number | null,
+    onCommit: (v: number | null) => void,
+    placeholder: string,
+  ) => (
+    <input
+      defaultValue={value ?? ""}
+      placeholder={placeholder}
+      inputMode="numeric"
+      onBlur={(e) => {
+        const raw = e.target.value.trim();
+        const num = raw === "" ? null : Number(raw.replace(/[^\d.]/g, ""));
+        if (num !== value) onCommit(Number.isNaN(num as number) ? null : num);
+      }}
+      style={{
+        width: "100%",
+        height: "32px",
+        background: "oklch(0.16 0.008 250)",
+        border: "1px solid oklch(0.30 0.01 250)",
+        borderRadius: "6px",
+        padding: "0 8px",
+        color: "oklch(0.94 0.004 250)",
+        fontFamily: MONO,
+        fontSize: "12.5px",
+      }}
+    />
+  );
+
+  const profitColor =
+    deal.profit == null
+      ? "oklch(0.46 0.01 250)"
+      : deal.profit >= 0
+        ? "oklch(0.72 0.16 150)"
+        : "oklch(0.68 0.19 25)";
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "2.2fr 1.3fr 1fr 1fr 1fr 40px",
+        gap: "12px",
+        padding: "12px 16px",
+        alignItems: "center",
+        borderTop: "1px solid oklch(0.24 0.008 250)",
+      }}
+    >
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {deal.title ?? "—"}
+        </div>
+        <div style={{ fontSize: "11px", color: "oklch(0.46 0.01 250)", fontFamily: MONO }}>
+          {deal.category === "automobile" ? "🚗" : "📱"}{" "}
+          {deal.estimatedMarginEur != null ? `stima +${eur(deal.estimatedMarginEur)}` : ""}
+          {deal.listing_url && (
+            <>
+              {" · "}
+              <a href={deal.listing_url} target="_blank" rel="noreferrer" style={{ color: "var(--accent-text)", textDecoration: "none" }}>
+                annuncio →
+              </a>
+            </>
+          )}
+        </div>
+      </div>
+      <select
+        value={deal.stage}
+        onChange={(e) => props.onUpdate(deal.id, { stage: e.target.value as DealStage })}
+        style={{
+          height: "32px",
+          background: "oklch(0.16 0.008 250)",
+          border: "1px solid oklch(0.30 0.01 250)",
+          borderRadius: "6px",
+          color: "oklch(0.94 0.004 250)",
+          fontSize: "12.5px",
+          padding: "0 6px",
+        }}
+      >
+        {STAGES.map((s) => (
+          <option key={s.key} value={s.key}>
+            {s.label}
+          </option>
+        ))}
+      </select>
+      {numberCell(deal.buy_price, (v) => props.onUpdate(deal.id, { buy_price: v ?? undefined }), "€ pagato")}
+      {numberCell(deal.sell_price, (v) => props.onUpdate(deal.id, { sell_price: v ?? undefined }), "€ venduto")}
+      <div style={{ fontFamily: MONO, fontSize: "14px", fontWeight: 700, color: profitColor }}>
+        {deal.profit != null ? (deal.profit >= 0 ? "+" : "") + eur(deal.profit) : "—"}
+        {deal.realMarginPct != null && (
+          <div style={{ fontSize: "10.5px", fontWeight: 600 }}>{deal.realMarginPct}%</div>
+        )}
+      </div>
+      <div
+        onClick={() => props.onDelete(deal.id)}
+        title="Elimina"
+        style={{
+          width: "28px",
+          height: "28px",
+          borderRadius: "6px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          cursor: "pointer",
+          color: "oklch(0.55 0.01 250)",
+          fontSize: "16px",
+        }}
+      >
+        ×
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ INTEL */
 
 function IntelScreen(props: {
@@ -960,28 +1622,32 @@ function IntelScreen(props: {
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px" }}>
             <div style={card}>
-              <div style={cardLabel}>Active Listings</div>
+              <div style={cardLabel}>Annunci attivi</div>
               <div style={cardValue}>{props.loading ? "…" : (intel?.activeListings ?? 0)}</div>
               <div style={{ fontSize: "12px", color: "oklch(0.72 0.16 150)", marginTop: "4px", fontWeight: 600 }}>
-                tracked in this vertical
+                tracciati in questo verticale
               </div>
             </div>
             <div style={card}>
-              <div style={cardLabel}>Average Market Price</div>
+              <div style={cardLabel}>Prezzo medio di mercato</div>
               <div style={cardValue}>
                 {props.loading ? "…" : intel?.avgMarketPrice != null ? eur(intel.avgMarketPrice) : "—"}
               </div>
               <div style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)", marginTop: "4px" }}>
-                across all active listings
+                media IQR-pulita sui modelli tracciati
               </div>
             </div>
             <div style={card}>
-              <div style={cardLabel}>Outliers Filtered</div>
+              <div style={cardLabel}>Rotazione media</div>
               <div style={cardValue}>
-                {props.loading ? "…" : intel?.outliersFiltered != null ? intel.outliersFiltered : "—"}
+                {props.loading
+                  ? "…"
+                  : intel?.avgDaysToSell != null
+                    ? `${intel.avgDaysToSell}gg`
+                    : "—"}
               </div>
               <div style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)", marginTop: "4px" }}>
-                removed via IQR cleanup before averaging
+                giorni medi found→venduto (time-to-sale)
               </div>
             </div>
           </div>
@@ -1061,7 +1727,7 @@ function IntelScreen(props: {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                gridTemplateColumns: "1.8fr 1fr 0.8fr 0.9fr 1fr 1.2fr",
                 gap: "12px",
                 padding: "10px 20px",
                 background: "oklch(0.20 0.008 250)",
@@ -1072,10 +1738,12 @@ function IntelScreen(props: {
                 letterSpacing: "0.05em",
               }}
             >
-              <div>Model</div>
-              <div>Avg. Market Price</div>
-              <div>Sample Size</div>
-              <div>7d Change</div>
+              <div>Modello</div>
+              <div>Prezzo medio</div>
+              <div>Campione</div>
+              <div title="Variazione a 7 giorni">7g</div>
+              <div title="Giorni medi found→venduto">Liquidità</div>
+              <div title="Prezzo per vendita rapida / prezzo pieno">Rivendita</div>
             </div>
             {(intel?.models ?? []).length === 0 ? (
               <div style={{ padding: "16px 20px", fontSize: "13px", color: "oklch(0.46 0.01 250)" }}>
@@ -1089,7 +1757,7 @@ function IntelScreen(props: {
                     key={m.name}
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                      gridTemplateColumns: "1.8fr 1fr 0.8fr 0.9fr 1fr 1.2fr",
                       gap: "12px",
                       padding: "12px 20px",
                       borderTop: "1px solid oklch(0.24 0.008 250)",
@@ -1113,6 +1781,28 @@ function IntelScreen(props: {
                       }}
                     >
                       {m.changePct == null ? "—" : (positive ? "+" : "") + m.changePct + "%"}
+                    </div>
+                    <div style={{ fontFamily: MONO }}>
+                      {m.avgDaysToSell != null ? (
+                        <>
+                          {m.avgDaysToSell}gg
+                          <span style={{ fontSize: "10px", color: "oklch(0.46 0.01 250)", marginLeft: "3px" }}>
+                            ({m.sampleSold ?? 0})
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{ color: "oklch(0.46 0.01 250)" }}>—</span>
+                      )}
+                    </div>
+                    <div style={{ fontFamily: MONO, fontSize: "12px" }}>
+                      {m.fastSalePrice != null && m.maxSalePrice != null ? (
+                        <>
+                          <span style={{ color: "oklch(0.72 0.16 150)" }}>{eur(m.fastSalePrice)}</span>
+                          <span style={{ color: "oklch(0.46 0.01 250)" }}> / {eur(m.maxSalePrice)}</span>
+                        </>
+                      ) : (
+                        <span style={{ color: "oklch(0.46 0.01 250)" }}>—</span>
+                      )}
                     </div>
                   </div>
                 );
