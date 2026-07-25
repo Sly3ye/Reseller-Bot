@@ -53,3 +53,19 @@ export function scoreColor(score: number): { color: string; bg: string } {
     return { color: "oklch(0.75 0.14 75)", bg: "oklch(0.75 0.14 75 / 0.15)" };
   return { color: "oklch(0.62 0.01 250)", bg: "oklch(0.46 0.01 250 / 0.14)" };
 }
+
+/** Badge per la classe di affare (Fase 2): affare/in-linea/caro/sospetto. */
+export function dealClassStyle(dc: string | null): { label: string; color: string; bg: string } | null {
+  switch (dc) {
+    case "affare":
+      return { label: "🟢 Affare", color: "oklch(0.75 0.15 150)", bg: "oklch(0.72 0.15 150 / 0.15)" };
+    case "sospetto":
+      return { label: "⚠️ Sospetto", color: "oklch(0.75 0.17 30)", bg: "oklch(0.68 0.19 25 / 0.16)" };
+    case "caro":
+      return { label: "Caro", color: "oklch(0.75 0.13 80)", bg: "oklch(0.75 0.14 75 / 0.14)" };
+    case "in-linea":
+      return { label: "In linea", color: "oklch(0.62 0.01 250)", bg: "oklch(0.46 0.01 250 / 0.14)" };
+    default:
+      return null;
+  }
+}

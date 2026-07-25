@@ -66,6 +66,15 @@ export type ApiOpportunity = {
   batteryPct: number | null;
   expectedPrice: number | null;
   marginVsExpected: number | null;
+  // Fase 1: variante canonica + condizione
+  variantKey: string | null;
+  conditionTier: string | null;
+  // Fase 2: valutazione predittiva
+  fairValue: number | null;
+  pricePosition: number | null;
+  marginVsFairEur: number | null;
+  marginVsFairPct: number | null;
+  dealClass: "affare" | "in-linea" | "caro" | "sospetto" | "n/d";
   // Deal Score + assistente trattativa
   score: number;
   scoreBreakdown: ScorePoint[];

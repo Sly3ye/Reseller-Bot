@@ -20,6 +20,7 @@ import {
   type DealsSummary,
 } from "@/lib/api";
 import {
+  dealClassStyle,
   eur,
   marginColor,
   marginTier,
@@ -941,6 +942,25 @@ function SniperRow(props: {
             >
               {tier.label}
             </div>
+            {(() => {
+              const dc = dealClassStyle(item.dealClass);
+              return dc ? (
+                <div
+                  style={{
+                    fontSize: "11px",
+                    padding: "1px 7px",
+                    borderRadius: "4px",
+                    background: dc.bg,
+                    color: dc.color,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                  }}
+                >
+                  {dc.label}
+                </div>
+              ) : null;
+            })()}
             {item.urgencyFlags.length > 0 && (
               <div
                 style={{
@@ -1174,6 +1194,25 @@ function NegotiationAssistant(props: {
   const { item } = props;
 
   const stats: { label: string; value: string; hint?: string; color?: string }[] = [];
+  if (item.fairValue !== null) {
+    stats.push({
+      label: "Valore equo stimato",
+      value: eur(item.fairValue),
+      hint:
+        item.marginVsFairPct !== null
+          ? `${item.marginVsFairPct >= 0 ? "+" : ""}${item.marginVsFairPct}% vs richiesto` +
+            (item.pricePosition !== null
+              ? ` · più economico del ${Math.round(100 - item.pricePosition)}%`
+              : "")
+          : undefined,
+      color:
+        item.dealClass === "affare"
+          ? "oklch(0.75 0.15 150)"
+          : item.dealClass === "sospetto"
+            ? "oklch(0.75 0.17 30)"
+            : "var(--accent-text)",
+    });
+  }
   if (item.suggestedOffer !== null) {
     stats.push({
       label: "Offerta consigliata",

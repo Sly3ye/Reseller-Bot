@@ -25,6 +25,7 @@ from backend.core.database import Client
 
 from backend.core.database import get_db
 from backend.services.scoring import evaluate_opportunity
+from backend.services.valuation import evaluate_value
 from backend.services.variants import is_healthy
 
 logger = logging.getLogger(__name__)
@@ -315,12 +316,12 @@ def _iqr_clean(values: list[float]) -> list[float]:
     return [v for v in vals if low <= v <= high]
 
 
-def _variant_market_avgs(db: Client, table: str) -> dict[str, float]:
-    """Media di mercato per VARIANTE canonica — la scrematura pulita.
+def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
+    """Pool di prezzi SANI per VARIANTE canonica — la base della valutazione.
 
-    Calcolata dai listing ATTIVI e SANI (esclude rotti/incidentati), raggruppati
-    per ``variant_key`` (modello+memoria tech / modello+generazione auto) e
-    ripuliti con IQR. Così un iPhone 13 Pro non inquina la media del 13 base.
+    Dai listing ATTIVI e SANI (esclude rotti/incidentati), raggruppati per
+    ``variant_key`` e ripuliti con IQR. La lista (non solo la media) serve alla
+    Fase 2: mediana robusta come valore equo e percentili per la posizione.
     """
     try:
         rows = (
@@ -339,19 +340,18 @@ def _variant_market_avgs(db: Client, table: str) -> dict[str, float]:
         vk = row.get("variant_key")
         price = _to_float(row.get("asking_price"))
         if not vk or vk == "auto" or price is None or price <= 0:
-            # "auto" = catch-all di righe storiche senza target: media mista,
-            # inutile → si ripiega sulla media del target.
+            # "auto" = catch-all di righe storiche senza target: mix inutile.
             continue
         if not is_healthy(row.get("condition_tier") or "buono"):
             continue
         buckets.setdefault(vk, []).append(price)
 
-    avgs: dict[str, float] = {}
+    pools: dict[str, list[float]] = {}
     for vk, prices in buckets.items():
         cleaned = _iqr_clean(prices)
         if len(cleaned) >= 3:
-            avgs[vk] = round(statistics.fmean(cleaned), 2)
-    return avgs
+            pools[vk] = cleaned
+    return pools
 
 
 def list_opportunities(
@@ -380,7 +380,7 @@ def list_opportunities(
 
     targets = _targets_for_category(db, target_cat)  # target_id → model name
     avg_by_target, avg_by_model = _market_avgs(db, target_cat)
-    variant_avgs = _variant_market_avgs(db, table)  # scrematura per variante
+    variant_pools = _variant_price_pools(db, table)  # scrematura per variante
     price_history = _latest_price_history(db, [row["id"] for row in rows])
     seller_counts = _seller_active_counts(db, table, rows)
 
@@ -399,7 +399,10 @@ def list_opportunities(
         # Media per VARIANTE canonica (scrematura pulita) come primaria; fallback
         # al target (isolamento per generazione) e poi al modello.
         variant_key = row.get("variant_key")
-        market_avg = variant_avgs.get(variant_key) if variant_key else None
+        pool = variant_pools.get(variant_key) if variant_key else None
+        market_avg = (
+            round(statistics.fmean(pool), 2) if pool and len(pool) >= 3 else None
+        )
         if market_avg is None:
             market_avg = avg_by_target.get(target_id)
         if market_avg is None and model:
@@ -427,14 +430,34 @@ def list_opportunities(
                     expected - shaped["askingPrice"], 2
                 )
 
+        # Fase 2 — valutazione predittiva: valore equo del SINGOLO annuncio,
+        # posizione nel mercato e classificazione affare/in-linea/caro/sospetto.
+        valuation = evaluate_value(
+            category=target_cat,
+            asking=shaped["askingPrice"],
+            condition_tier=row.get("condition_tier"),
+            variant_prices=pool or [],
+            km=row.get("km"),
+            km_model=km_model,
+            has_images=bool(row.get("image_urls")),
+        )
+        shaped.update(valuation)
+
+        # Il Deal Score usa il margine vs VALORE EQUO (più preciso della media);
+        # fallback al margine vs media quando la valutazione non è disponibile.
+        score_margin = (
+            valuation["marginVsFairPct"]
+            if valuation["marginVsFairPct"] is not None
+            else shaped["marginPct"]
+        )
         # Deal Score + assistente trattativa (C2/C4/T3/A2).
         shaped.update(
             evaluate_opportunity(
                 category=target_cat,
                 title=shaped["title"],
                 asking=shaped["askingPrice"],
-                market_avg=market_avg,
-                margin_pct=shaped["marginPct"],
+                market_avg=valuation["fairValue"] or market_avg,
+                margin_pct=score_margin,
                 found_at=row.get("found_at"),
                 seller_type=row.get("seller_type"),
                 defects=shaped["defects"],
@@ -444,6 +467,14 @@ def list_opportunities(
                 has_price_drop=shaped["priceDrop"] is not None,
             )
         )
+
+        # Anti-truffa: un "sospetto" (prezzo troppo bello per essere vero) non è
+        # un affare da mettere in cima → azzera lo score e segnalalo.
+        if valuation["dealClass"] == "sospetto":
+            shaped["score"] = 0
+            shaped["scoreBreakdown"] = [
+                {"label": "⚠️ Prezzo sospetto (possibile truffa/errore)", "points": 0}
+            ]
         result.append(shaped)
     return result
 
