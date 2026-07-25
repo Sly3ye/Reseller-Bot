@@ -12,7 +12,8 @@ from backend.core.database import Client
 
 from backend.core.database import get_db
 from backend.scrapers import ScrapedListing, SubitoScraper
-from backend.services.notifications import notify_round
+from backend.services.health import record_run
+from backend.services.notifications import notify_round, notify_system_alert
 from backend.services.variants import resolve_variant
 
 logger = logging.getLogger(__name__)
@@ -821,6 +822,7 @@ async def run_sniper_all_products(
     )
 
     results: list[dict[str, Any]] = []
+    n_ok = n_failed = total_scraped = total_new = 0
     for target in targets:
         query = target["query"]
         target_category = target["category"]
@@ -834,6 +836,9 @@ async def run_sniper_all_products(
                 target_id=target["id"],
             )
             await asyncio.to_thread(update_target_last_scanned, target["id"])
+            n_ok += 1
+            total_scraped += outcome["scraped_count"]
+            total_new += outcome["new_count"]
             results.append(
                 {
                     "query": query,
@@ -850,13 +855,41 @@ async def run_sniper_all_products(
                 outcome["saved_count"],
             )
         except Exception:
+            n_failed += 1
             logger.exception("Sniper failed for '%s'", query)
             results.append({"query": query, "error": True})
+
+    # Salute dello scraper: registra il giro e allerta sulle transizioni
+    # down/ripristino (Akamai/proxy/Subito) — così non si blocca in silenzio.
+    health = await asyncio.to_thread(
+        record_run,
+        category or "all", len(targets), n_ok, n_failed, total_scraped, total_new,
+    )
+    if health["went_down"]:
+        logger.error("Scraper DOWN (%s): %d/%d target falliti, %d annunci",
+                     category or "all", n_failed, len(targets), total_scraped)
+        try:
+            await notify_system_alert(
+                f"🔴 <b>Scraper DOWN</b> ({category or 'all'})\n"
+                f"{n_failed}/{len(targets)} target falliti, {total_scraped} annunci raccolti.\n"
+                f"Probabile blocco Akamai o proxy KO — controlla."
+            )
+        except Exception:
+            logger.exception("Alert di sistema (down) fallito")
+    elif health["recovered"]:
+        try:
+            await notify_system_alert(
+                f"🟢 <b>Scraper ripristinato</b> ({category or 'all'}) — "
+                f"{total_scraped} annunci nell'ultimo giro."
+            )
+        except Exception:
+            logger.exception("Alert di sistema (recovery) fallito")
 
     return {
         "mode": "sniper_targets",
         "category": category,
         "targets": len(targets),
+        "status": health["status"],
         "results": results,
     }
 

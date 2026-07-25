@@ -33,10 +33,19 @@ class Settings:
     proxy_user: str | None = os.getenv("PROXY_USER") or None
     proxy_pass: str | None = os.getenv("PROXY_PASS") or None
 
-    # Impronta browser di curl_cffi per le chiamate a hades (Akamai Bot Manager
-    # blocca httpx con 403). "safari"/"firefox" testati OK; se un domani Akamai
-    # si adatta, cambiare qui senza toccare il codice (es. "chrome", "chrome124").
-    scraper_impersonate: str = os.getenv("SCRAPER_IMPERSONATE", "safari")
+    # Impronte browser di curl_cffi per le chiamate a hades (Akamai Bot Manager
+    # blocca httpx con 403). Pool separato da virgola: lo scraper ne sceglie una
+    # a caso per ogni target, così se Akamai flagga un profilo gli altri reggono.
+    # "safari"/"firefox" testati OK; aggiungi "chrome" per più varietà.
+    scraper_impersonate: str = os.getenv("SCRAPER_IMPERSONATE", "safari,firefox")
+
+    @property
+    def impersonate_pool(self) -> list[str]:
+        return [p.strip() for p in self.scraper_impersonate.split(",") if p.strip()]
+
+    # Chat Telegram per gli alert di SISTEMA (scraper down/ripristino). Se vuoto,
+    # ripiega sulle chat dei verticali; se anche quelle mancano, no-op.
+    telegram_chat_ops: str | None = os.getenv("TELEGRAM_CHAT_ID_OPS") or None
 
     # Telegram alerts — un bot, due chat (una per verticale). Lascia vuoto
     # per disattivare le notifiche di quel verticale.

@@ -14,6 +14,7 @@ Split routing (per contenere il budget del proxy residenziale a consumo):
 
 import asyncio
 import io
+import random
 import re
 from dataclasses import replace
 from typing import Any
@@ -94,8 +95,11 @@ class SubitoScraper(BaseScraper):
         proxies = None
         if settings.proxy_url:
             proxies = {"http": settings.proxy_url, "https": settings.proxy_url}
+        # Rotazione: un profilo a caso dal pool per ogni sessione (per target),
+        # così un eventuale flag Akamai su un profilo non blocca tutto.
+        pool = settings.impersonate_pool or ["safari"]
         return AsyncSession(
-            impersonate=settings.scraper_impersonate,
+            impersonate=random.choice(pool),
             proxies=proxies,
             timeout=self.timeout_s,
             headers={"Accept": "application/json"},

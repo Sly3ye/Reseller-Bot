@@ -48,6 +48,20 @@ alter table public.live_opportunities_tech
 create index if not exists idx_auto_variant on public.live_opportunities_auto (variant_key);
 create index if not exists idx_tech_variant on public.live_opportunities_tech (variant_key);
 
+-- 2c. scrape_runs (Fase 3): salute dello scraper, un record per giro Sniper.
+create table if not exists public.scrape_runs (
+  id         uuid primary key default gen_random_uuid(),
+  category   text,
+  status     text,
+  targets    integer,
+  ok         integer,
+  failed     integer,
+  scraped    integer,
+  new_count  integer,
+  ran_at     timestamptz not null default now()
+);
+create index if not exists idx_scrape_runs_cat on public.scrape_runs (category, ran_at desc);
+
 -- 3. sent_alerts (dedup notifiche Telegram) — migrazione 13.
 create table if not exists public.sent_alerts (
   id          uuid primary key default gen_random_uuid(),

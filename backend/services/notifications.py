@@ -33,6 +33,27 @@ ALERT_NEW = "new_deal"
 ALERT_DROP = "price_drop"
 
 
+# ---------------------------------------------------------- alert di sistema
+
+async def notify_system_alert(text: str) -> bool:
+    """Alert operativo (scraper down/ripristino) alla chat ops (o ai verticali).
+
+    No-op se il bot non è configurato.
+    """
+    token = settings.telegram_bot_token
+    if not token:
+        return False
+    chat = (
+        settings.telegram_chat_ops
+        or settings.telegram_chat_tech
+        or settings.telegram_chat_auto
+    )
+    if not chat:
+        return False
+    async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
+        return await _send_telegram(client, chat, text)
+
+
 # ------------------------------------------------------------------ invio
 
 async def _send_telegram(

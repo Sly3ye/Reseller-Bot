@@ -169,6 +169,20 @@ create table if not exists public.price_history (
 create index if not exists idx_price_history_listing
   on public.price_history (listing_id, changed_at desc);
 
+-- ------------------------------------------------------------ scrape_runs
+create table if not exists public.scrape_runs (
+  id         uuid primary key default gen_random_uuid(),
+  category   text,
+  status     text,
+  targets    integer,
+  ok         integer,
+  failed     integer,
+  scraped    integer,
+  new_count  integer,
+  ran_at     timestamptz not null default now()
+);
+create index if not exists idx_scrape_runs_cat on public.scrape_runs (category, ran_at desc);
+
 -- ------------------------------------------------------------ sent_alerts
 create table if not exists public.sent_alerts (
   id          uuid primary key default gen_random_uuid(),
