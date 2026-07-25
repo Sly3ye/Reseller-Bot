@@ -1,0 +1,67 @@
+# Data Intelligence: dal dato alla decisione d'acquisto
+
+Lo scraping raccoglie i dati; questo layer li trasforma in **decisioni di
+acquisto profittevoli**. Calcolato in lettura (`services/reads.py` +
+`scoring.py` + `valuation.py` + `variants.py`), con euristiche trasparenti e
+funzioni pure testate — nessun modello ML pesante da addestrare.
+
+## Fase 1 — Varianti canoniche (scrematura)
+
+Il principio: separare *come cerchi* (target/query) da *come analizzi*
+(variante). Il resolver (`variants.py`) assegna a ogni annuncio una **variante
+pulita**:
+- **Tech**: `(modello, memoria)` → es. `iphone-13-pro-max-256`. Risolve
+  l'overlap "iPhone 13" vs "13 Pro": non finiscono più nella stessa media.
+- **Auto**: `(modello, generazione)` dal target → es. `bmw-123d-2007-2013`.
+- **Condition tier**: `come-nuovo / buono / difetti / rotto|incidentata`.
+
+Le medie di mercato sono calcolate **per variante**, solo dai listing **sani**
+(esclude rotti/incidentati), ripulite con IQR.
+
+## Fase 2 — Valutazione predittiva (`valuation.py`)
+
+Dal "media della variante" al **valore equo del singolo annuncio**:
+- **Valore equo** = mediana robusta della variante × fattore condizione; per le
+  **auto**, il prezzo atteso a *quei* km (dal modello prezzo~km).
+- **Posizione di mercato**: percentile del prezzo nella distribuzione
+  ("più economico del X% dei simili").
+- **Classificazione**: `affare` / `in-linea` / `caro` / **`sospetto`**. Il
+  "sospetto" (troppo sotto il valore equo, spesso senza foto) **separa gli
+  affari veri dalle esche/errori**, azzerando lo score così gli alert non ci
+  cascano.
+
+Il **Deal Score** usa il margine vs valore equo (più preciso della media).
+
+## Deal Score (0–100) & assistente di trattativa (`scoring.py`)
+
+- **Deal Score**: combina margine (fino a 55 pt, satura a +33%), freschezza,
+  urgenza, tipo venditore (privato > finto_privato), calo prezzo, penalità
+  difetti, batteria e corredo. Feed ordinabile, con breakdown leggibile.
+- **Assistente di trattativa** (card espansa): offerta suggerita, giorni online,
+  storico cali, storico venditore, e tasto → Pipeline P&L.
+- **Radar riparazioni (tech)**: per gli iPhone rotti stima il costo (batteria
+  ~79€, schermo 150–300€ per fascia, vetro post. ~120€) e ricalcola il **margine
+  netto post-riparazione** — spesso un affare superiore al flip semplice.
+
+## Time-to-sale & liquidità (C3)
+
+Dai `venduto_rimosso` del Garbage Collector si misura in **quanti giorni ruota**
+ogni modello (liquidità reale): un iPhone 13 con margine 18% che gira in 4gg
+batte un 14 Pro con margine 25% invenduto da 3 settimane.
+
+> ⚠️ **Limite noto** (vedi [ROADMAP.md](ROADMAP.md) punto 1): i "prezzi di
+> rivendita suggeriti" attuali usano la distribuzione dei prezzi **listati**,
+> non dei **venduti**. Il segnale corretto è il prezzo a cui gli annunci
+> *spariscono* — in lavorazione.
+
+## Valutazione km-aware (auto)
+
+Regressione lineare `prezzo ~ km` per target (≥8 campioni, pendenza negativa) →
+prezzo atteso di quella specifica auto dati i suoi km.
+
+## Pipeline P&L (`api/deals.py`)
+
+Il gestionale: ogni affare attraversa `interessante → contattato → offerta →
+comprato → in_vendita → venduto`, con prezzo pagato, costi accessori e prezzo di
+rivendita → **profitto netto reale**. Chiude il feedback loop: confronta il
+margine stimato dal bot con quello effettivamente incassato.
