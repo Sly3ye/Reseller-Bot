@@ -3,9 +3,14 @@
 !.env.example
 
 .venv/
+.venv-verify/
 venv/
 __pycache__/
 *.py[cod]
+
+# Immagini scaricate (storage locale) e backup del DB
+media/
+backups/
 
 .pytest_cache/
 .mypy_cache/

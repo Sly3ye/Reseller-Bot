@@ -10,18 +10,21 @@ load_dotenv(BACKEND_DIR / ".env")
 load_dotenv()
 
 
-def _normalize_supabase_url(url: str | None) -> str | None:
-    if not url:
-        return None
-
-    return url.strip().removesuffix("/rest/v1/").removesuffix("/rest/v1")
-
-
 @dataclass(frozen=True)
 class Settings:
-    supabase_url: str | None = _normalize_supabase_url(os.getenv("SUPABASE_URL"))
-    supabase_key: str | None = os.getenv("SUPABASE_KEY")
+    # Postgres self-hosted (locale o VPS). Default: istanza locale di sviluppo.
+    database_url: str = os.getenv(
+        "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/reseller"
+    )
     environment: str = os.getenv("ENVIRONMENT", "development")
+
+    # Storage immagini su filesystem (sostituisce lo Storage di Supabase).
+    # media_root: dove salvare i file; public_media_base_url: da dove il browser
+    # li carica (il backend serve /media). In produzione punta al dominio/IP del VPS.
+    media_root: str = os.getenv("MEDIA_ROOT", str(BACKEND_DIR.parent / "media"))
+    public_media_base_url: str = os.getenv(
+        "PUBLIC_MEDIA_BASE_URL", "http://localhost:8000"
+    )
 
     # Rotating residential proxy (IPRoyal) — used ONLY for the hades API calls.
     # Image/CDN downloads go direct (see split routing in the scraper).
@@ -30,9 +33,28 @@ class Settings:
     proxy_user: str | None = os.getenv("PROXY_USER") or None
     proxy_pass: str | None = os.getenv("PROXY_PASS") or None
 
-    @property
-    def is_supabase_configured(self) -> bool:
-        return bool(self.supabase_url and self.supabase_key)
+    # Impronta browser di curl_cffi per le chiamate a hades (Akamai Bot Manager
+    # blocca httpx con 403). "safari"/"firefox" testati OK; se un domani Akamai
+    # si adatta, cambiare qui senza toccare il codice (es. "chrome", "chrome124").
+    scraper_impersonate: str = os.getenv("SCRAPER_IMPERSONATE", "safari")
+
+    # Telegram alerts — un bot, due chat (una per verticale). Lascia vuoto
+    # per disattivare le notifiche di quel verticale.
+    telegram_bot_token: str | None = os.getenv("TELEGRAM_BOT_TOKEN") or None
+    telegram_chat_tech: str | None = os.getenv("TELEGRAM_CHAT_ID_TECH") or None
+    telegram_chat_auto: str | None = os.getenv("TELEGRAM_CHAT_ID_AUTO") or None
+    # Soglia di margine (%) sopra cui una NUOVA opportunità viene notificata.
+    alert_min_margin_pct: float = float(os.getenv("ALERT_MIN_MARGIN_PCT", "20"))
+    # Calo di prezzo (%) sopra cui notificare anche senza margine sopra soglia.
+    alert_min_drop_pct: float = float(os.getenv("ALERT_MIN_DROP_PCT", "10"))
+
+    def telegram_chat_for(self, category: str) -> str | None:
+        """Chat di destinazione per la categoria; None → notifiche disattivate."""
+        if not self.telegram_bot_token:
+            return None
+        if category == "automobile":
+            return self.telegram_chat_auto
+        return self.telegram_chat_tech
 
     @property
     def proxy_url(self) -> str | None:

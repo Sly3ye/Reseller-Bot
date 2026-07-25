@@ -1,0 +1,11 @@
+.git
+.venv
+.venv-verify
+__pycache__
+*.pyc
+frontend
+media
+database
+scripts
+*.md
+.env

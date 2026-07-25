@@ -1,7 +1,9 @@
 fastapi
-uvicorn
-supabase
+uvicorn[standard]
+psycopg[binary]
+psycopg_pool
 httpx
+curl_cffi
 tenacity
 apscheduler
 python-dotenv
