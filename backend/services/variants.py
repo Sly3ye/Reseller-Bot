@@ -169,6 +169,7 @@ def backfill_existing() -> dict[str, int]:
     Aggiorna a gruppi (una UPDATE per combinazione variante+tier) per efficienza.
     """
     from backend.core.database import get_db  # noqa: PLC0415 (lazy by design)
+    from backend.scrapers.nlp_parser import parse_listing  # noqa: PLC0415
 
     db = get_db()
     targets = {
@@ -191,7 +192,7 @@ def backfill_existing() -> dict[str, int]:
         )
         rows = db.table(table).select(cols).execute().data or []
 
-        groups: dict[tuple[str, str], list[str]] = {}
+        groups: dict[tuple[str, str, str | None], list[str]] = {}
         for row in rows:
             if category == "smartphone":
                 res = resolve_variant(
@@ -215,17 +216,20 @@ def backfill_existing() -> dict[str, int]:
                     query=t.get("query"),
                     strict_filters=t.get("strict_filters"),
                 )
+            # Colore dal titolo (best-effort; utile per i filtri della dashboard).
+            color = parse_listing(row.get("title")).get("color")
             groups.setdefault(
-                (res["variant_key"], res["condition_tier"]), []
+                (res["variant_key"], res["condition_tier"], color), []
             ).append(row["id"])
 
         updated = 0
-        for (vk, tier), ids in groups.items():
+        for (vk, tier, color), ids in groups.items():
+            patch = {"variant_key": vk, "condition_tier": tier}
+            if color is not None:
+                patch["color"] = color
             for i in range(0, len(ids), 500):
                 chunk = ids[i : i + 500]
-                db.table(table).update(
-                    {"variant_key": vk, "condition_tier": tier}
-                ).in_("id", chunk).execute()
+                db.table(table).update(patch).in_("id", chunk).execute()
                 updated += len(chunk)
         result[table] = updated
     return result

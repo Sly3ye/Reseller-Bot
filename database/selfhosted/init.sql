@@ -124,6 +124,7 @@ create index if not exists idx_auto_target      on public.live_opportunities_aut
 create index if not exists idx_auto_image_hash  on public.live_opportunities_auto (image_hash);
 create index if not exists idx_auto_seller      on public.live_opportunities_auto (seller_id);
 create index if not exists idx_auto_variant     on public.live_opportunities_auto (variant_key);
+alter table public.live_opportunities_auto add column if not exists color text;
 
 -- ------------------------------------------------ live_opportunities_tech
 create table if not exists public.live_opportunities_tech (
@@ -145,6 +146,7 @@ create table if not exists public.live_opportunities_tech (
   seller_type    text,
   storage_gb     integer,
   battery_pct    integer,
+  color          text,
   defects_noted  jsonb,
   urgency_flags  jsonb,
   variant_key    text,

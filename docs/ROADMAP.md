@@ -24,7 +24,7 @@ Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 
 ## Richieste da implementare (backlog)
 
-### 1. 🔴 Time-to-sale per fascia di prezzo + prezzo di vendita REALE
+### 1. ✅ Time-to-sale per fascia di prezzo + prezzo di vendita REALE — FATTO
 **Problema osservato:** vedere molti annunci a un certo prezzo **non** significa
 che si venda a quel prezzo. Il "prezzo di rivendita suggerito" attuale usa la
 distribuzione dei prezzi **listati (attivi)**, che è un segnale distorto.
@@ -69,7 +69,9 @@ Va integrato con `scoring.py` (radar riparazioni) e `valuation.py` (scam).
 README splittato in documenti tematici collegati; README ridotto a spiegazione
 del programma, architettura e comandi. ✅ (in corso/fatto)
 
-### 5. 🔴 Dashboard principale: mostrare TUTTO l'accumulato, i migliori, con filtri
+### 5. ✅ Dashboard principale: TUTTO l'accumulato, i migliori, con filtri — FATTO
+(colore NLP + endpoint con filtri modello/memoria/colore/condizione + sort score/recenti/margine + paginazione + facets)
+
 Oggi la dashboard ("Live Sniper") mostra solo gli **ultimi ~60** annunci
 (ordine per data). Deve invece:
 - Mostrare **tutti** gli annunci accumulati (attivi), **ordinati per i migliori**

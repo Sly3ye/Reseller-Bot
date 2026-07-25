@@ -287,6 +287,7 @@ class SubitoScraper(BaseScraper):
                 # Variante tech (None per le auto): segmentazione di mercato.
                 "storage_gb": nlp["storage_gb"],
                 "battery_pct": nlp["battery_pct"],
+                "color": nlp["color"],
                 # Segnale NLP.
                 "features": nlp["features"],
                 "defects_noted": nlp["defects_noted"],

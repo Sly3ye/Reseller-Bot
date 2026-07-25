@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 import re
 import statistics
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
@@ -297,9 +298,10 @@ def _shape_opportunity(
         "fuel": row.get("fuel"),
         "storageGb": row.get("storage_gb"),
         "batteryPct": row.get("battery_pct"),
-        # Variante canonica (scrematura) + fascia di condizione.
+        # Variante canonica (scrematura) + fascia di condizione + colore.
         "variantKey": row.get("variant_key"),
         "conditionTier": row.get("condition_tier"),
+        "color": row.get("color"),
     }
 
 
@@ -354,176 +356,307 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
     return pools
 
 
+def _model_key(variant_key: str | None) -> str | None:
+    """Chiave modello = variante senza il suffisso memoria (iphone-13-pro-max-256
+    → iphone-13-pro-max). Serve per filtrare per modello senza ambiguità."""
+    if not variant_key or variant_key == "auto":
+        return None
+    return variant_key.rsplit("-", 1)[0]
+
+
+def _model_label(model_key: str) -> str:
+    """iphone-13-pro-max → 'iPhone 13 Pro Max'; iphone-16e → 'iPhone 16e'."""
+    parts = model_key.split("-")
+    if parts and parts[0] == "iphone":
+        rest = " ".join(p if p[:1].isdigit() else p.capitalize() for p in parts[1:])
+        return f"iPhone {rest}".strip()
+    return model_key.replace("-", " ").title()
+
+
+def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
+    """Valori disponibili per i filtri (modello/memoria/colore/condizione) con
+    conteggi, dai listing attivi — popola i menu a tendina della dashboard."""
+    rows = (
+        db.table(table)
+        .select("variant_key, storage_gb, color, condition_tier")
+        .in_("status", list(_ACTIVE_STATUSES))
+        .execute()
+        .data
+        or []
+    )
+    models: Counter = Counter()
+    storages: Counter = Counter()
+    colors: Counter = Counter()
+    conditions: Counter = Counter()
+    for r in rows:
+        mk = _model_key(r.get("variant_key"))
+        if mk:
+            models[mk] += 1
+        if r.get("storage_gb"):
+            storages[r["storage_gb"]] += 1
+        if r.get("color"):
+            colors[r["color"]] += 1
+        if r.get("condition_tier"):
+            conditions[r["condition_tier"]] += 1
+    return {
+        "models": [
+            {"key": k, "label": _model_label(k), "count": c}
+            for k, c in sorted(models.items(), key=lambda x: -x[1])
+        ],
+        "storages": [{"value": s, "count": c} for s, c in sorted(storages.items())],
+        "colors": [
+            {"value": k, "count": c}
+            for k, c in sorted(colors.items(), key=lambda x: -x[1])
+        ],
+        "conditions": [
+            {"value": k, "count": c}
+            for k, c in sorted(conditions.items(), key=lambda x: -x[1])
+        ],
+    }
+
+
+def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Arricchisce una riga con margine, variante, valutazione, Deal Score e
+    assistente di trattativa (il cuore BI, per singola opportunità)."""
+    target_id = row.get("target_id")
+    model = ctx["targets"].get(target_id)
+    variant_key = row.get("variant_key")
+    pool = ctx["variant_pools"].get(variant_key) if variant_key else None
+    market_avg = round(statistics.fmean(pool), 2) if pool and len(pool) >= 3 else None
+    if market_avg is None:
+        market_avg = ctx["avg_by_target"].get(target_id)
+    if market_avg is None and model:
+        market_avg = ctx["avg_by_model"].get(model)
+
+    shaped = _shape_opportunity(row, model, market_avg, ctx["price_history"].get(row["id"]))
+
+    seller_id = row.get("seller_id")
+    shaped["sellerActiveCount"] = (
+        ctx["seller_counts"].get(seller_id) if seller_id else None
+    )
+
+    shaped["expectedPrice"] = None
+    shaped["marginVsExpected"] = None
+    km_model = ctx["km_models"].get(target_id) if target_id else None
+    if km_model and row.get("km") and shaped["askingPrice"]:
+        slope, intercept, _n = km_model
+        expected = intercept + slope * float(row["km"])
+        if expected > 0:
+            shaped["expectedPrice"] = round(expected, 2)
+            shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
+
+    valuation = evaluate_value(
+        category=ctx["target_cat"],
+        asking=shaped["askingPrice"],
+        condition_tier=row.get("condition_tier"),
+        variant_prices=pool or [],
+        km=row.get("km"),
+        km_model=km_model,
+        has_images=bool(row.get("image_urls")),
+    )
+    shaped.update(valuation)
+
+    score_margin = (
+        valuation["marginVsFairPct"]
+        if valuation["marginVsFairPct"] is not None
+        else shaped["marginPct"]
+    )
+    shaped.update(
+        evaluate_opportunity(
+            category=ctx["target_cat"],
+            title=shaped["title"],
+            asking=shaped["askingPrice"],
+            market_avg=valuation["fairValue"] or market_avg,
+            margin_pct=score_margin,
+            found_at=row.get("found_at"),
+            seller_type=row.get("seller_type"),
+            defects=shaped["defects"],
+            urgency=shaped["urgencyFlags"],
+            features=shaped["features"],
+            battery_pct=shaped["batteryPct"],
+            has_price_drop=shaped["priceDrop"] is not None,
+        )
+    )
+    if valuation["dealClass"] == "sospetto":
+        shaped["score"] = 0
+        shaped["scoreBreakdown"] = [
+            {"label": "⚠️ Prezzo sospetto (possibile truffa/errore)", "points": 0}
+        ]
+    return shaped
+
+
 def list_opportunities(
     category: str,
-    limit: int = 60,
+    *,
+    sort: str = "score",
+    model: str | None = None,
+    storage: int | None = None,
+    color: str | None = None,
+    condition: str | None = None,
+    deal_class: str | None = None,
+    min_margin: float | None = None,
+    q: str | None = None,
+    limit: int = 30,
+    offset: int = 0,
     client: Client | None = None,
-) -> list[dict[str, Any]]:
-    """Live Sniper feed: opportunità di una categoria, dalle più recenti.
+) -> dict[str, Any]:
+    """Feed opportunità: TUTTE le attive, ordinate (default Deal Score), con
+    filtri (modello/memoria/colore/condizione/classe/margine) e paginazione.
 
-    Instrada sulla tabella per-tipo, risolve il nome modello via target_id,
-    arricchisce con la media di mercato (margini) e i cali di prezzo storici.
+    Ritorna {items, total, facets}. I filtri strutturali non ambigui
+    (memoria/colore/condizione) sono applicati a livello DB; modello, classe
+    affare, margine e ricerca testuale in Python (dipendono da campi derivati).
     """
     db = client or get_db()
     table = _opportunities_table(category)
     target_cat = _target_category(category)
 
-    rows = (
-        db.table(table)
-        .select("*")
-        .order("found_at", desc=True)
-        .limit(limit)
-        .execute()
-    ).data or []
+    facets = _opportunity_facets(db, table)
+
+    query = db.table(table).select("*").in_("status", list(_ACTIVE_STATUSES))
+    if storage is not None:
+        query = query.eq("storage_gb", storage)
+    if color:
+        query = query.eq("color", color)
+    if condition:
+        query = query.eq("condition_tier", condition)
+    rows = query.execute().data or []
     if not rows:
-        return []
+        return {"items": [], "total": 0, "facets": facets}
 
-    targets = _targets_for_category(db, target_cat)  # target_id → model name
+    variant_pools = _variant_price_pools(db, table)
+    ctx: dict[str, Any] = {
+        "target_cat": target_cat,
+        "targets": _targets_for_category(db, target_cat),
+        "variant_pools": variant_pools,
+        "price_history": _latest_price_history(db, [r["id"] for r in rows]),
+        "seller_counts": _seller_active_counts(db, table, rows),
+        "km_models": {},
+    }
     avg_by_target, avg_by_model = _market_avgs(db, target_cat)
-    variant_pools = _variant_price_pools(db, table)  # scrematura per variante
-    price_history = _latest_price_history(db, [row["id"] for row in rows])
-    seller_counts = _seller_active_counts(db, table, rows)
-
-    # Valutazione km-aware (solo auto): un modello di regressione per target.
-    km_models: dict[str, tuple[float, float, int]] = {}
+    ctx["avg_by_target"] = avg_by_target
+    ctx["avg_by_model"] = avg_by_model
     if target_cat == "automobile":
         auto_targets = list(
-            {row["target_id"] for row in rows if row.get("target_id") and row.get("km")}
+            {r["target_id"] for r in rows if r.get("target_id") and r.get("km")}
         )
-        km_models = _km_price_models(db, table, auto_targets)
+        ctx["km_models"] = _km_price_models(db, table, auto_targets)
 
-    result = []
-    for row in rows:
-        target_id = row.get("target_id")
-        model = targets.get(target_id)
-        # Media per VARIANTE canonica (scrematura pulita) come primaria; fallback
-        # al target (isolamento per generazione) e poi al modello.
-        variant_key = row.get("variant_key")
-        pool = variant_pools.get(variant_key) if variant_key else None
-        market_avg = (
-            round(statistics.fmean(pool), 2) if pool and len(pool) >= 3 else None
+    items = [_enrich_opportunity(r, ctx) for r in rows]
+
+    # Filtri applicati in Python (campi derivati / ambigui via DB).
+    if model:
+        items = [it for it in items if _model_key(it.get("variantKey")) == model]
+    if deal_class:
+        items = [it for it in items if it.get("dealClass") == deal_class]
+    if min_margin is not None:
+        items = [
+            it for it in items
+            if it.get("marginPct") is not None and it["marginPct"] >= min_margin
+        ]
+    if q:
+        ql = q.strip().lower()
+        items = [
+            it for it in items
+            if ql in (it.get("title") or "").lower()
+            or ql in (it.get("location") or "").lower()
+        ]
+
+    if sort == "recent":
+        items.sort(key=lambda it: it.get("foundAt") or "", reverse=True)
+    elif sort == "margin":
+        items.sort(
+            key=lambda it: it["marginPct"] if it.get("marginPct") is not None else -1e9,
+            reverse=True,
         )
-        if market_avg is None:
-            market_avg = avg_by_target.get(target_id)
-        if market_avg is None and model:
-            market_avg = avg_by_model.get(model)
-        shaped = _shape_opportunity(
-            row, model, market_avg, price_history.get(row["id"])
+    else:  # score (default)
+        items.sort(key=lambda it: it.get("score") or 0, reverse=True)
+
+    total = len(items)
+    return {"items": items[offset : offset + limit], "total": total, "facets": facets}
+
+
+def _price_bands(points: list[tuple[float, float]]) -> list[dict[str, Any]]:
+    """Divide i venduti in fasce di prezzo (economico/medio/alto) e calcola i
+    giorni medi di vendita per fascia → 'a quale prezzo si vende in quanti giorni'.
+    """
+    if len(points) < 6:
+        return []
+    ordered = sorted(points, key=lambda x: x[0])
+    n = len(ordered)
+    thirds = [ordered[: n // 3], ordered[n // 3 : 2 * n // 3], ordered[2 * n // 3 :]]
+    bands: list[dict[str, Any]] = []
+    for label, grp in zip(("economico", "medio", "alto"), thirds):
+        if not grp:
+            continue
+        prices = [p for p, _ in grp]
+        days = [d for _, d in grp]
+        bands.append(
+            {
+                "band": label,
+                "priceFrom": round(min(prices)),
+                "priceTo": round(max(prices)),
+                "avgDays": round(statistics.fmean(days), 1),
+                "count": len(grp),
+            }
         )
-
-        # Storico venditore (A3): quanti annunci attivi ha questo venditore.
-        seller_id = row.get("seller_id")
-        shaped["sellerActiveCount"] = (
-            seller_counts.get(seller_id) if seller_id else None
-        )
-
-        # Valutazione km-aware (A1): prezzo atteso PER QUESTI km e margine vero.
-        shaped["expectedPrice"] = None
-        shaped["marginVsExpected"] = None
-        km_model = km_models.get(target_id) if target_id else None
-        if km_model and row.get("km") and shaped["askingPrice"]:
-            slope, intercept, _n = km_model
-            expected = intercept + slope * float(row["km"])
-            if expected > 0:
-                shaped["expectedPrice"] = round(expected, 2)
-                shaped["marginVsExpected"] = round(
-                    expected - shaped["askingPrice"], 2
-                )
-
-        # Fase 2 — valutazione predittiva: valore equo del SINGOLO annuncio,
-        # posizione nel mercato e classificazione affare/in-linea/caro/sospetto.
-        valuation = evaluate_value(
-            category=target_cat,
-            asking=shaped["askingPrice"],
-            condition_tier=row.get("condition_tier"),
-            variant_prices=pool or [],
-            km=row.get("km"),
-            km_model=km_model,
-            has_images=bool(row.get("image_urls")),
-        )
-        shaped.update(valuation)
-
-        # Il Deal Score usa il margine vs VALORE EQUO (più preciso della media);
-        # fallback al margine vs media quando la valutazione non è disponibile.
-        score_margin = (
-            valuation["marginVsFairPct"]
-            if valuation["marginVsFairPct"] is not None
-            else shaped["marginPct"]
-        )
-        # Deal Score + assistente trattativa (C2/C4/T3/A2).
-        shaped.update(
-            evaluate_opportunity(
-                category=target_cat,
-                title=shaped["title"],
-                asking=shaped["askingPrice"],
-                market_avg=valuation["fairValue"] or market_avg,
-                margin_pct=score_margin,
-                found_at=row.get("found_at"),
-                seller_type=row.get("seller_type"),
-                defects=shaped["defects"],
-                urgency=shaped["urgencyFlags"],
-                features=shaped["features"],
-                battery_pct=shaped["batteryPct"],
-                has_price_drop=shaped["priceDrop"] is not None,
-            )
-        )
-
-        # Anti-truffa: un "sospetto" (prezzo troppo bello per essere vero) non è
-        # un affare da mettere in cima → azzera lo score e segnalalo.
-        if valuation["dealClass"] == "sospetto":
-            shaped["score"] = 0
-            shaped["scoreBreakdown"] = [
-                {"label": "⚠️ Prezzo sospetto (possibile truffa/errore)", "points": 0}
-            ]
-        result.append(shaped)
-    return result
+    return bands
 
 
-def _time_to_sale(
+def _sold_stats(
     db: Client, table: str, targets: dict[str, str]
 ) -> tuple[dict[str, dict[str, Any]], float | None]:
-    """Time-to-sale (C3): giorni medi found_at→rimozione, per modello.
+    """Statistiche dai VENDUTI (annunci spariti) — il segnale di vendita reale.
 
-    Il Garbage Collector marca 'venduto_rimosso' aggiornando updated_at: la
-    differenza con found_at misura in quanti giorni l'annuncio è sparito dal
-    mercato → liquidità reale del modello. Ritorna (per_modello, mediana
-    complessiva del verticale).
+    Il Garbage Collector marca 'venduto_rimosso' (annuncio sparito da Subito =
+    proxy di venduto) conservando l'ultimo ``asking_price`` e aggiornando
+    ``updated_at``. Da qui, per modello: giorni medi di vendita (found→sparizione),
+    **prezzo di vendita reale** (mediana/max dei venduti, NON dei listati) e le
+    fasce prezzo→giorni. Solo listing sani. Ritorna (per_modello, mediana giorni).
     """
     try:
         rows = (
             db.table(table)
-            .select("target_id, found_at, updated_at")
+            .select("target_id, asking_price, found_at, updated_at, condition_tier")
             .in_("status", list(_SOLD_STATUSES))
             .order("updated_at", desc=True)
-            .limit(2000)
+            .limit(5000)
             .execute()
         ).data or []
     except Exception:
         return {}, None
 
-    samples_by_model: dict[str, list[float]] = {}
-    all_samples: list[float] = []
+    by_model: dict[str, list[tuple[float, float]]] = {}
+    all_days: list[float] = []
     for row in rows:
+        if not is_healthy(row.get("condition_tier") or "buono"):
+            continue
+        model = targets.get(row.get("target_id"))
+        price = _to_float(row.get("asking_price"))
         found = _parse_ts(row.get("found_at"))
         removed = _parse_ts(row.get("updated_at"))
-        if not found or not removed:
+        if not model or price is None or price <= 0 or not found or not removed:
             continue
         days = (removed - found).total_seconds() / 86400
         if not (0 <= days <= 365):
             continue
-        model = targets.get(row.get("target_id"))
-        if model:
-            samples_by_model.setdefault(model, []).append(days)
-        all_samples.append(days)
+        by_model.setdefault(model, []).append((price, days))
+        all_days.append(days)
 
-    per_model = {
-        model: {
+    per_model: dict[str, dict[str, Any]] = {}
+    for model, pts in by_model.items():
+        if len(pts) < 3:
+            continue
+        prices = [p for p, _ in pts]
+        days = [d for _, d in pts]
+        per_model[model] = {
             "avgDaysToSell": round(statistics.fmean(days), 1),
-            "sampleSold": len(days),
+            "sampleSold": len(pts),
+            "soldMedian": round(statistics.median(prices)),
+            "soldMax": round(max(prices)),
+            "priceBands": _price_bands(pts),
         }
-        for model, days in samples_by_model.items()
-    }
-    overall = round(statistics.median(all_samples), 1) if all_samples else None
+    overall = round(statistics.median(all_days), 1) if all_days else None
     return per_model, overall
 
 
@@ -593,9 +726,9 @@ def get_market_intelligence(
     except Exception:
         active_listings = 0
 
-    # Liquidità (time-to-sale) e prezzi di rivendita suggeriti, per modello.
+    # Statistiche dai VENDUTI (prezzo reale + giorni) e prezzi dei listati attivi.
     targets = _targets_for_category(db, target_cat)
-    tts_by_model, overall_tts = _time_to_sale(db, table, targets)
+    sold_by_model, overall_tts = _sold_stats(db, table, targets)
     resale_by_model = _resale_suggestions(db, table, targets)
 
     if not products:
@@ -635,7 +768,7 @@ def get_market_intelligence(
             if prev_avg:
                 change_pct = round((latest_avg - prev_avg) / prev_avg * 100, 1)
         name = products.get(product_id, "—")
-        tts = tts_by_model.get(name) or {}
+        sold = sold_by_model.get(name) or {}
         resale = resale_by_model.get(name) or {}
         models.append(
             {
@@ -643,13 +776,17 @@ def get_market_intelligence(
                 "avg": latest_avg,
                 "sample": latest.get("volume"),
                 "changePct": change_pct,
-                # Liquidità (C3): in quanti giorni ruota questo modello.
-                "avgDaysToSell": tts.get("avgDaysToSell"),
-                "sampleSold": tts.get("sampleSold"),
-                # Prezzi di rivendita suggeriti (C7).
+                # Liquidità: giorni medi di vendita (dai venduti).
+                "avgDaysToSell": sold.get("avgDaysToSell"),
+                "sampleSold": sold.get("sampleSold"),
+                # Prezzo di vendita REALE (dai venduti, non dai listati) + fasce.
+                "soldMedian": sold.get("soldMedian"),
+                "soldMax": sold.get("soldMax"),
+                "priceBands": sold.get("priceBands") or [],
+                # Prezzi dei LISTATI attivi (fallback / confronto).
                 "fastSalePrice": resale.get("fastSalePrice"),
                 "maxSalePrice": resale.get("maxSalePrice"),
-                # Serie storica completa (C6): curva di deprezzamento.
+                # Serie storica completa: curva di deprezzamento.
                 "series": [
                     {"date": r["trend_date"], "price": _to_float(r.get("avg_price"))}
                     for r in rows_sorted

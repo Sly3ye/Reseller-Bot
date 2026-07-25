@@ -69,6 +69,7 @@ export type ApiOpportunity = {
   // Fase 1: variante canonica + condizione
   variantKey: string | null;
   conditionTier: string | null;
+  color: string | null;
   // Fase 2: valutazione predittiva
   fairValue: number | null;
   pricePosition: number | null;
@@ -83,6 +84,14 @@ export type ApiOpportunity = {
   suggestedOffer: number | null;
 };
 
+export type PriceBand = {
+  band: string;
+  priceFrom: number;
+  priceTo: number;
+  avgDays: number;
+  count: number;
+};
+
 export type ApiModelStat = {
   name: string;
   avg: number | null;
@@ -90,6 +99,11 @@ export type ApiModelStat = {
   changePct: number | null;
   avgDaysToSell: number | null;
   sampleSold: number | null;
+  // Prezzo di vendita REALE (dai venduti) + fasce prezzo→giorni.
+  soldMedian: number | null;
+  soldMax: number | null;
+  priceBands: PriceBand[];
+  // Prezzi dei listati attivi (fallback/confronto).
   fastSalePrice: number | null;
   maxSalePrice: number | null;
   series: { date: string; price: number }[];
@@ -147,14 +161,55 @@ export type DealsSummary = {
   avgRealMarginPct: number | null;
 };
 
+export type SortMode = "score" | "recent" | "margin";
+
+export type OppFilters = {
+  sort?: SortMode;
+  model?: string | null;
+  storage?: number | null;
+  color?: string | null;
+  condition?: string | null;
+  dealClass?: string | null;
+  minMargin?: number | null;
+  q?: string | null;
+  limit?: number;
+  offset?: number;
+};
+
+export type OpportunityFacets = {
+  models: { key: string; label: string; count: number }[];
+  storages: { value: number; count: number }[];
+  colors: { value: string; count: number }[];
+  conditions: { value: string; count: number }[];
+};
+
+export type OpportunitiesPage = {
+  items: ApiOpportunity[];
+  total: number;
+  facets: OpportunityFacets;
+};
+
 export async function fetchOpportunities(
   category: Category,
+  filters: OppFilters = {},
   signal?: AbortSignal,
-): Promise<ApiOpportunity[]> {
-  const res = await fetch(
-    `${API_BASE_URL}/api/opportunities?category=${category}`,
-    { cache: "no-store", signal },
-  );
+): Promise<OpportunitiesPage> {
+  const p = new URLSearchParams({ category });
+  if (filters.sort) p.set("sort", filters.sort);
+  if (filters.model) p.set("model", filters.model);
+  if (filters.storage != null) p.set("storage", String(filters.storage));
+  if (filters.color) p.set("color", filters.color);
+  if (filters.condition) p.set("condition", filters.condition);
+  if (filters.dealClass) p.set("deal_class", filters.dealClass);
+  if (filters.minMargin != null) p.set("min_margin", String(filters.minMargin));
+  if (filters.q) p.set("q", filters.q);
+  p.set("limit", String(filters.limit ?? 30));
+  p.set("offset", String(filters.offset ?? 0));
+
+  const res = await fetch(`${API_BASE_URL}/api/opportunities?${p.toString()}`, {
+    cache: "no-store",
+    signal,
+  });
   if (!res.ok) throw new Error(`GET /api/opportunities failed (${res.status})`);
   return res.json();
 }

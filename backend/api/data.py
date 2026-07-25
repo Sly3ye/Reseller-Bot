@@ -11,14 +11,39 @@ router = APIRouter(prefix="/api", tags=["data"])
 Category = Literal["smartphone", "auto", "automobile"]
 
 
+Sort = Literal["score", "recent", "margin"]
+
+
 @router.get("/opportunities")
 async def get_opportunities(
     category: Category = Query(default="smartphone"),
-    limit: int = Query(default=60, ge=1, le=200),
-) -> list[dict]:
-    """Live Sniper feed for a vertical (category), newest first."""
+    sort: Sort = Query(default="score"),
+    model: str | None = Query(default=None, description="model_key, es. iphone-13-pro-max"),
+    storage: int | None = Query(default=None),
+    color: str | None = Query(default=None),
+    condition: str | None = Query(default=None),
+    deal_class: str | None = Query(default=None),
+    min_margin: float | None = Query(default=None),
+    q: str | None = Query(default=None),
+    limit: int = Query(default=30, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Feed opportunità: tutte le attive, ordinate (default Deal Score), con
+    filtri e paginazione. Ritorna {items, total, facets}."""
     try:
-        return list_opportunities(category=category, limit=limit)
+        return list_opportunities(
+            category=category,
+            sort=sort,
+            model=model,
+            storage=storage,
+            color=color,
+            condition=condition,
+            deal_class=deal_class,
+            min_margin=min_margin,
+            q=q,
+            limit=limit,
+            offset=offset,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

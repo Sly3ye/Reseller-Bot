@@ -47,6 +47,9 @@ alter table public.live_opportunities_tech
   add column if not exists condition_tier text;
 create index if not exists idx_auto_variant on public.live_opportunities_auto (variant_key);
 create index if not exists idx_tech_variant on public.live_opportunities_tech (variant_key);
+alter table public.live_opportunities_auto add column if not exists color text;
+alter table public.live_opportunities_tech add column if not exists color text;
+create index if not exists idx_tech_color on public.live_opportunities_tech (color);
 
 -- 2c. scrape_runs (Fase 3): salute dello scraper, un record per giro Sniper.
 create table if not exists public.scrape_runs (

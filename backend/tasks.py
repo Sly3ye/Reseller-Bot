@@ -140,6 +140,7 @@ def _opportunity_payload(
         "features": meta.get("features"),
         "seller_id": meta.get("seller_id"),
         "seller_type": meta.get("seller_type"),
+        "color": meta.get("color"),
         "variant_key": variant["variant_key"],
         "condition_tier": variant["condition_tier"],
     }

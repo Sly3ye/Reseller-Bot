@@ -132,6 +132,41 @@ _IQR_EXCLUSION_DEFECTS = frozenset({
 # del costo di riparazione noto, vedi backend/services/scoring.py.
 REPAIRABLE_DEFECTS = frozenset({"schermo-rotto", "batteria-esausta", "back-rotto"})
 
+# ----------------------------------------------------------------- colore (tech)
+
+# canonico → varianti (nomi commerciali Apple IT/EN). Ordine: i multi-parola e i
+# più specifici prima, così "space black" vince su "black" e "deep purple" su
+# "purple". Il matching prende il PRIMO canonico che compare nel testo.
+_COLOR_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "Grafite": ("grafite", "graphite"),
+    "Titanio Naturale": ("titanio naturale", "natural titanium", "titanio grezzo"),
+    "Nero": ("nero siderale", "space black", "titanio nero", "black titanium",
+             "mezzanotte", "midnight", "nero", "black"),
+    "Bianco": ("titanio bianco", "white titanium", "galassia", "starlight",
+               "bianco stellare", "bianco", "white"),
+    "Argento": ("argento", "silver"),
+    "Blu": ("blu pacifico", "pacific blue", "blu sierra", "sierra blue",
+            "titanio blu", "blue titanium", "ultramarine", "oltremare",
+            "azzurro", "blu", "blue"),
+    "Verde": ("verde alpino", "alpine green", "verde notte", "midnight green",
+              "verde", "green"),
+    "Teal": ("teal", "verde acqua"),
+    "Viola": ("deep purple", "viola intenso", "viola", "purple", "lavanda"),
+    "Rosso": ("product red", "rosso", "red"),
+    "Oro": ("oro", "gold", "dorato"),
+    "Rosa": ("rosa", "pink"),
+    "Giallo": ("giallo", "yellow"),
+}
+
+
+def _extract_color(norm: str) -> str | None:
+    """Primo colore canonico che compare nel testo normalizzato, o None."""
+    for canonical, variants in _COLOR_SYNONYMS.items():
+        if any(v in norm for v in variants):
+            return canonical
+    return None
+
+
 # ---------------------------------------------------------------- urgenza (leva)
 
 _URGENCY_SYNONYMS: dict[str, tuple[str, ...]] = {
@@ -253,6 +288,7 @@ def parse_listing(
         "year": _extract_year(raw),
         "storage_gb": _extract_storage_gb(raw),
         "battery_pct": _extract_battery_pct(raw),
+        "color": _extract_color(norm),
         "features": features,
         "defects_noted": defects,
         "urgency_flags": _match_dictionary(norm, _URGENCY_SYNONYMS),

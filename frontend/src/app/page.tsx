@@ -18,6 +18,8 @@ import {
   type Deal,
   type DealStage,
   type DealsSummary,
+  type OpportunityFacets,
+  type SortMode,
 } from "@/lib/api";
 import {
   dealClassStyle,
@@ -33,7 +35,15 @@ const MONO = "var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace";
 type Vertical = "tech" | "auto";
 type Screen = "sniper" | "intel" | "pipeline" | "automations";
 type MarginFilter = "all" | "high";
-type SortMode = "recent" | "score";
+
+const PAGE_SIZE = 30;
+
+const EMPTY_FACETS: OpportunityFacets = {
+  models: [],
+  storages: [],
+  colors: [],
+  conditions: [],
+};
 
 function buildTrendPaths(values: number[]) {
   if (values.length < 2) return null;
@@ -67,7 +77,16 @@ export default function FlipRadar() {
   const [marginFilter, setMarginFilter] = useState<MarginFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("score");
 
+  // Filtri (iPhone) + paginazione, applicati lato server.
+  const [fModel, setFModel] = useState<string | null>(null);
+  const [fStorage, setFStorage] = useState<number | null>(null);
+  const [fColor, setFColor] = useState<string | null>(null);
+  const [fCondition, setFCondition] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+
   const [opportunities, setOpportunities] = useState<ApiOpportunity[]>([]);
+  const [total, setTotal] = useState(0);
+  const [facets, setFacets] = useState<OpportunityFacets>(EMPTY_FACETS);
   const [intel, setIntel] = useState<ApiTrends | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,12 +104,20 @@ export default function FlipRadar() {
   // Il toggle mostra "Auto", ma il backend usa la categoria nativa "automobile".
   const category: Category = vertical === "tech" ? "smartphone" : "automobile";
 
-  // Fetch the feed + market intelligence whenever the business vertical changes.
+  // Market Intelligence: ricarica al cambio verticale.
   useEffect(() => {
     const controller = new AbortController();
+    fetchTrends(category, controller.signal)
+      .then(setIntel)
+      .catch(() => {
+        if (!controller.signal.aborted) setIntel(null);
+      });
+    return () => controller.abort();
+  }, [category]);
 
-    // I reset di stato sono in un microtask: evita il setState sincrono nel
-    // corpo dell'effect (cascading render) mantenendo lo stesso comportamento.
+  // Opportunità: TUTTE le attive, filtrate/ordinate/paginate lato server.
+  useEffect(() => {
+    const controller = new AbortController();
     void Promise.resolve().then(() => {
       if (controller.signal.aborted) return;
       setLoading(true);
@@ -98,26 +125,41 @@ export default function FlipRadar() {
       setExpandedId(null);
     });
 
-    Promise.all([
-      fetchOpportunities(category, controller.signal),
-      fetchTrends(category, controller.signal),
-    ])
-      .then(([opps, trends]) => {
-        setOpportunities(opps);
-        setIntel(trends);
+    fetchOpportunities(
+      category,
+      {
+        sort: sortMode,
+        model: fModel,
+        storage: fStorage,
+        color: fColor,
+        condition: fCondition,
+        minMargin: marginFilter === "high" ? 20 : null,
+        q: search || null,
+        limit: PAGE_SIZE,
+        offset: page * PAGE_SIZE,
+      },
+      controller.signal,
+    )
+      .then((res) => {
+        setOpportunities(res.items);
+        setTotal(res.total);
+        setFacets(res.facets);
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
         setError(err instanceof Error ? err.message : "Errore di caricamento");
         setOpportunities([]);
-        setIntel(null);
+        setTotal(0);
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
 
     return () => controller.abort();
-  }, [category]);
+  }, [
+    category, sortMode, fModel, fStorage, fColor, fCondition,
+    marginFilter, search, page,
+  ]);
 
   useEffect(() => {
     const tick = setInterval(() => {
@@ -176,7 +218,26 @@ export default function FlipRadar() {
     [category],
   );
 
-  const toggleVertical = () => setVertical((v) => (v === "tech" ? "auto" : "tech"));
+  // Reset filtri + pagina al cambio verticale (i filtri sono tech-specifici).
+  const resetFilters = useCallback(() => {
+    setFModel(null);
+    setFStorage(null);
+    setFColor(null);
+    setFCondition(null);
+    setSearch("");
+    setMarginFilter("all");
+    setPage(0);
+  }, []);
+  const toggleVertical = () => {
+    resetFilters();
+    setVertical((v) => (v === "tech" ? "auto" : "tech"));
+  };
+
+  // Setter di filtro che riportano sempre alla prima pagina.
+  const p0 = <T,>(setter: (v: T) => void) => (v: T) => {
+    setter(v);
+    setPage(0);
+  };
 
   const isTech = vertical === "tech";
   const accent = isTech ? "oklch(0.62 0.19 265)" : "oklch(0.68 0.19 45)";
@@ -184,26 +245,8 @@ export default function FlipRadar() {
   const accentBorder = isTech ? "oklch(0.62 0.19 265 / 0.4)" : "oklch(0.68 0.19 45 / 0.4)";
   const accentText = isTech ? "oklch(0.80 0.13 265)" : "oklch(0.82 0.14 45)";
 
-  const filteredListings = useMemo(() => {
-    let list = opportunities;
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (it) =>
-          (it.title ?? "").toLowerCase().includes(q) ||
-          (it.location ?? "").toLowerCase().includes(q),
-      );
-    }
-    if (marginFilter === "high") {
-      list = list.filter((it) => it.marginPct !== null && it.marginPct >= 20);
-    }
-    if (sortMode === "score") {
-      list = [...list].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-    }
-    return list;
-  }, [opportunities, search, marginFilter, sortMode]);
-
-  const hasResults = filteredListings.length > 0;
+  // Il server già filtra/ordina/pagina: la lista mostrata è direttamente `opportunities`.
+  const hasResults = opportunities.length > 0;
 
   const trendValues = useMemo(
     () => (intel?.trend ?? []).map((p) => p.price),
@@ -521,24 +564,37 @@ export default function FlipRadar() {
         <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px 60px" }}>
           {screen === "sniper" && (
             <SniperScreen
-              resultCount={filteredListings.length}
+              total={total}
+              isTech={isTech}
               category={category}
+              facets={facets}
               search={search}
-              onSearchChange={setSearch}
+              onSearchChange={p0(setSearch)}
               marginFilter={marginFilter}
-              onFilterChange={setMarginFilter}
+              onFilterChange={p0(setMarginFilter)}
               sortMode={sortMode}
-              onSortChange={setSortMode}
+              onSortChange={p0(setSortMode)}
+              fModel={fModel}
+              onModelChange={p0(setFModel)}
+              fStorage={fStorage}
+              onStorageChange={p0(setFStorage)}
+              fColor={fColor}
+              onColorChange={p0(setFColor)}
+              fCondition={fCondition}
+              onConditionChange={p0(setFCondition)}
+              page={page}
+              pageSize={PAGE_SIZE}
+              onPageChange={setPage}
               loading={loading}
               error={error}
               hasResults={hasResults}
-              listings={filteredListings}
+              listings={opportunities}
               expandedId={expandedId}
               flaggedIds={flaggedIds}
               pipelineIds={pipelineIds}
               onToggleExpand={(id) => {
                 setExpandedId((cur) => (cur === id ? null : id));
-                const item = filteredListings.find((x) => x.id === id);
+                const item = opportunities.find((x) => x.id === id);
                 if (item && expandedId !== id) markSeen(item);
               }}
               onToggleFlag={(id) => setFlaggedIds((cur) => ({ ...cur, [id]: !cur[id] }))}
@@ -613,14 +669,27 @@ function ErrorBanner({ message }: { message: string }) {
 const GRID_COLUMNS = "56px 60px 2.1fr 1fr 1fr 1.1fr 84px 54px";
 
 function SniperScreen(props: {
-  resultCount: number;
+  total: number;
+  isTech: boolean;
   category: Category;
+  facets: OpportunityFacets;
   search: string;
   onSearchChange: (v: string) => void;
   marginFilter: MarginFilter;
   onFilterChange: (v: MarginFilter) => void;
   sortMode: SortMode;
   onSortChange: (v: SortMode) => void;
+  fModel: string | null;
+  onModelChange: (v: string | null) => void;
+  fStorage: number | null;
+  onStorageChange: (v: number | null) => void;
+  fColor: string | null;
+  onColorChange: (v: string | null) => void;
+  fCondition: string | null;
+  onConditionChange: (v: string | null) => void;
+  page: number;
+  pageSize: number;
+  onPageChange: (v: number) => void;
   loading: boolean;
   error: string | null;
   hasResults: boolean;
@@ -632,6 +701,7 @@ function SniperScreen(props: {
   onToggleFlag: (id: string) => void;
   onAddToPipeline: (item: ApiOpportunity) => void;
 }) {
+  const pageCount = Math.max(1, Math.ceil(props.total / props.pageSize));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px", animation: "fadeIn 0.2s ease" }}>
       <div
@@ -644,9 +714,9 @@ function SniperScreen(props: {
         }}
       >
         <div>
-          <div style={{ fontSize: "22px", fontWeight: 700 }}>Live Sniper Feed</div>
+          <div style={{ fontSize: "22px", fontWeight: 700 }}>Opportunità</div>
           <div style={{ fontSize: "13px", color: "oklch(0.62 0.01 250)", marginTop: "4px" }}>
-            {props.resultCount} opportunities · scraped continuously from classified listings
+            {props.total} opportunità · le migliori per Deal Score, con filtri
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -716,7 +786,7 @@ function SniperScreen(props: {
               gap: "2px",
             }}
           >
-            {(["score", "recent"] as SortMode[]).map((mode) => (
+            {(["score", "recent", "margin"] as SortMode[]).map((mode) => (
               <div
                 key={mode}
                 onClick={() => props.onSortChange(mode)}
@@ -731,12 +801,68 @@ function SniperScreen(props: {
                   color: props.sortMode === mode ? "oklch(0.12 0.008 250)" : "oklch(0.62 0.01 250)",
                 }}
               >
-                {mode === "score" ? "Deal Score" : "Recenti"}
+                {mode === "score" ? "Deal Score" : mode === "recent" ? "Recenti" : "Margine"}
               </div>
             ))}
           </div>
         </div>
       </div>
+
+      {/* Barra filtri (iPhone): modello, memoria, colore, condizione — da facets */}
+      {props.isTech && (
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <FacetSelect
+            label="Modello"
+            value={props.fModel}
+            onChange={props.onModelChange}
+            options={props.facets.models.map((m) => ({ value: m.key, label: `${m.label} (${m.count})` }))}
+          />
+          <FacetSelect
+            label="Memoria"
+            value={props.fStorage === null ? null : String(props.fStorage)}
+            onChange={(v) => props.onStorageChange(v === null ? null : Number(v))}
+            options={props.facets.storages.map((s) => ({
+              value: String(s.value),
+              label: `${s.value >= 1024 ? "1TB" : s.value + "GB"} (${s.count})`,
+            }))}
+          />
+          <FacetSelect
+            label="Colore"
+            value={props.fColor}
+            onChange={props.onColorChange}
+            options={props.facets.colors.map((c) => ({ value: c.value, label: `${c.value} (${c.count})` }))}
+          />
+          <FacetSelect
+            label="Condizione"
+            value={props.fCondition}
+            onChange={props.onConditionChange}
+            options={props.facets.conditions.map((c) => ({ value: c.value, label: `${c.value} (${c.count})` }))}
+          />
+          {(props.fModel || props.fStorage !== null || props.fColor || props.fCondition) && (
+            <button
+              onClick={() => {
+                props.onModelChange(null);
+                props.onStorageChange(null);
+                props.onColorChange(null);
+                props.onConditionChange(null);
+              }}
+              style={{
+                height: "34px",
+                padding: "0 12px",
+                borderRadius: "8px",
+                border: "1px solid oklch(0.32 0.01 250)",
+                background: "transparent",
+                color: "oklch(0.72 0.16 30)",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              ✕ Azzera filtri
+            </button>
+          )}
+        </div>
+      )}
 
       {props.error ? (
         <ErrorBanner message={props.error} />
@@ -822,11 +948,78 @@ function SniperScreen(props: {
             No opportunities match your filters
           </div>
           <div style={{ fontSize: "12.5px", color: "oklch(0.46 0.01 250)" }}>
-            Try clearing the search or margin filter
+            Prova ad azzerare la ricerca o i filtri
           </div>
         </div>
       )}
+
+      {/* Paginazione */}
+      {props.hasResults && pageCount > 1 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "14px", paddingTop: "4px" }}>
+          <button
+            onClick={() => props.onPageChange(props.page - 1)}
+            disabled={props.page <= 0}
+            style={{
+              height: "34px", padding: "0 14px", borderRadius: "8px",
+              border: "1px solid oklch(0.32 0.01 250)", background: "oklch(0.20 0.008 250)",
+              color: props.page <= 0 ? "oklch(0.40 0.01 250)" : "oklch(0.90 0.004 250)",
+              fontSize: "13px", fontWeight: 600, cursor: props.page <= 0 ? "default" : "pointer",
+            }}
+          >
+            ← Prec
+          </button>
+          <div style={{ fontSize: "13px", color: "oklch(0.62 0.01 250)", fontFamily: MONO }}>
+            Pagina {props.page + 1} / {pageCount}
+          </div>
+          <button
+            onClick={() => props.onPageChange(props.page + 1)}
+            disabled={props.page >= pageCount - 1}
+            style={{
+              height: "34px", padding: "0 14px", borderRadius: "8px",
+              border: "1px solid oklch(0.32 0.01 250)", background: "oklch(0.20 0.008 250)",
+              color: props.page >= pageCount - 1 ? "oklch(0.40 0.01 250)" : "oklch(0.90 0.004 250)",
+              fontSize: "13px", fontWeight: 600, cursor: props.page >= pageCount - 1 ? "default" : "pointer",
+            }}
+          >
+            Succ →
+          </button>
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Select nativo per un filtro a faccette (opzione vuota = "Tutti"). */
+function FacetSelect(props: {
+  label: string;
+  value: string | null;
+  onChange: (v: string | null) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      value={props.value ?? ""}
+      onChange={(e) => props.onChange(e.target.value === "" ? null : e.target.value)}
+      style={{
+        height: "34px",
+        background: props.value ? "var(--accent-soft)" : "oklch(0.20 0.008 250)",
+        border: `1px solid ${props.value ? "var(--accent-border)" : "oklch(0.32 0.01 250)"}`,
+        borderRadius: "8px",
+        padding: "0 10px",
+        color: props.value ? "var(--accent-text)" : "oklch(0.80 0.004 250)",
+        fontSize: "13px",
+        fontFamily: "inherit",
+        cursor: "pointer",
+        maxWidth: "220px",
+      }}
+    >
+      <option value="">{props.label}: tutti</option>
+      {props.options.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -1005,6 +1198,7 @@ function SniperRow(props: {
             >
               {[
                 item.storageGb ? `${item.storageGb} GB` : null,
+                item.color,
                 item.batteryPct ? `🔋${item.batteryPct}%` : null,
                 item.km ? `${Math.round(item.km / 1000)}k km` : null,
                 locationLabel,
@@ -1781,8 +1975,8 @@ function IntelScreen(props: {
               <div>Prezzo medio</div>
               <div>Campione</div>
               <div title="Variazione a 7 giorni">7g</div>
-              <div title="Giorni medi found→venduto">Liquidità</div>
-              <div title="Prezzo per vendita rapida / prezzo pieno">Rivendita</div>
+              <div title="Giorni medi di vendita (dai venduti). Passa sopra per le fasce prezzo→giorni">Liquidità</div>
+              <div title="Prezzo di vendita REALE (mediana / max dai venduti)">Venduto reale</div>
             </div>
             {(intel?.models ?? []).length === 0 ? (
               <div style={{ padding: "16px 20px", fontSize: "13px", color: "oklch(0.46 0.01 250)" }}>
@@ -1821,7 +2015,19 @@ function IntelScreen(props: {
                     >
                       {m.changePct == null ? "—" : (positive ? "+" : "") + m.changePct + "%"}
                     </div>
-                    <div style={{ fontFamily: MONO }}>
+                    <div
+                      style={{ fontFamily: MONO }}
+                      title={
+                        m.priceBands.length
+                          ? m.priceBands
+                              .map(
+                                (b) =>
+                                  `${b.band} ${eur(b.priceFrom)}–${eur(b.priceTo)}: ${b.avgDays}gg (${b.count})`,
+                              )
+                              .join("\n")
+                          : undefined
+                      }
+                    >
                       {m.avgDaysToSell != null ? (
                         <>
                           {m.avgDaysToSell}gg
@@ -1834,11 +2040,20 @@ function IntelScreen(props: {
                       )}
                     </div>
                     <div style={{ fontFamily: MONO, fontSize: "12px" }}>
-                      {m.fastSalePrice != null && m.maxSalePrice != null ? (
+                      {m.soldMedian != null ? (
                         <>
-                          <span style={{ color: "oklch(0.72 0.16 150)" }}>{eur(m.fastSalePrice)}</span>
-                          <span style={{ color: "oklch(0.46 0.01 250)" }}> / {eur(m.maxSalePrice)}</span>
+                          <span style={{ color: "oklch(0.72 0.16 150)" }}>{eur(m.soldMedian)}</span>
+                          {m.soldMax != null && (
+                            <span style={{ color: "oklch(0.46 0.01 250)" }}> / {eur(m.soldMax)}</span>
+                          )}
                         </>
+                      ) : m.fastSalePrice != null && m.maxSalePrice != null ? (
+                        <span
+                          style={{ color: "oklch(0.55 0.01 250)" }}
+                          title="Dai listati attivi (nessun venduto sufficiente)"
+                        >
+                          {eur(m.fastSalePrice)} / {eur(m.maxSalePrice)} <span style={{ fontSize: "9px" }}>list.</span>
+                        </span>
                       ) : (
                         <span style={{ color: "oklch(0.46 0.01 250)" }}>—</span>
                       )}
