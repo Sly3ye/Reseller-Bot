@@ -347,6 +347,64 @@ export async function patchOpportunityStatus(
     throw new Error(`PATCH /api/opportunities/${id} failed (${res.status})`);
 }
 
+/* --------------------------------------------------- Automations (scheduler) */
+
+export type AutomationJob = {
+  id: string;
+  name: string;
+  kind: "interval" | "cron";
+  intervalMinutes: number | null;
+  trigger: string;
+  nextRun: string | null;
+  paused: boolean;
+  category: string | null;
+};
+
+export type AutomationsState = {
+  running: boolean;
+  jobs: AutomationJob[];
+};
+
+export async function fetchAutomations(
+  signal?: AbortSignal,
+): Promise<AutomationsState> {
+  const res = await fetch(`${API_BASE_URL}/api/automations`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /api/automations failed (${res.status})`);
+  return res.json();
+}
+
+async function _automationAction(
+  id: string,
+  action: "run" | "pause" | "resume",
+): Promise<AutomationJob> {
+  const res = await fetch(`${API_BASE_URL}/api/automations/${id}/${action}`, {
+    method: "POST",
+  });
+  if (!res.ok)
+    throw new Error(`POST /api/automations/${id}/${action} failed (${res.status})`);
+  return (await res.json()).job;
+}
+
+export const runAutomation = (id: string) => _automationAction(id, "run");
+export const pauseAutomation = (id: string) => _automationAction(id, "pause");
+export const resumeAutomation = (id: string) => _automationAction(id, "resume");
+
+export async function rescheduleAutomation(
+  id: string,
+  minutes: number,
+): Promise<AutomationJob> {
+  const res = await fetch(`${API_BASE_URL}/api/automations/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ minutes }),
+  });
+  if (!res.ok) throw new Error(`PATCH /api/automations/${id} failed (${res.status})`);
+  return (await res.json()).job;
+}
+
 export async function getMarketTrends(): Promise<MarketTrendPoint[]> {
   void API_BASE_URL;
 

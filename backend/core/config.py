@@ -62,6 +62,9 @@ class Settings:
     alert_min_margin_pct: float = float(os.getenv("ALERT_MIN_MARGIN_PCT", "20"))
     # Calo di prezzo (%) sopra cui notificare anche senza margine sopra soglia.
     alert_min_drop_pct: float = float(os.getenv("ALERT_MIN_DROP_PCT", "10"))
+    # Deal Score minimo per notificare un affare (usa la valutazione a valore
+    # equo + AI, non il margine grezzo): filtra i falsi positivi.
+    alert_min_score: float = float(os.getenv("ALERT_MIN_SCORE", "55"))
 
     def telegram_chat_for(self, category: str) -> str | None:
         """Chat di destinazione per la categoria; None → notifiche disattivate."""

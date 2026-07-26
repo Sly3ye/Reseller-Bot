@@ -108,41 +108,48 @@ def _fmt_eur(value: float | int | None) -> str:
     return f"{int(round(value)):,}".replace(",", ".") + " €"
 
 
-def _fmt_new_deal(
-    row: dict[str, Any],
-    category: str,
-    market_avg: float,
-    margin_eur: float,
-    margin_pct: float,
-) -> str:
-    title = html.escape(str(row.get("title") or "Annuncio"))
-    lines = [
-        f"🎯 <b>NUOVA OPPORTUNITÀ +{margin_pct:.0f}%</b>",
-        f"<b>{title}</b>",
-        f"💰 Chiede {_fmt_eur(row.get('asking_price'))} · "
-        f"media mercato {_fmt_eur(market_avg)}",
-        f"📈 Margine stimato: +{_fmt_eur(margin_eur)} (+{margin_pct:.0f}%)",
-    ]
+_DEAL_HEAD = {
+    "affare": "🎯 <b>AFFARE</b>",
+    "in-linea": "✅ <b>In linea</b>",
+    "caro": "💸 <b>Caro</b>",
+    "sospetto": "⚠️ <b>Sospetto</b>",
+}
 
-    place = row.get("location")
-    seller = row.get("seller_type")
-    seller_label = {
-        "privato": "privato",
-        "finto_privato": "⚠️ finto privato",
-        "dealer": "concessionario",
-    }.get(str(seller), None)
-    info = " · ".join(x for x in (place, seller_label) if x)
-    if info:
-        lines.append(f"📍 {html.escape(info)}")
+
+def _fmt_smart_deal(item: dict[str, Any], category: str) -> str:
+    """Messaggio ricco da un'opportunità GIÀ arricchita (valore equo per
+    variante, Deal Score, offerta consigliata, radar riparazioni, motivo AI):
+    la stessa intelligence della dashboard, dritta sul telefono."""
+    title = html.escape(str(item.get("title") or "Annuncio"))
+    score = int(round(item.get("score") or 0))
+    head = _DEAL_HEAD.get(str(item.get("dealClass")), "🎯 <b>OPPORTUNITÀ</b>")
+    lines = [f"{head} · Score {score}/100", f"<b>{title}</b>"]
+
+    asking = item.get("askingPrice")
+    fair = item.get("fairValue")
+    if fair:
+        m_eur = item.get("marginVsFairEur")
+        m_pct = item.get("marginVsFairPct")
+        extra = ""
+        if m_eur is not None and m_pct is not None:
+            sign = "+" if m_eur >= 0 else ""
+            extra = f" ({sign}{_fmt_eur(m_eur)} / {sign}{m_pct:.0f}%)"
+        lines.append(f"💰 Chiede {_fmt_eur(asking)} · valore equo {_fmt_eur(fair)}{extra}")
+    else:
+        lines.append(f"💰 Chiede {_fmt_eur(asking)}")
+
+    offer = item.get("suggestedOffer")
+    if offer:
+        lines.append(f"🤝 Offerta consigliata: {_fmt_eur(offer)}")
 
     if category == "automobile":
         detail = " · ".join(
             str(x)
             for x in (
-                row.get("year"),
-                f"{row.get('km'):,} km".replace(",", ".") if row.get("km") else None,
-                row.get("transmission"),
-                row.get("fuel"),
+                item.get("year"),
+                f"{item.get('km'):,} km".replace(",", ".") if item.get("km") else None,
+                item.get("transmission"),
+                item.get("fuel"),
             )
             if x
         )
@@ -152,22 +159,46 @@ def _fmt_new_deal(
         detail = " · ".join(
             x
             for x in (
-                f"{row.get('storage_gb')} GB" if row.get("storage_gb") else None,
-                f"🔋 {row.get('battery_pct')}%" if row.get("battery_pct") else None,
+                f"{item.get('storageGb')} GB" if item.get("storageGb") else None,
+                f"🔋 {item.get('batteryPct')}%" if item.get("batteryPct") else None,
+                html.escape(str(item.get("color"))) if item.get("color") else None,
             )
             if x
         )
         if detail:
             lines.append(f"📱 {detail}")
 
-    defects = row.get("defects_noted") or []
-    if defects:
-        lines.append(f"⚠️ Difetti: {html.escape(', '.join(defects))}")
-    urgency = row.get("urgency_flags") or []
-    if urgency:
-        lines.append(f"🔥 Urgenza: {html.escape(', '.join(urgency))} → tratta!")
+    place = item.get("location")
+    seller = item.get("sellerType")
+    seller_label = {
+        "privato": "privato",
+        "finto_privato": "⚠️ finto privato",
+        "dealer": "concessionario",
+    }.get(str(seller), None)
+    info = " · ".join(x for x in (place, seller_label) if x)
+    if info:
+        lines.append(f"📍 {html.escape(info)}")
 
-    lines.append(str(row.get("listing_url") or ""))
+    ai = item.get("ai") or {}
+    motivo = ai.get("motivo_prezzo")
+    if motivo and ai.get("categoria_motivo") not in (None, "nessuno"):
+        lines.append(f"🤖 {html.escape(str(motivo))}")
+    if ai.get("riparabile"):
+        nota = ai.get("nota_riparazione")
+        lines.append("🔧 Riparabile" + (f": {html.escape(str(nota))}" if nota else ""))
+
+    repair = item.get("repair") or {}
+    if repair.get("netMarginEur") is not None:
+        lines.append(f"🛠️ Margine post-riparazione: {_fmt_eur(repair['netMarginEur'])}")
+
+    defects = item.get("defects") or []
+    if defects:
+        lines.append(f"⚠️ Difetti: {html.escape(', '.join(map(str, defects)))}")
+    urgency = item.get("urgencyFlags") or []
+    if urgency:
+        lines.append(f"🔥 Urgenza: {html.escape(', '.join(map(str, urgency)))} → tratta!")
+
+    lines.append(str(item.get("url") or ""))
     return "\n".join(lines)
 
 
@@ -224,65 +255,53 @@ def _claim_alerts(
 
 # ------------------------------------------------------------------ hook
 
-async def notify_round(
+async def notify_deals(
     db: Client,
     category: str,
-    new_rows: list[dict[str, Any]],
+    deal_items: list[dict[str, Any]],
     drop_events: list[dict[str, Any]],
-    market_avg: float | None,
 ) -> dict[str, int]:
-    """Notifica l'esito di un giro sniper per UN target.
+    """Notifica gli affari di un giro sniper, con l'intelligence completa.
 
-    - ``new_rows``: righe appena inserite → alert se margine ≥ soglia.
-    - ``drop_events``: cali di prezzo su annunci esistenti → alert se il calo
-      ≥ ALERT_MIN_DROP_PCT oppure il nuovo margine ≥ soglia.
-    Ritorna {"sent": n, "skipped": m}. No-op se il bot non è configurato.
+    - ``deal_items``: opportunità GIÀ arricchite e filtrate dal chiamante
+      (classe "affare" + Deal Score sopra soglia). Il messaggio riporta valore
+      equo, offerta consigliata, score, radar riparazioni e motivo AI — così si
+      notifica solo ciò che la BI considera un vero affare, non il margine
+      grezzo contro una media (meno falsi positivi).
+    - ``drop_events``: cali di prezzo su annunci già tracciati → alert se il
+      calo ≥ ALERT_MIN_DROP_PCT.
+    Dedup persistente su ``sent_alerts``. No-op se il bot non è configurato.
     """
     chat_id = settings.telegram_chat_for(category)
     if not chat_id:
-        return {"sent": 0, "skipped": len(new_rows) + len(drop_events)}
+        return {"sent": 0, "skipped": len(deal_items) + len(drop_events)}
 
     to_send: list[tuple[str, str, str, str | None]] = []  # (lid, type, text, photo)
 
-    if market_avg is not None:
-        for row in new_rows:
-            asking = row.get("asking_price")
-            if asking is None or float(asking) <= 0:
-                continue
-            margin_eur = market_avg - float(asking)
-            margin_pct = margin_eur / float(asking) * 100
-            if margin_pct < settings.alert_min_margin_pct:
-                continue
-            # Annunci esclusi dall'IQR (rotti/incidentati): il margine contro la
-            # media del funzionante è fittizio — niente alert automatico.
-            defects = set(row.get("defects_noted") or [])
-            if defects & {"incidentata", "fuso", "icloud-bloccato", "per-ricambi"}:
-                continue
-            images = row.get("image_urls") or []
-            to_send.append(
-                (
-                    str(row["id"]),
-                    ALERT_NEW,
-                    _fmt_new_deal(row, category, market_avg, margin_eur, margin_pct),
-                    images[0] if images else None,
-                )
+    for item in deal_items:
+        lid = item.get("id")
+        if not lid:
+            continue
+        images = item.get("images") or []
+        to_send.append(
+            (
+                str(lid),
+                ALERT_NEW,
+                _fmt_smart_deal(item, category),
+                images[0] if images else None,
             )
+        )
 
     for event in drop_events:
-        old, new = event["old_price"], event["new_price"]
+        old, new = event.get("old_price"), event.get("new_price")
         drop_pct = (old - new) / old * 100 if old else 0
-        margin_ok = (
-            market_avg is not None
-            and new > 0
-            and (market_avg - new) / new * 100 >= settings.alert_min_margin_pct
-        )
-        if drop_pct < settings.alert_min_drop_pct and not margin_ok:
+        if drop_pct < settings.alert_min_drop_pct:
             continue
         to_send.append(
             (
                 str(event["listing_id"]),
                 ALERT_DROP,
-                _fmt_price_drop(event, market_avg),
+                _fmt_price_drop(event, None),
                 None,
             )
         )
@@ -291,13 +310,13 @@ async def notify_round(
         return {"sent": 0, "skipped": 0}
 
     # Dedup persistente prima dell'invio (mai rinotificare lo stesso motivo).
-    margin_by_key = {(lid, atype): None for lid, atype, _, _ in to_send}
+    keys = {(lid, atype) for lid, atype, _, _ in to_send}
     claimed = await asyncio.to_thread(
         _claim_alerts,
         db,
         [
             {"listing_id": lid, "alert_type": atype, "category": category}
-            for (lid, atype) in margin_by_key
+            for (lid, atype) in keys
         ],
     )
 
@@ -310,7 +329,7 @@ async def notify_round(
                 sent += 1
 
     logger.info(
-        "Telegram (%s): %d notifiche inviate su %d candidate.",
+        "Telegram (%s): %d affari notificati su %d candidati.",
         category,
         sent,
         len(to_send),

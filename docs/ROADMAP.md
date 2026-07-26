@@ -18,7 +18,7 @@ Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 | **Fase 3 — robustezza** | Salute scraper, alert down, rotazione impersonation | ✅ |
 | **Fase 3 — scala** | Generazione sistematica dei target (gamma auto) | 🔜 |
 | **Fase 4** | Profili venditore, stagionalità, CV foto, multi-piattaforma | 🔜 |
-| **Fase 5** | Ops: deploy VPS, automations reali, test, migration runner | 🔜 (dopo aver sistemato il resto) |
+| **Fase 5** | Ops: automations reali ✅, deploy VPS 🔜, test, migration runner | 🟡 (in corso) |
 
 ---
 
@@ -57,8 +57,11 @@ Ollama (llama3) analizza titolo+descrizione → {motivo_prezzo, categoria_motivo
 riparabile, nota_riparazione, rischio_truffa, sintesi}. Integrato: un prezzo
 "sospetto" con motivo legittimo (AI) → declassato ad affare; rischio truffa alto
 (AI) → forzato sospetto. Enrichment schedulato (10') + `scripts/enrich_ai.py`.
-Prossimi affinamenti: usare l'AI anche per estrarre storage/colore mancanti,
-e tarare il prompt sui casi reali.
+✅ **Estrazione campi via AI (fatto):** l'AI ricava anche `storage_gb`, `color`
+e `battery_pct` dalla descrizione quando le regex falliscono, senza mai
+sovrascrivere ciò che le regex hanno già estratto, e **ri-risolve la variante
+canonica** quando aggiunge la memoria (margini per-memoria più fini).
+Resta da tarare il prompt sui casi reali.
 
 **Obiettivo:** far leggere titolo+descrizione a un **LLM locale** (es. Ollama con
 un modello piccolo) per capire *semanticamente* ciò che le regex non colgono:
@@ -95,6 +98,14 @@ endpoint `/api/opportunities` con **filtri + paginazione + ordinamento server**,
 e la UI dei filtri. Attenzione al costo del calcolo BI su molti annunci
 (materializzare le medie/pool per variante).
 
+### 7. ✅ Alert Telegram intelligenti — FATTO
+Le notifiche non usano più il margine grezzo contro una media: a fine giro
+sniper le nuove righe vengono arricchite con la BI completa (valore equo per
+variante, Deal Score, anti-truffa AI) e si notifica **solo la classe "affare"
+con Deal Score ≥ `ALERT_MIN_SCORE`**, scartando sospetti/truffe. Il messaggio
+riporta valore equo, margine, offerta consigliata, radar riparazioni, motivo AI,
+difetti e leve di urgenza. Dedup persistente su `sent_alerts`.
+
 ### 6. ✅ Market Intelligence: più analitiche — FATTO
 Implementate: ranking "Cosa comprare" (opportunità = margine potenziale ×
 liquidità), affari attivi/volume per modello, spread affare, box distribuzione
@@ -122,13 +133,14 @@ Lista originale (per riferimento):
 
 ## Refinement già annotati
 
-- 🟡 **NLP storage**: i GB sono estratti solo dal ~30% dei titoli (spesso in
-  descrizione o assenti) → migliorare l'estrazione (anche via AI locale, punto 3)
-  per la finezza per-memoria dei margini.
+- ✅ **NLP storage**: i GB erano estratti solo dal ~30% dei titoli → ora l'AI
+  locale (punto 3) li recupera dalla descrizione e ri-risolve la variante.
+  Regex ancora migliorabili, ma il buco è coperto.
 - 🔴 **Colore iPhone**: nuovo campo NLP, necessario per i filtri (punto 5).
 - 🟡 **Prezzo di rivendita dai venduti** (vedi punto 1): l'attuale usa i listati.
-- ⚪ **Automations panel reale**: i controlli (Force Run, intervallo) sono ancora
-  dimostrativi; collegarli a endpoint di controllo job (Fase 5).
+- ✅ **Automations panel reale**: i controlli sono collegati allo scheduler
+  (`/api/automations`): avvio immediato, pausa/ripresa, cambio cadenza, stato e
+  prossima esecuzione per ogni job.
 - ⚪ **Migration runner** versionato per aggiornamenti incrementali dello schema.
 - 🟡 **Verticale auto**: catalogo modelli×generazioni completo, denominazioni,
   parametri — rimandato (più complesso del tech).

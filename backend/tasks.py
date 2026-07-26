@@ -13,7 +13,8 @@ from backend.core.database import Client
 from backend.core.database import get_db
 from backend.scrapers import ScrapedListing, SubitoScraper
 from backend.services.health import record_run
-from backend.services.notifications import notify_round, notify_system_alert
+from backend.core.config import settings
+from backend.services.notifications import notify_deals, notify_system_alert
 from backend.services.variants import resolve_variant
 
 logger = logging.getLogger(__name__)
@@ -534,24 +535,10 @@ async def scrape_subito_and_save(
         query=query, strict_filters=strict_filters,
     )
 
-    # Telegram: nuove opportunità sopra soglia + cali di prezzo rilevanti.
-    # Serve la media di mercato del target per calcolare il margine.
-    alerts = {"sent": 0, "skipped": 0}
-    if target_id is not None:
-        db = get_db()
-        market_avg = await asyncio.to_thread(get_target_market_avg, db, target_id)
-        try:
-            alerts = await notify_round(
-                db,
-                category,
-                result.get("inserted_rows", []),
-                result.get("drop_events", []),
-                market_avg,
-            )
-        except Exception:
-            # Le notifiche sono supplementari: mai far fallire il giro sniper.
-            logger.exception("Notifiche Telegram fallite per target %s", target_id)
-
+    # Gli alert Telegram non partono più qui (per-target, a margine grezzo): li
+    # gestisce run_sniper_all_products a fine giro, con l'intelligence completa
+    # (valore equo per variante + Deal Score + anti-truffa AI). Espongo le
+    # righe nuove e i cali di prezzo perché il chiamante possa arricchirle.
     return {
         "query": query,
         "category": category,
@@ -563,7 +550,8 @@ async def scrape_subito_and_save(
         "updated_count": result["updated"],
         "price_drops": result["price_drops"],
         "republished": result.get("republished", 0),
-        "alerts_sent": alerts["sent"],
+        "inserted_rows": result.get("inserted_rows", []),
+        "drop_events": result.get("drop_events", []),
         "saved_count": result["new"],
     }
 
@@ -824,6 +812,10 @@ async def run_sniper_all_products(
 
     results: list[dict[str, Any]] = []
     n_ok = n_failed = total_scraped = total_new = 0
+    # Righe nuove e cali di prezzo accumulati per categoria: gli alert partono
+    # UNA volta a fine giro, arricchiti con la BI completa (non per-target).
+    new_by_cat: dict[str, list[dict[str, Any]]] = {}
+    drops_by_cat: dict[str, list[dict[str, Any]]] = {}
     for target in targets:
         query = target["query"]
         target_category = target["category"]
@@ -840,6 +832,10 @@ async def run_sniper_all_products(
             n_ok += 1
             total_scraped += outcome["scraped_count"]
             total_new += outcome["new_count"]
+            if outcome.get("inserted_rows"):
+                new_by_cat.setdefault(target_category, []).extend(outcome["inserted_rows"])
+            if outcome.get("drop_events"):
+                drops_by_cat.setdefault(target_category, []).extend(outcome["drop_events"])
             results.append(
                 {
                     "query": query,
@@ -859,6 +855,30 @@ async def run_sniper_all_products(
             n_failed += 1
             logger.exception("Sniper failed for '%s'", query)
             results.append({"query": query, "error": True})
+
+    # Alert Telegram "intelligenti": una passata a fine giro per categoria.
+    # Si arricchiscono le NUOVE righe con la stessa BI della dashboard e si
+    # notifica SOLO ciò che è un vero affare (classe "affare" + Deal Score ≥
+    # soglia), scartando sospetti/truffe. I cali di prezzo vanno comunque.
+    if new_by_cat or drops_by_cat:
+        from backend.services.reads import enrich_for_alerts  # lazy: evita import circolare
+
+        db = get_db()
+        for cat in set(new_by_cat) | set(drops_by_cat):
+            new_rows = new_by_cat.get(cat, [])
+            drops = drops_by_cat.get(cat, [])
+            try:
+                items = await asyncio.to_thread(enrich_for_alerts, cat, new_rows, db)
+                deals = [
+                    it
+                    for it in items
+                    if it.get("dealClass") == "affare"
+                    and (it.get("score") or 0) >= settings.alert_min_score
+                ]
+                await notify_deals(db, cat, deals, drops)
+            except Exception:
+                # Le notifiche sono supplementari: mai far fallire il giro.
+                logger.exception("Alert intelligenti falliti (%s)", cat)
 
     # Salute dello scraper: registra il giro e allerta sulle transizioni
     # down/ripristino (Akamai/proxy/Subito) — così non si blocca in silenzio.

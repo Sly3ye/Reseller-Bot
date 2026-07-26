@@ -6,15 +6,21 @@ import type { CSSProperties } from "react";
 import {
   createDeal,
   deleteDeal,
+  fetchAutomations,
   fetchDeals,
   fetchDealsSummary,
   fetchOpportunities,
   fetchTrends,
   patchOpportunityStatus,
+  pauseAutomation,
+  rescheduleAutomation,
+  resumeAutomation,
+  runAutomation,
   updateDeal,
   type ApiModelStat,
   type ApiOpportunity,
   type ApiTrends,
+  type AutomationJob,
   type Category,
   type Deal,
   type DealStage,
@@ -93,10 +99,9 @@ export default function FlipRadar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [batchRunning, setBatchRunning] = useState(false);
-  const [batchLastRun, setBatchLastRun] = useState("03:00 (today)");
-  const [sniperInterval, setSniperInterval] = useState<15 | 30 | 60>(30);
-  const [telegramEnabled, setTelegramEnabled] = useState(true);
+  // Caption "ultimo batch" nella Intelligence + countdown cosmetico sul feed.
+  const batchLastRun = "03:00 (today)";
+  const sniperInterval = 30;
   const [secondsToNextScan, setSecondsToNextScan] = useState(812);
 
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -281,18 +286,6 @@ export default function FlipRadar() {
   const mm = Math.floor(secondsToNextScan / 60);
   const ss = secondsToNextScan % 60;
   const nextScanLabel = `${mm}:${String(ss).padStart(2, "0")}`;
-
-  const forceRunBatch = () => {
-    if (batchRunning) return;
-    setBatchRunning(true);
-    setTimeout(() => {
-      const now = new Date();
-      const hh = String(now.getHours()).padStart(2, "0");
-      const mn = String(now.getMinutes()).padStart(2, "0");
-      setBatchRunning(false);
-      setBatchLastRun(`${hh}:${mn} (today)`);
-    }, 2200);
-  };
 
   const rootStyle: CSSProperties = {
     ["--accent" as string]: accent,
@@ -652,17 +645,7 @@ export default function FlipRadar() {
             />
           )}
 
-          {screen === "automations" && (
-            <AutomationsScreen
-              batchRunning={batchRunning}
-              batchLastRun={batchLastRun}
-              onForceRun={forceRunBatch}
-              sniperInterval={sniperInterval}
-              onSetInterval={setSniperInterval}
-              telegramEnabled={telegramEnabled}
-              onToggleTelegram={() => setTelegramEnabled((v) => !v)}
-            />
-          )}
+          {screen === "automations" && <AutomationsScreen />}
         </div>
       </div>
 
@@ -2392,209 +2375,278 @@ function BuyDetail(props: { m: ApiModelStat }) {
 
 /* ------------------------------------------------------------ AUTOMATIONS */
 
-function AutomationsScreen(props: {
-  batchRunning: boolean;
-  batchLastRun: string;
-  onForceRun: () => void;
-  sniperInterval: 15 | 30 | 60;
-  onSetInterval: (v: 15 | 30 | 60) => void;
-  telegramEnabled: boolean;
-  onToggleTelegram: () => void;
-}) {
+const JOB_ICON: Record<string, string> = {
+  sniper_live: "🎯",
+  sniper_auto_live: "🎯",
+  nightly_batch: "🌙",
+  garbage_collector: "🧹",
+  ai_enrich: "🤖",
+};
+
+const JOB_INTERVALS = [5, 10, 15, 30, 60];
+
+function fmtNextRun(job: AutomationJob): string {
+  if (job.paused || !job.nextRun) return "in pausa";
+  const diff = new Date(job.nextRun).getTime() - Date.now();
+  if (diff <= 0) return "a breve";
+  const m = Math.floor(diff / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  if (m >= 60) return `tra ${Math.floor(m / 60)}h ${m % 60}m`;
+  if (m > 0) return `tra ${m}m`;
+  return `tra ${s}s`;
+}
+
+function AutomationsScreen() {
+  const [jobs, setJobs] = useState<AutomationJob[]>([]);
+  const [running, setRunning] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const reload = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const state = await fetchAutomations(signal);
+      setJobs(state.jobs);
+      setRunning(state.running);
+      setErr(null);
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") setErr("Backend non raggiungibile");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    // microtask: evita il setState sincrono nel corpo dell'effect.
+    Promise.resolve().then(() => reload(ctrl.signal));
+    const poll = setInterval(() => reload(), 15000);
+    return () => {
+      ctrl.abort();
+      clearInterval(poll);
+    };
+  }, [reload]);
+
+  const act = async (id: string, fn: () => Promise<AutomationJob>) => {
+    setBusy(id);
+    try {
+      await fn();
+      await reload();
+    } catch {
+      setErr("Azione non riuscita");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const panel: CSSProperties = {
     background: "oklch(0.19 0.008 250)",
     border: "1px solid oklch(0.27 0.01 250)",
     borderRadius: "12px",
-    padding: "22px",
+    padding: "20px",
     display: "flex",
     flexDirection: "column",
-    gap: "16px",
+    gap: "14px",
   };
-
-  const intervalOption = (value: 15 | 30 | 60, label: string) => {
-    const active = props.sniperInterval === value;
-    return (
-      <div
-        onClick={() => props.onSetInterval(value)}
-        style={{
-          padding: "7px 16px",
-          borderRadius: "6px",
-          fontSize: "12.5px",
-          fontWeight: 600,
-          cursor: "pointer",
-          background: active ? "var(--accent)" : "transparent",
-          color: active ? "oklch(0.12 0.008 250)" : "oklch(0.62 0.01 250)",
-        }}
-      >
-        {label}
-      </div>
-    );
-  };
+  const btn = (accent: boolean): CSSProperties => ({
+    padding: "8px 14px",
+    borderRadius: "7px",
+    fontSize: "12.5px",
+    fontWeight: 700,
+    cursor: "pointer",
+    userSelect: "none",
+    background: accent ? "var(--accent)" : "oklch(0.24 0.008 250)",
+    color: accent ? "oklch(0.12 0.008 250)" : "oklch(0.82 0.01 250)",
+    border: "1px solid oklch(0.30 0.01 250)",
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px", animation: "fadeIn 0.2s ease" }}>
-      <div>
-        <div style={{ fontSize: "22px", fontWeight: 700 }}>Automations &amp; Alerts</div>
-        <div style={{ fontSize: "13px", color: "oklch(0.62 0.01 250)", marginTop: "4px" }}>
-          Control panel for the backend schedulers
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: "22px", fontWeight: 700 }}>Automations &amp; Alerts</div>
+          <div style={{ fontSize: "13px", color: "oklch(0.62 0.01 250)", marginTop: "4px" }}>
+            Controllo reale dei motori schedulati (avvio, pausa, cadenza)
+          </div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            padding: "5px 12px",
+            borderRadius: "20px",
+            background: running ? "oklch(0.72 0.16 150 / 0.14)" : "oklch(0.68 0.19 25 / 0.14)",
+          }}
+        >
+          <div
+            style={{
+              width: "7px",
+              height: "7px",
+              borderRadius: "50%",
+              background: running ? "oklch(0.72 0.16 150)" : "oklch(0.68 0.19 25)",
+              animation: running ? "pulseDot 2s ease-in-out infinite" : "none",
+            }}
+          />
+          <div style={{ fontSize: "12px", fontWeight: 700, color: running ? "oklch(0.72 0.16 150)" : "oklch(0.68 0.19 25)" }}>
+            Scheduler {running ? "attivo" : "fermo"}
+          </div>
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-        <div style={panel}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ fontSize: "15px", fontWeight: 700 }}>Nightly Batch Engine</div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "4px 10px",
-                borderRadius: "20px",
-                background: props.batchRunning ? "oklch(0.72 0.16 150 / 0.14)" : "oklch(0.46 0.01 250 / 0.14)",
-              }}
-            >
-              <div
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  borderRadius: "50%",
-                  background: props.batchRunning ? "oklch(0.72 0.16 150)" : "oklch(0.62 0.01 250)",
-                  animation: props.batchRunning ? "pulseDot 1s ease-in-out infinite" : "none",
-                }}
-              />
-              <div
-                style={{
-                  fontSize: "12px",
-                  fontWeight: 700,
-                  color: props.batchRunning ? "oklch(0.72 0.16 150)" : "oklch(0.62 0.01 250)",
-                }}
-              >
-                {props.batchRunning ? "Running" : "Idle"}
-              </div>
-            </div>
-          </div>
-          <div style={{ fontSize: "13px", color: "oklch(0.62 0.01 250)", lineHeight: 1.6 }}>
-            Recomputes market averages via IQR-cleaned nightly aggregation across all tracked categories.
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "12px 14px",
-              background: "oklch(0.16 0.008 250)",
-              border: "1px solid oklch(0.27 0.01 250)",
-              borderRadius: "8px",
-            }}
-          >
-            <div style={{ fontSize: "12.5px", color: "oklch(0.46 0.01 250)" }}>Last run</div>
-            <div style={{ fontFamily: MONO, fontSize: "13px", fontWeight: 600 }}>{props.batchLastRun}</div>
-          </div>
-          <div
-            onClick={props.onForceRun}
-            style={{
-              alignSelf: "flex-start",
-              padding: "10px 18px",
-              borderRadius: "8px",
-              background: "var(--accent)",
-              color: "oklch(0.12 0.008 250)",
-              fontSize: "13px",
-              fontWeight: 700,
-              cursor: "pointer",
-              opacity: props.batchRunning ? 0.6 : 1,
-            }}
-          >
-            {props.batchRunning ? "Running…" : "Force Run"}
-          </div>
+      {err && (
+        <div
+          style={{
+            padding: "10px 14px",
+            borderRadius: "8px",
+            background: "oklch(0.68 0.19 25 / 0.12)",
+            border: "1px solid oklch(0.68 0.19 25 / 0.3)",
+            color: "oklch(0.75 0.16 25)",
+            fontSize: "13px",
+          }}
+        >
+          {err}
         </div>
+      )}
 
-        <div style={panel}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ fontSize: "15px", fontWeight: 700 }}>Sniper Engine</div>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                padding: "4px 10px",
-                borderRadius: "20px",
-                background: "oklch(0.72 0.16 150 / 0.14)",
-              }}
-            >
-              <div
-                style={{
-                  width: "6px",
-                  height: "6px",
-                  borderRadius: "50%",
-                  background: "oklch(0.72 0.16 150)",
-                  animation: "pulseDot 2s ease-in-out infinite",
-                }}
-              />
-              <div style={{ fontSize: "12px", fontWeight: 700, color: "oklch(0.72 0.16 150)" }}>Running</div>
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: "12.5px", color: "oklch(0.46 0.01 250)", marginBottom: "8px" }}>Scan interval</div>
-            <div
-              style={{
-                display: "flex",
-                background: "oklch(0.16 0.008 250)",
-                border: "1px solid oklch(0.27 0.01 250)",
-                borderRadius: "8px",
-                padding: "3px",
-                gap: "2px",
-                width: "fit-content",
-              }}
-            >
-              {intervalOption(15, "15m")}
-              {intervalOption(30, "30m")}
-              {intervalOption(60, "1h")}
-            </div>
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "12px 14px",
-              background: "oklch(0.16 0.008 250)",
-              border: "1px solid oklch(0.27 0.01 250)",
-              borderRadius: "8px",
-            }}
-          >
-            <div>
-              <div style={{ fontSize: "13px", fontWeight: 600 }}>Telegram alerts</div>
-              <div style={{ fontSize: "11.5px", color: "oklch(0.46 0.01 250)", marginTop: "2px" }}>
-                Notify webhook when margin &gt; 20%
+      {loading ? (
+        <div style={{ fontSize: "13px", color: "oklch(0.46 0.01 250)" }}>Caricamento…</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: "16px" }}>
+          {jobs.map((job) => {
+            const isBusy = busy === job.id;
+            return (
+              <div key={job.id} style={{ ...panel, opacity: isBusy ? 0.6 : 1 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+                  <div style={{ fontSize: "14.5px", fontWeight: 700 }}>
+                    <span style={{ marginRight: "7px" }}>{JOB_ICON[job.id] ?? "⚙️"}</span>
+                    {job.name}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      flexShrink: 0,
+                      padding: "4px 10px",
+                      borderRadius: "20px",
+                      background: job.paused ? "oklch(0.46 0.01 250 / 0.16)" : "oklch(0.72 0.16 150 / 0.14)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "6px",
+                        height: "6px",
+                        borderRadius: "50%",
+                        background: job.paused ? "oklch(0.62 0.01 250)" : "oklch(0.72 0.16 150)",
+                      }}
+                    />
+                    <div
+                      style={{
+                        fontFamily: MONO,
+                        fontSize: "11.5px",
+                        fontWeight: 700,
+                        color: job.paused ? "oklch(0.62 0.01 250)" : "oklch(0.72 0.16 150)",
+                      }}
+                    >
+                      {fmtNextRun(job)}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ fontSize: "12.5px", color: "oklch(0.55 0.01 250)" }}>
+                  {job.kind === "interval" && job.intervalMinutes != null
+                    ? `Ogni ${job.intervalMinutes} min`
+                    : "Ogni giorno (orario fisso)"}
+                  {job.category ? ` · ${job.category === "smartphone" ? "tech" : job.category}` : ""}
+                </div>
+
+                {job.kind === "interval" && (
+                  <div>
+                    <div style={{ fontSize: "11px", color: "oklch(0.46 0.01 250)", marginBottom: "6px" }}>
+                      Cadenza
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        background: "oklch(0.16 0.008 250)",
+                        border: "1px solid oklch(0.27 0.01 250)",
+                        borderRadius: "8px",
+                        padding: "3px",
+                        gap: "2px",
+                        width: "fit-content",
+                      }}
+                    >
+                      {JOB_INTERVALS.map((min) => {
+                        const active = job.intervalMinutes === min;
+                        return (
+                          <div
+                            key={min}
+                            onClick={() =>
+                              !active && !isBusy && act(job.id, () => rescheduleAutomation(job.id, min))
+                            }
+                            style={{
+                              padding: "6px 12px",
+                              borderRadius: "6px",
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              cursor: active ? "default" : "pointer",
+                              background: active ? "var(--accent)" : "transparent",
+                              color: active ? "oklch(0.12 0.008 250)" : "oklch(0.62 0.01 250)",
+                            }}
+                          >
+                            {min >= 60 ? `${min / 60}h` : `${min}m`}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "8px", marginTop: "2px" }}>
+                  <div
+                    onClick={() => !isBusy && act(job.id, () => runAutomation(job.id))}
+                    style={btn(true)}
+                  >
+                    ▶ Avvia ora
+                  </div>
+                  {job.paused ? (
+                    <div
+                      onClick={() => !isBusy && act(job.id, () => resumeAutomation(job.id))}
+                      style={btn(false)}
+                    >
+                      Riprendi
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => !isBusy && act(job.id, () => pauseAutomation(job.id))}
+                      style={btn(false)}
+                    >
+                      ⏸ Pausa
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-            <div
-              onClick={props.onToggleTelegram}
-              style={{
-                width: "42px",
-                height: "24px",
-                borderRadius: "12px",
-                background: props.telegramEnabled ? "var(--accent)" : "oklch(0.32 0.01 250)",
-                position: "relative",
-                cursor: "pointer",
-                flexShrink: 0,
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: "2px",
-                  left: props.telegramEnabled ? "20px" : "2px",
-                  width: "20px",
-                  height: "20px",
-                  borderRadius: "50%",
-                  background: "white",
-                  transition: "left 0.18s ease",
-                }}
-              />
-            </div>
-          </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div
+        style={{
+          ...panel,
+          background: "oklch(0.17 0.008 250)",
+          gap: "8px",
+        }}
+      >
+        <div style={{ fontSize: "14px", fontWeight: 700 }}>📲 Alert Telegram intelligenti</div>
+        <div style={{ fontSize: "12.5px", color: "oklch(0.62 0.01 250)", lineHeight: 1.6 }}>
+          A ogni giro dello sniper vengono notificati solo i veri affari (classe
+          «affare» + Deal Score sopra soglia, esclusi i sospetti), con valore
+          equo, offerta consigliata, radar riparazioni e motivo AI. Più i cali di
+          prezzo rilevanti sugli annunci già tracciati. Chat e soglie si
+          configurano nel file <span style={{ fontFamily: MONO }}>.env</span> del
+          backend (TELEGRAM_CHAT_ID_TECH/AUTO, ALERT_MIN_SCORE, ALERT_MIN_DROP_PCT).
         </div>
       </div>
     </div>

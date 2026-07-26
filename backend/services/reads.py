@@ -417,6 +417,49 @@ def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
     }
 
 
+def _build_enrich_ctx(
+    db: Client, target_cat: str, table: str, rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Contesto condiviso per l'arricchimento di un lotto di righe (pool per
+    variante, target, storico prezzi, venditori, regressione km). Costruito una
+    sola volta per lotto — riusato da ``list_opportunities`` e ``enrich_for_alerts``."""
+    ctx: dict[str, Any] = {
+        "target_cat": target_cat,
+        "targets": _targets_for_category(db, target_cat),
+        "variant_pools": _variant_price_pools(db, table),
+        "price_history": _latest_price_history(db, [r["id"] for r in rows]),
+        "seller_counts": _seller_active_counts(db, table, rows),
+        "km_models": {},
+    }
+    avg_by_target, avg_by_model = _market_avgs(db, target_cat)
+    ctx["avg_by_target"] = avg_by_target
+    ctx["avg_by_model"] = avg_by_model
+    if target_cat == "automobile":
+        auto_targets = list(
+            {r["target_id"] for r in rows if r.get("target_id") and r.get("km")}
+        )
+        ctx["km_models"] = _km_price_models(db, table, auto_targets)
+    return ctx
+
+
+def enrich_for_alerts(
+    category: str, rows: list[dict[str, Any]], client: Client | None = None
+) -> list[dict[str, Any]]:
+    """Arricchisce un lotto di righe (le NUOVE di un giro sniper) con la stessa
+    intelligence della dashboard — valore equo per variante, classe affare,
+    Deal Score, offerta consigliata, radar riparazioni, anti-truffa AI.
+
+    Serve agli alert Telegram "intelligenti": si notifica solo ciò che la BI
+    considera davvero un affare, non il margine grezzo contro una media."""
+    if not rows:
+        return []
+    db = client or get_db()
+    table = _opportunities_table(category)
+    target_cat = _target_category(category)
+    ctx = _build_enrich_ctx(db, target_cat, table, rows)
+    return [_enrich_opportunity(r, ctx) for r in rows]
+
+
 def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
     """Arricchisce una riga con margine, variante, valutazione, Deal Score e
     assistente di trattativa (il cuore BI, per singola opportunità)."""
@@ -540,23 +583,7 @@ def list_opportunities(
     if not rows:
         return {"items": [], "total": 0, "facets": facets}
 
-    variant_pools = _variant_price_pools(db, table)
-    ctx: dict[str, Any] = {
-        "target_cat": target_cat,
-        "targets": _targets_for_category(db, target_cat),
-        "variant_pools": variant_pools,
-        "price_history": _latest_price_history(db, [r["id"] for r in rows]),
-        "seller_counts": _seller_active_counts(db, table, rows),
-        "km_models": {},
-    }
-    avg_by_target, avg_by_model = _market_avgs(db, target_cat)
-    ctx["avg_by_target"] = avg_by_target
-    ctx["avg_by_model"] = avg_by_model
-    if target_cat == "automobile":
-        auto_targets = list(
-            {r["target_id"] for r in rows if r.get("target_id") and r.get("km")}
-        )
-        ctx["km_models"] = _km_price_models(db, table, auto_targets)
+    ctx = _build_enrich_ctx(db, target_cat, table, rows)
 
     items = [_enrich_opportunity(r, ctx) for r in rows]
 
