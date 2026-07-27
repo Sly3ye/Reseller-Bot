@@ -16,7 +16,7 @@ Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 | **Fase 1** | Tassonomia canonica & scrematura (varianti, condizione) | ✅ |
 | **Fase 2** | Valutazione predittiva (valore equo, posizione, affare-vs-truffa) | ✅ |
 | **Fase 3 — robustezza** | Salute scraper, alert down, rotazione impersonation | ✅ |
-| **Fase 3 — scala** | Generazione sistematica dei target (gamma auto) | 🔜 |
+| **Fase 3 — scala** | Generazione sistematica dei target: gamma iPhone completa ✅ (`scripts/seed_iphone_targets.py`, 31 modelli), gamma auto 🔜 | 🟡 |
 | **Fase 4** | Profili venditore, stagionalità, CV foto, multi-piattaforma | 🔜 |
 | **Fase 5** | Ops: automations reali ✅, deploy VPS 🔜, test, migration runner | 🟡 (in corso) |
 

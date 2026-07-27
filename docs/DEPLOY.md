@@ -42,7 +42,8 @@ Override backend con `NEXT_PUBLIC_API_BASE_URL`.
 ## 3. Target, backfill, notifiche, GC, backup, test
 
 ```bash
-python scripts/seed_target_models.py        # popola/aggiorna la flotta
+python scripts/seed_target_models.py        # popola/aggiorna la flotta pilota
+python scripts/seed_iphone_targets.py        # gamma iPhone COMPLETA (31 modelli)
 python scripts/run_backfill.py 10           # aspirapolvere: 10 pagine/target
 python scripts/garbage_collector.py          # GC on-demand (gira già ogni notte)
 ./scripts/backup_db.sh                        # pg_dump compresso in ./backups (cron sul VPS)
