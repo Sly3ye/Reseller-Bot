@@ -6,6 +6,9 @@ Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 > **Focus attuale: verticale iPhone/tech.** Il verticale auto ha molti più
 > modelli, denominazioni e parametri — a livello di gestione dati è più
 > complesso e viene affrontato dopo aver consolidato il tech.
+>
+> 🎯 **Traguardo iPhone** (schermate, analitiche, funzionalità da completare
+> prima di passare alle auto): vedi [VISIONE-IPHONE.md](VISIONE-IPHONE.md).
 
 ---
 

@@ -59,4 +59,5 @@ API su `http://localhost:8000` (`/docs`). Dettagli, config e deploy →
 | [docs/DATABASE.md](docs/DATABASE.md) | Modello dati e migrazioni |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Setup, configurazione `.env`, backup, deploy, limiti noti |
 | [docs/API.md](docs/API.md) | Endpoint REST e script operativi |
+| [docs/VISIONE-IPHONE.md](docs/VISIONE-IPHONE.md) | Definizione di "fatto" per il verticale iPhone: schermate, analitiche, funzionalità |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Cosa manca / da implementare (backlog prioritizzato) |
