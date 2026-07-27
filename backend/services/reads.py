@@ -328,6 +328,7 @@ def _shape_opportunity(
         "daysOnline": days_online,
         "source": "Subito",
         "status": row.get("status"),
+        "triage": row.get("triage"),  # None | 'salvato' | 'scartato'
         "url": row.get("listing_url"),
         # Segnale NLP + venditore (per score/trattativa e UI).
         "sellerType": row.get("seller_type"),
@@ -672,6 +673,8 @@ def list_opportunities(
     deal_class: str | None = None,
     min_margin: float | None = None,
     q: str | None = None,
+    view: str = "attivi",
+    preset: str | None = None,
     limit: int = 30,
     offset: int = 0,
     client: Client | None = None,
@@ -697,6 +700,13 @@ def list_opportunities(
     if condition:
         query = query.eq("condition_tier", condition)
     rows = query.execute().data or []
+
+    # Triage utente (ortogonale allo status): salvati / nascondi gli scartati.
+    if view == "salvati":
+        rows = [r for r in rows if r.get("triage") == "salvato"]
+    elif view != "tutti":  # "attivi" (default): nasconde gli scartati
+        rows = [r for r in rows if r.get("triage") != "scartato"]
+
     if not rows:
         return {"items": [], "total": 0, "facets": facets}
 
@@ -722,11 +732,30 @@ def list_opportunities(
             or ql in (it.get("location") or "").lower()
         ]
 
+    # Preset rapidi (campi derivati dalla BI).
+    if preset == "compra_ora":
+        items = [
+            it for it in items
+            if it.get("buyAtAsking") and it.get("dealClass") != "sospetto"
+        ]
+    elif preset == "motivati":
+        items = [it for it in items if (it.get("sellerProfile") or {}).get("motivated")]
+    elif preset == "riparabili":
+        items = [
+            it for it in items
+            if it.get("repair") and (it["repair"].get("netMarginPct") or -1) > 0
+        ]
+
     if sort == "recent":
         items.sort(key=lambda it: it.get("foundAt") or "", reverse=True)
     elif sort == "margin":
         items.sort(
             key=lambda it: it["marginPct"] if it.get("marginPct") is not None else -1e9,
+            reverse=True,
+        )
+    elif sort == "roi":
+        items.sort(
+            key=lambda it: it["roiPerDayPct"] if it.get("roiPerDayPct") is not None else -1e9,
             reverse=True,
         )
     else:  # score (default)

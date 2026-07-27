@@ -60,6 +60,7 @@ export type ApiOpportunity = {
   daysOnline: number | null;
   source: string | null;
   status: string | null;
+  triage: "salvato" | "scartato" | null;
   url: string;
   // Segnale NLP + venditore
   sellerType: string | null;
@@ -225,7 +226,9 @@ export type DealsSummary = {
   avgRealMarginPct: number | null;
 };
 
-export type SortMode = "score" | "recent" | "margin";
+export type SortMode = "score" | "recent" | "margin" | "roi";
+export type ViewMode = "attivi" | "salvati" | "tutti";
+export type PresetMode = "compra_ora" | "motivati" | "riparabili";
 
 export type OppFilters = {
   sort?: SortMode;
@@ -236,6 +239,8 @@ export type OppFilters = {
   dealClass?: string | null;
   minMargin?: number | null;
   q?: string | null;
+  view?: ViewMode;
+  preset?: PresetMode | null;
   limit?: number;
   offset?: number;
 };
@@ -267,6 +272,8 @@ export async function fetchOpportunities(
   if (filters.dealClass) p.set("deal_class", filters.dealClass);
   if (filters.minMargin != null) p.set("min_margin", String(filters.minMargin));
   if (filters.q) p.set("q", filters.q);
+  if (filters.view) p.set("view", filters.view);
+  if (filters.preset) p.set("preset", filters.preset);
   p.set("limit", String(filters.limit ?? 30));
   p.set("offset", String(filters.offset ?? 0));
 
@@ -368,6 +375,23 @@ export async function patchOpportunityStatus(
   );
   if (!res.ok)
     throw new Error(`PATCH /api/opportunities/${id} failed (${res.status})`);
+}
+
+export async function setTriage(
+  id: string,
+  category: Category,
+  triage: "salvato" | "scartato" | null,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/opportunities/${id}/triage?category=${category}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ triage }),
+    },
+  );
+  if (!res.ok)
+    throw new Error(`PATCH /api/opportunities/${id}/triage failed (${res.status})`);
 }
 
 /* --------------------------------------------------- Automations (scheduler) */

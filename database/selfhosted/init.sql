@@ -125,6 +125,8 @@ create index if not exists idx_auto_image_hash  on public.live_opportunities_aut
 create index if not exists idx_auto_seller      on public.live_opportunities_auto (seller_id);
 create index if not exists idx_auto_variant     on public.live_opportunities_auto (variant_key);
 alter table public.live_opportunities_auto add column if not exists color text;
+alter table public.live_opportunities_auto add column if not exists triage text;
+create index if not exists idx_auto_triage      on public.live_opportunities_auto (triage);
 
 -- ------------------------------------------------ live_opportunities_tech
 create table if not exists public.live_opportunities_tech (
@@ -160,6 +162,8 @@ create index if not exists idx_tech_image_hash  on public.live_opportunities_tec
 create index if not exists idx_tech_seller      on public.live_opportunities_tech (seller_id);
 create index if not exists idx_tech_storage     on public.live_opportunities_tech (storage_gb);
 create index if not exists idx_tech_variant     on public.live_opportunities_tech (variant_key);
+alter table public.live_opportunities_tech add column if not exists triage text;
+create index if not exists idx_tech_triage      on public.live_opportunities_tech (triage);
 
 -- ---------------------------------------------------------- price_history
 create table if not exists public.price_history (

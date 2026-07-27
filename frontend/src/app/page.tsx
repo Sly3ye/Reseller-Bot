@@ -16,6 +16,7 @@ import {
   rescheduleAutomation,
   resumeAutomation,
   runAutomation,
+  setTriage,
   updateDeal,
   type ApiModelStat,
   type ApiOpportunity,
@@ -26,7 +27,9 @@ import {
   type DealStage,
   type DealsSummary,
   type OpportunityFacets,
+  type PresetMode,
   type SortMode,
+  type ViewMode,
 } from "@/lib/api";
 import {
   dealClassStyle,
@@ -84,6 +87,8 @@ export default function FlipRadar() {
   const [search, setSearch] = useState("");
   const [marginFilter, setMarginFilter] = useState<MarginFilter>("all");
   const [sortMode, setSortMode] = useState<SortMode>("score");
+  const [view, setView] = useState<ViewMode>("attivi");
+  const [preset, setPreset] = useState<PresetMode | null>(null);
 
   // Filtri (iPhone) + paginazione, applicati lato server.
   const [fModel, setFModel] = useState<string | null>(null);
@@ -142,6 +147,8 @@ export default function FlipRadar() {
         condition: fCondition,
         minMargin: marginFilter === "high" ? 20 : null,
         q: search || null,
+        view,
+        preset,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       },
@@ -165,7 +172,7 @@ export default function FlipRadar() {
     return () => controller.abort();
   }, [
     category, sortMode, fModel, fStorage, fColor, fCondition,
-    marginFilter, search, page,
+    marginFilter, search, view, preset, page,
   ]);
 
   useEffect(() => {
@@ -247,6 +254,25 @@ export default function FlipRadar() {
     [category],
   );
 
+  // Azione sul feed: salva / scarta (toggle). Ottimistico + persistente.
+  const triageItem = useCallback(
+    (item: ApiOpportunity, action: "salvato" | "scartato") => {
+      const next = item.triage === action ? null : action;
+      setTriage(item.id, category, next).catch(() => {});
+      setOpportunities((cur) => {
+        // Se l'azione fa uscire l'annuncio dalla vista corrente, rimuovilo.
+        if (next === "scartato" && view === "attivi") {
+          return cur.filter((o) => o.id !== item.id);
+        }
+        if (next !== "salvato" && view === "salvati") {
+          return cur.filter((o) => o.id !== item.id);
+        }
+        return cur.map((o) => (o.id === item.id ? { ...o, triage: next } : o));
+      });
+    },
+    [category, view],
+  );
+
   // Reset filtri + pagina al cambio verticale (i filtri sono tech-specifici).
   const resetFilters = useCallback(() => {
     setFModel(null);
@@ -255,6 +281,8 @@ export default function FlipRadar() {
     setFCondition(null);
     setSearch("");
     setMarginFilter("all");
+    setView("attivi");
+    setPreset(null);
     setPage(0);
   }, []);
   const toggleVertical = () => {
@@ -591,6 +619,11 @@ export default function FlipRadar() {
               onFilterChange={p0(setMarginFilter)}
               sortMode={sortMode}
               onSortChange={p0(setSortMode)}
+              view={view}
+              onViewChange={p0(setView)}
+              preset={preset}
+              onPresetChange={p0(setPreset)}
+              onTriage={triageItem}
               fModel={fModel}
               onModelChange={p0(setFModel)}
               fStorage={fStorage}
@@ -799,7 +832,7 @@ function ErrorBanner({ message }: { message: string }) {
 
 /* ---------------------------------------------------------------- SNIPER */
 
-const GRID_COLUMNS = "56px 60px 2.1fr 1fr 1fr 1.1fr 84px 54px";
+const GRID_COLUMNS = "56px 60px 2.1fr 1fr 1fr 1.1fr 84px 104px";
 
 function SniperScreen(props: {
   total: number;
@@ -812,6 +845,11 @@ function SniperScreen(props: {
   onFilterChange: (v: MarginFilter) => void;
   sortMode: SortMode;
   onSortChange: (v: SortMode) => void;
+  view: ViewMode;
+  onViewChange: (v: ViewMode) => void;
+  preset: PresetMode | null;
+  onPresetChange: (v: PresetMode | null) => void;
+  onTriage: (item: ApiOpportunity, action: "salvato" | "scartato") => void;
   fModel: string | null;
   onModelChange: (v: string | null) => void;
   fStorage: number | null;
@@ -920,7 +958,7 @@ function SniperScreen(props: {
               gap: "2px",
             }}
           >
-            {(["score", "recent", "margin"] as SortMode[]).map((mode) => (
+            {(["score", "roi", "recent", "margin"] as SortMode[]).map((mode) => (
               <div
                 key={mode}
                 onClick={() => props.onSortChange(mode)}
@@ -935,11 +973,74 @@ function SniperScreen(props: {
                   color: props.sortMode === mode ? "oklch(0.12 0.008 250)" : "oklch(0.62 0.01 250)",
                 }}
               >
-                {mode === "score" ? "Deal Score" : mode === "recent" ? "Recenti" : "Margine"}
+                {mode === "score" ? "Deal Score" : mode === "roi" ? "ROI/gg" : mode === "recent" ? "Recenti" : "Margine"}
               </div>
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Vista triage (attivi/salvati/tutti) + preset rapidi */}
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            background: "oklch(0.20 0.008 250)",
+            border: "1px solid oklch(0.32 0.01 250)",
+            borderRadius: "8px",
+            padding: "3px",
+            gap: "2px",
+          }}
+        >
+          {([
+            ["attivi", "Attivi"],
+            ["salvati", "⭐ Salvati"],
+            ["tutti", "Tutti"],
+          ] as [ViewMode, string][]).map(([v, label]) => (
+            <div
+              key={v}
+              onClick={() => props.onViewChange(v)}
+              style={{
+                padding: "6px 12px",
+                borderRadius: "6px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                background: props.view === v ? "var(--accent)" : "transparent",
+                color: props.view === v ? "oklch(0.12 0.008 250)" : "oklch(0.62 0.01 250)",
+              }}
+            >
+              {label}
+            </div>
+          ))}
+        </div>
+        {([
+          ["compra_ora", "🟢 Compra ora"],
+          ["motivati", "🎯 Motivati"],
+          ["riparabili", "🔧 Riparabili"],
+        ] as [PresetMode, string][]).map(([pkey, label]) => {
+          const active = props.preset === pkey;
+          return (
+            <div
+              key={pkey}
+              onClick={() => props.onPresetChange(active ? null : pkey)}
+              style={{
+                padding: "7px 12px",
+                borderRadius: "8px",
+                fontSize: "12px",
+                fontWeight: 600,
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                background: active ? "var(--accent)" : "oklch(0.20 0.008 250)",
+                border: "1px solid " + (active ? "var(--accent)" : "oklch(0.32 0.01 250)"),
+                color: active ? "oklch(0.12 0.008 250)" : "oklch(0.72 0.01 250)",
+              }}
+            >
+              {label}
+            </div>
+          );
+        })}
       </div>
 
       {/* Barra filtri (iPhone): modello, memoria, colore, condizione — da facets */}
@@ -1061,6 +1162,7 @@ function SniperScreen(props: {
               onToggle={() => props.onToggleExpand(item.id)}
               onFlag={() => props.onToggleFlag(item.id)}
               onAddToPipeline={() => props.onAddToPipeline(item)}
+              onTriage={props.onTriage}
               onImageClick={props.onImageClick}
             />
           ))}
@@ -1167,6 +1269,7 @@ function SniperRow(props: {
   onToggle: () => void;
   onFlag: () => void;
   onAddToPipeline: () => void;
+  onTriage: (item: ApiOpportunity, action: "salvato" | "scartato") => void;
   onImageClick: (images: string[], index: number) => void;
 }) {
   const { item, expanded, flagged } = props;
@@ -1388,35 +1491,79 @@ function SniperRow(props: {
         <div style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)", fontFamily: MONO }}>
           {relativeTime(item.foundAt)}
         </div>
-        <div
-          onClick={(e) => {
-            e.stopPropagation();
-            props.onFlag();
-          }}
-          title="Flag as scam/error"
-          style={{
-            width: "30px",
-            height: "30px",
-            borderRadius: "7px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            background: flagged ? "oklch(0.68 0.19 25 / 0.18)" : "transparent",
-          }}
-        >
-          <div style={{ width: "10px", height: "10px", borderLeft: `2px solid ${flagColor}`, position: "relative" }}>
-            <div
-              style={{
-                position: "absolute",
-                left: "-1px",
-                top: "-1px",
-                width: "8px",
-                height: "5px",
-                background: flagColor,
-                clipPath: "polygon(0 0, 100% 25%, 0 50%)",
-              }}
-            />
+        <div style={{ display: "flex", gap: "4px", alignItems: "center", justifyContent: "flex-end" }}>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onTriage(item, "salvato");
+            }}
+            title={item.triage === "salvato" ? "Rimuovi dai salvati" : "Salva"}
+            style={{
+              width: "28px",
+              height: "28px",
+              borderRadius: "7px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              fontSize: "13px",
+              background: item.triage === "salvato" ? "oklch(0.78 0.14 85 / 0.20)" : "transparent",
+              filter: item.triage === "salvato" ? "none" : "grayscale(1) opacity(0.5)",
+            }}
+          >
+            ⭐
+          </div>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onTriage(item, "scartato");
+            }}
+            title={item.triage === "scartato" ? "Ripristina" : "Scarta (nascondi)"}
+            style={{
+              width: "28px",
+              height: "28px",
+              borderRadius: "7px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              fontSize: "13px",
+              color: item.triage === "scartato" ? "oklch(0.78 0.16 30)" : "oklch(0.5 0.01 250)",
+              background: item.triage === "scartato" ? "oklch(0.68 0.19 25 / 0.16)" : "transparent",
+            }}
+          >
+            🗑
+          </div>
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              props.onFlag();
+            }}
+            title="Segnala truffa/errore"
+            style={{
+              width: "28px",
+              height: "28px",
+              borderRadius: "7px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              background: flagged ? "oklch(0.68 0.19 25 / 0.18)" : "transparent",
+            }}
+          >
+            <div style={{ width: "10px", height: "10px", borderLeft: `2px solid ${flagColor}`, position: "relative" }}>
+              <div
+                style={{
+                  position: "absolute",
+                  left: "-1px",
+                  top: "-1px",
+                  width: "8px",
+                  height: "5px",
+                  background: flagColor,
+                  clipPath: "polygon(0 0, 100% 25%, 0 50%)",
+                }}
+              />
+            </div>
           </div>
         </div>
       </div>
