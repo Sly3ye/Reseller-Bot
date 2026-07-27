@@ -2050,6 +2050,73 @@ function PipelineScreen(props: {
         </div>
       </div>
 
+      {summary && summary.sold > 0 && summary.estimationAccuracyPct != null && (
+        <div
+          style={{
+            background: "oklch(0.185 0.008 250)",
+            border: "1px solid oklch(0.27 0.01 250)",
+            borderRadius: "12px",
+            padding: "16px 20px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+          }}
+        >
+          <div style={{ fontSize: "14px", fontWeight: 700 }}>
+            Feedback loop — quanto è affidabile il bot
+          </div>
+          <div style={{ display: "flex", gap: "28px", flexWrap: "wrap", fontFamily: MONO }}>
+            <div>
+              <div style={cardLabel}>Accuratezza stime</div>
+              <div
+                style={{
+                  fontSize: "20px", fontWeight: 700, marginTop: "6px",
+                  color:
+                    summary.estimationAccuracyPct >= 75
+                      ? "oklch(0.72 0.16 150)"
+                      : summary.estimationAccuracyPct >= 50
+                        ? "oklch(0.78 0.14 85)"
+                        : "oklch(0.70 0.16 30)",
+                }}
+              >
+                {summary.estimationAccuracyPct}%
+              </div>
+            </div>
+            <div>
+              <div style={cardLabel}>Scarto medio (reale − stima)</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, marginTop: "6px",
+                color: (summary.estimationBiasEur ?? 0) >= 0 ? "oklch(0.72 0.16 150)" : "oklch(0.70 0.16 30)" }}>
+                {summary.estimationBiasEur != null
+                  ? (summary.estimationBiasEur >= 0 ? "+" : "") + eur(summary.estimationBiasEur)
+                  : "—"}
+                <span style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)", marginLeft: "6px" }}>
+                  {(summary.estimationBiasEur ?? 0) >= 0 ? "sottostima" : "sovrastima"}
+                </span>
+              </div>
+            </div>
+            <div>
+              <div style={cardLabel}>Stima → reale (medio)</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, marginTop: "6px" }}>
+                {summary.avgEstimatedMarginEur != null ? eur(summary.avgEstimatedMarginEur) : "—"}
+                {" → "}
+                {summary.avgRealizedProfitEur != null ? eur(summary.avgRealizedProfitEur) : "—"}
+              </div>
+            </div>
+            <div>
+              <div style={cardLabel}>ROI/giorno realizzato</div>
+              <div style={{ fontSize: "20px", fontWeight: 700, marginTop: "6px", color: "oklch(0.78 0.14 195)" }}>
+                {summary.realizedRoiPerDayPct != null ? `${summary.realizedRoiPerDayPct}%/gg` : "—"}
+                {summary.avgHeldDays != null && (
+                  <span style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)", marginLeft: "6px" }}>
+                    ~{summary.avgHeldDays}gg in stock
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {deals.length === 0 ? (
         <div
           style={{

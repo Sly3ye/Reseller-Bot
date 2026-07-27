@@ -215,6 +215,9 @@ export type Deal = {
   profit: number | null;
   realMarginPct: number | null;
   estimatedMarginEur: number | null;
+  estimateErrorEur: number | null;
+  heldDays: number | null;
+  roiPerDayPct: number | null;
 };
 
 export type DealsSummary = {
@@ -224,6 +227,13 @@ export type DealsSummary = {
   investedOpen: number;
   realizedProfit: number;
   avgRealMarginPct: number | null;
+  // Feedback loop stima vs realtà
+  avgEstimatedMarginEur: number | null;
+  avgRealizedProfitEur: number | null;
+  estimationBiasEur: number | null;
+  estimationAccuracyPct: number | null;
+  avgHeldDays: number | null;
+  realizedRoiPerDayPct: number | null;
 };
 
 export type SortMode = "score" | "recent" | "margin" | "roi";

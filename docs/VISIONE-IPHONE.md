@@ -54,9 +54,9 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 - ✅ Stadi interessante → contattato → offerta → comprato → in_vendita →
   venduto / sfumato; costi accessori; profitto netto; riepilogo (investito,
   realizzato, margine reale medio)
-- ◻️ 🟡 **Feedback loop visibile**: margine *previsto dal bot* vs *incassato
-  reale* per ogni deal chiuso → misura (e migliora) l'affidabilità delle stime
-- ◻️ 🟡 **ROI/giorno realizzato** (capitale immobilizzato ÷ giorni in stock)
+- ✅ **Feedback loop visibile**: accuratezza stime, scarto medio (sotto/sovra-
+  stima), stima→reale medio per i venduti
+- ✅ **ROI/giorno realizzato** (margine reale ÷ giorni in stock)
 - ◻️ ⚪ Tempo-in-stadio + alert "in vendita da troppo"
 
 ## 4. Automations / Salute — *"il motore gira bene?"*
@@ -81,7 +81,7 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 
 1. ✅ **Azioni sul feed** (salva/scarta + preset + sort ROI) — FATTO
 2. ✅ **Impostazioni da UI** (soglie, margine, prezzi ricambi Apple, Telegram) — FATTO
-3. 🟡 **Feedback loop P&L** (previsto vs reale) — rende vere le stime nel tempo
+3. ✅ **Feedback loop P&L** (previsto vs reale) — FATTO
 4. 🟡 **Pannello salute + copertura** (fiducia che il motore raccolga tutto)
 5. 🟡 **Sezione Venditori** in Market Intelligence
 6. ⚪ **Deprezzamento / stagionalità** — aspettano l'accumulo di storico
