@@ -22,16 +22,35 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-# ------------------------------------------------- costi riparazione (tech)
+# ---------------------- riparazioni (tech): SOLO ricambio Apple originale ----
+#
+# L'unico costo certo al 100% è il prezzo del RICAMBIO Apple ORIGINALE (Self
+# Service Repair, solo pezzo). Escludiamo di proposito:
+#   - manodopera: per la batteria la fai tu; per lo schermo è imprevedibile
+#     (può andar liscio o dare problemi) → non stimabile;
+#   - ricambi compatibili: il prezzo varia anche del 100% per marca/scelta.
+# Solo sostituzioni STANDARD non complesse: schermo e batteria. Il vetro
+# posteriore (rimozione laser) e il Face ID NON sono ricambi standard →
+# restano solo flag di difetto, senza un costo inventato.
+#
+# ⚠️ Prezzi indicativi: AGGIORNARLI con i valori esatti del ricambio dal sito
+# Apple (support.apple.com/self-service-repair). Variano per generazione: la
+# tabella è per fascia modello, facile da affinare per singolo modello.
+APPLE_PART_EUR: dict[str, dict[str, int]] = {
+    # fascia:     schermo (display), batteria
+    "base":    {"schermo-rotto": 290, "batteria-esausta": 70},
+    "plus":    {"schermo-rotto": 350, "batteria-esausta": 75},
+    "pro":     {"schermo-rotto": 330, "batteria-esausta": 75},
+    "pro-max": {"schermo-rotto": 380, "batteria-esausta": 80},
+}
 
-# Riparazioni standard iPhone (ricambi compatibili, lab indipendente).
-BATTERY_REPLACEMENT_EUR = 79
-BACK_GLASS_EUR = 120
+_REPAIR_LABEL = {
+    "schermo-rotto": "Schermo (ricambio Apple)",
+    "batteria-esausta": "Batteria (ricambio Apple)",
+}
 
-# Schermo: dipende dalla fascia del modello (dal titolo dell'annuncio).
-SCREEN_BASE_EUR = 150          # modelli base (11, 12, 13, 14 "liscio", SE)
-SCREEN_PRO_EUR = 240           # Pro
-SCREEN_PRO_MAX_EUR = 300       # Pro Max / Plus
+# Difetti tech con sostituzione STANDARD → margine netto ricalcolabile.
+REPAIRABLE_TECH_DEFECTS = ("schermo-rotto", "batteria-esausta")
 
 # ------------------------------------------------ penalità difetti (in €)
 
@@ -47,56 +66,39 @@ AUTO_DEFECT_PENALTY_EUR: dict[str, int] = {
     "fuso": 4000,
 }
 
-TECH_DEFECT_PENALTY_EUR: dict[str, int] = {
-    "face-id-rotto": 150,      # riparazione difficile → sconto secco
-    "batteria-esausta": BATTERY_REPLACEMENT_EUR,
-    "back-rotto": BACK_GLASS_EUR,
-    # schermo-rotto calcolato dinamicamente dal modello (vedi repair_costs).
-}
-
-# Difetti tech con riparazione standard → margine netto ricalcolabile.
-REPAIRABLE_TECH_DEFECTS = ("schermo-rotto", "batteria-esausta", "back-rotto")
+# Tech: nessuna penalità inventata. I difetti non-riparabili con ricambio
+# standard (Face ID, vetro posteriore, iCloud) sono già scontati dal fattore
+# condizione ("difetti"/"rotto") nel valore equo — non aggiungiamo cifre incerte.
+TECH_DEFECT_PENALTY_EUR: dict[str, int] = {}
 
 
-def _screen_cost_for(title: str | None) -> int:
+def _model_tier(title: str | None) -> str:
     t = (title or "").lower()
-    if "pro max" in t or "plus" in t:
-        return SCREEN_PRO_MAX_EUR
+    if "pro max" in t:
+        return "pro-max"
+    if "plus" in t:
+        return "plus"
     if "pro" in t:
-        return SCREEN_PRO_EUR
-    return SCREEN_BASE_EUR
+        return "pro"
+    return "base"
 
 
 def repair_costs(
     category: str, title: str | None, defects: list[str]
 ) -> list[dict[str, Any]]:
-    """Radar riparazioni (solo tech): [{defect, label, cost}] per i riparabili."""
+    """Radar riparazioni (solo tech): [{defect, label, cost}] con SOLO il costo
+    del ricambio Apple originale (no manodopera), per gli interventi standard."""
     if category == "automobile":
         return []
+    prices = APPLE_PART_EUR[_model_tier(title)]
     items: list[dict[str, Any]] = []
     for defect in defects:
-        if defect == "schermo-rotto":
+        if defect in REPAIRABLE_TECH_DEFECTS:
             items.append(
                 {
                     "defect": defect,
-                    "label": "Sostituzione schermo",
-                    "cost": _screen_cost_for(title),
-                }
-            )
-        elif defect == "batteria-esausta":
-            items.append(
-                {
-                    "defect": defect,
-                    "label": "Sostituzione batteria",
-                    "cost": BATTERY_REPLACEMENT_EUR,
-                }
-            )
-        elif defect == "back-rotto":
-            items.append(
-                {
-                    "defect": defect,
-                    "label": "Vetro posteriore",
-                    "cost": BACK_GLASS_EUR,
+                    "label": _REPAIR_LABEL[defect],
+                    "cost": prices[defect],
                 }
             )
     return items

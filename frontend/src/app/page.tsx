@@ -1639,7 +1639,7 @@ function NegotiationAssistant(props: {
           ? `+${eur(item.repair.netMarginEur)}` +
             (item.repair.netMarginPct !== null ? ` (${item.repair.netMarginPct}%)` : "")
           : "—",
-      hint: `riparazione stimata ${eur(item.repair.total)}`,
+      hint: `solo ricambio Apple ${eur(item.repair.total)} · no manodopera`,
       color: "oklch(0.80 0.13 75)",
     });
   }
