@@ -510,6 +510,12 @@ def _build_enrich_ctx(
     """Contesto condiviso per l'arricchimento di un lotto di righe (pool per
     variante, target, storico prezzi, venditori, regressione km). Costruito una
     sola volta per lotto — riusato da ``list_opportunities`` e ``enrich_for_alerts``."""
+    # Aggiorna margine obiettivo / prezzi ricambi dalle Impostazioni UI prima
+    # di valutare il lotto (max_bid, radar riparazioni).
+    from backend.services import settings_store
+
+    settings_store.get_all()
+
     ctx: dict[str, Any] = {
         "target_cat": target_cat,
         "targets": _targets_for_category(db, target_cat),

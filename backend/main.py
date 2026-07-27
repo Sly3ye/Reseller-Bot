@@ -12,6 +12,7 @@ from backend.api.data import router as data_router
 from backend.api.deals import router as deals_router
 from backend.api.health import router as health_router
 from backend.api.scrape import router as scrape_router
+from backend.api.settings import router as settings_router
 from backend.core.config import settings
 from backend.core.scheduler import create_scheduler
 
@@ -58,6 +59,7 @@ app.include_router(scrape_router)
 app.include_router(data_router)
 app.include_router(deals_router)
 app.include_router(automations_router)
+app.include_router(settings_router)
 
 # Serve le immagini scaricate dallo Sniper (sostituisce lo Storage di Supabase).
 _media_dir = Path(settings.media_root)

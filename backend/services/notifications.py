@@ -272,7 +272,14 @@ async def notify_deals(
       calo ≥ ALERT_MIN_DROP_PCT.
     Dedup persistente su ``sent_alerts``. No-op se il bot non è configurato.
     """
+    from backend.services import settings_store  # lazy: evita import circolare
+
+    cfg = settings_store.get_all()
     chat_id = settings.telegram_chat_for(category)
+    # Override chat da Impostazioni UI (solo se il bot ha un token configurato).
+    key = "telegram_chat_auto" if category == "automobile" else "telegram_chat_tech"
+    if cfg.get(key) and settings.telegram_bot_token:
+        chat_id = cfg[key]
     if not chat_id:
         return {"sent": 0, "skipped": len(deal_items) + len(drop_events)}
 
@@ -295,7 +302,7 @@ async def notify_deals(
     for event in drop_events:
         old, new = event.get("old_price"), event.get("new_price")
         drop_pct = (old - new) / old * 100 if old else 0
-        if drop_pct < settings.alert_min_drop_pct:
+        if drop_pct < cfg["alert_min_drop_pct"]:
             continue
         to_send.append(
             (

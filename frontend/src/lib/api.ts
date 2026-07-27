@@ -394,6 +394,40 @@ export async function setTriage(
     throw new Error(`PATCH /api/opportunities/${id}/triage failed (${res.status})`);
 }
 
+/* ------------------------------------------------------------- Impostazioni */
+
+export type AppSettings = {
+  alert_min_margin_pct: number;
+  alert_min_drop_pct: number;
+  alert_min_score: number;
+  target_margin_pct: Record<string, number>;
+  apple_part_eur: Record<string, Record<string, number>>;
+  telegram_chat_tech: string | null;
+  telegram_chat_auto: string | null;
+  telegram_chat_ops: string | null;
+};
+
+export async function fetchSettings(signal?: AbortSignal): Promise<AppSettings> {
+  const res = await fetch(`${API_BASE_URL}/api/settings`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /api/settings failed (${res.status})`);
+  return res.json();
+}
+
+export async function updateSettings(
+  values: Partial<AppSettings>,
+): Promise<AppSettings> {
+  const res = await fetch(`${API_BASE_URL}/api/settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ values }),
+  });
+  if (!res.ok) throw new Error(`PUT /api/settings failed (${res.status})`);
+  return res.json();
+}
+
 /* --------------------------------------------------- Automations (scheduler) */
 
 export type AutomationJob = {

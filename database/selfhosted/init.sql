@@ -232,6 +232,13 @@ create trigger trg_deals_updated_at
   before update on public.deals
   for each row execute function public.handle_updated_at();
 
+-- ------------------------------------------------------------ app_settings
+create table if not exists public.app_settings (
+  key        text primary key,
+  value      jsonb not null,
+  updated_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------- seed target pilota (idempotente)
 insert into public.target_models (category, query, strict_filters, is_active)
 values

@@ -26,12 +26,10 @@ Lista filtrabile + card espandibile con assistente di trattativa.
   consigliata, **ROI/giorno**, ribasso, **venditore + profilo motivato**,
   margine netto post-riparazione (solo ricambio Apple), analisi AI, breakdown
   score, galleria + lightbox
-- ◻️ 🔴 **Azioni sull'annuncio**: salva / scarta / nascondi, oltre al già
-  presente "→ Pipeline". Persistite, così il feed diventa una coda di lavoro.
-- ◻️ 🔴 **Preset rapidi**: "solo compra ora", "solo venditori motivati",
-  "affari sotto X€", "riparabili con margine"
-- ◻️ 🟡 **Sort per ROI/giorno** e per gap max-bid (asking − maxBid)
-- 🔧 Allineare l'ordinamento alle nuove metriche (oggi score/recenti/margine)
+- ✅ **Azioni sull'annuncio**: salva ⭐ / scarta 🗑 (nascondi) per riga,
+  persistite (`triage`); viste Attivi / Salvati / Tutti.
+- ✅ **Preset rapidi**: 🟢 compra ora, 🎯 motivati, 🔧 riparabili
+- ✅ **Sort per ROI/giorno** (oltre a score/recenti/margine)
 
 ## 2. Market Intelligence — *"cosa conviene / come si muove il mercato"* (anche HOME)
 
@@ -68,11 +66,11 @@ Lista filtrabile + card espandibile con assistente di trattativa.
   giro, alert down/ripristino, stato proxy / impersonation
 - ◻️ 🟡 **Copertura**: n. target attivi, annunci/giorno, % gamma iPhone coperta
 
-## 5. Impostazioni — *"configura senza toccare il codice"* (NUOVA)
+## 5. Impostazioni — *"configura senza toccare il codice"*
 
-- ◻️ 🔴 **Impostazioni da UI**: soglie alert (`ALERT_MIN_*`), margine obiettivo
-  (`TARGET_MARGIN_PCT`), **prezzi ricambi Apple** (`APPLE_PART_EUR`), parametri
-  Telegram. Oggi vivono nel codice/`.env`.
+- ✅ **Impostazioni da UI**: soglie alert (score/margine/calo), margine obiettivo
+  per categoria, **prezzi ricambi Apple** per fascia, chat Telegram. Salvate in
+  `app_settings`, applicate a runtime (il token bot resta in `.env`).
 
 > Scartati di proposito: **Home/Overview separata** (la fa Market Intelligence) e
 > **storico notifiche** (già sul telefono via Telegram).
@@ -81,9 +79,8 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 
 ## Gap prioritari per "chiudere iPhone"
 
-1. 🔴 **Azioni sul feed** (salva/scarta/nascondi + preset) — rende il feed una
-   coda di lavoro usabile ogni giorno
-2. 🔴 **Impostazioni da UI** (soglie, margine, prezzi ricambi Apple, Telegram)
+1. ✅ **Azioni sul feed** (salva/scarta + preset + sort ROI) — FATTO
+2. ✅ **Impostazioni da UI** (soglie, margine, prezzi ricambi Apple, Telegram) — FATTO
 3. 🟡 **Feedback loop P&L** (previsto vs reale) — rende vere le stime nel tempo
 4. 🟡 **Pannello salute + copertura** (fiducia che il motore raccolga tutto)
 5. 🟡 **Sezione Venditori** in Market Intelligence

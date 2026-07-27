@@ -72,6 +72,29 @@ AUTO_DEFECT_PENALTY_EUR: dict[str, int] = {
 TECH_DEFECT_PENALTY_EUR: dict[str, int] = {}
 
 
+def apply_config(cfg: dict[str, Any]) -> None:
+    """Applica gli override runtime (dalle Impostazioni UI) alle tabelle di
+    modulo, in place, così le funzioni pure ne leggono i nuovi valori:
+    margine obiettivo per categoria e prezzi ricambi Apple per fascia."""
+    tm = cfg.get("target_margin_pct")
+    if isinstance(tm, dict):
+        for k, v in tm.items():
+            try:
+                TARGET_MARGIN_PCT[k] = float(v)
+            except (TypeError, ValueError):
+                pass
+    ap = cfg.get("apple_part_eur")
+    if isinstance(ap, dict):
+        for tier, parts in ap.items():
+            if tier in APPLE_PART_EUR and isinstance(parts, dict):
+                for pk, pv in parts.items():
+                    if pk in APPLE_PART_EUR[tier]:
+                        try:
+                            APPLE_PART_EUR[tier][pk] = int(pv)
+                        except (TypeError, ValueError):
+                            pass
+
+
 def _model_tier(title: str | None) -> str:
     t = (title or "").lower()
     if "pro max" in t:

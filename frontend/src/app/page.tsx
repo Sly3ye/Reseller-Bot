@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { CSSProperties } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import {
   createDeal,
@@ -10,6 +10,7 @@ import {
   fetchDeals,
   fetchDealsSummary,
   fetchOpportunities,
+  fetchSettings,
   fetchTrends,
   patchOpportunityStatus,
   pauseAutomation,
@@ -18,7 +19,9 @@ import {
   runAutomation,
   setTriage,
   updateDeal,
+  updateSettings,
   type ApiModelStat,
+  type AppSettings,
   type ApiOpportunity,
   type ApiTrends,
   type AutomationJob,
@@ -43,7 +46,7 @@ import {
 const MONO = "var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace";
 
 type Vertical = "tech" | "auto";
-type Screen = "sniper" | "intel" | "pipeline" | "automations";
+type Screen = "sniper" | "intel" | "pipeline" | "automations" | "settings";
 type MarginFilter = "all" | "high";
 
 const PAGE_SIZE = 30;
@@ -566,6 +569,19 @@ export default function FlipRadar() {
             Automations
           </div>
 
+          <div onClick={() => setScreen("settings")} style={navItem(screen === "settings")}>
+            <div
+              style={{
+                width: "16px",
+                height: "16px",
+                border: "2px solid currentColor",
+                borderRadius: "50%",
+                flexShrink: 0,
+              }}
+            />
+            Impostazioni
+          </div>
+
           <div style={{ flex: 1 }} />
 
           <div
@@ -679,6 +695,8 @@ export default function FlipRadar() {
           )}
 
           {screen === "automations" && <AutomationsScreen />}
+
+          {screen === "settings" && <SettingsScreen />}
         </div>
       </div>
 
@@ -2659,6 +2677,199 @@ function fmtNextRun(job: AutomationJob): string {
   if (m >= 60) return `tra ${Math.floor(m / 60)}h ${m % 60}m`;
   if (m > 0) return `tra ${m}m`;
   return `tra ${s}s`;
+}
+
+/* ---------------------------------------------------------- Impostazioni */
+
+const PART_LABEL: Record<string, string> = {
+  "schermo-rotto": "Schermo",
+  "batteria-esausta": "Batteria",
+};
+const TIER_LABEL: Record<string, string> = {
+  base: "Base", plus: "Plus", pro: "Pro", "pro-max": "Pro Max",
+};
+
+function SettingsScreen() {
+  const [s, setS] = useState<AppSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const c = new AbortController();
+    fetchSettings(c.signal).then(setS).catch(() => setS(null));
+    return () => c.abort();
+  }, []);
+
+  const save = async () => {
+    if (!s) return;
+    setSaving(true);
+    setMsg(null);
+    try {
+      const upd = await updateSettings(s);
+      setS(upd);
+      setMsg("Salvato ✓");
+    } catch {
+      setMsg("Errore nel salvataggio");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!s) {
+    return (
+      <div style={{ color: "oklch(0.6 0.01 250)", fontSize: "14px" }}>
+        Caricamento impostazioni… (verifica che il backend sia attivo)
+      </div>
+    );
+  }
+
+  const card: CSSProperties = {
+    background: "oklch(0.185 0.008 250)",
+    border: "1px solid oklch(0.27 0.01 250)",
+    borderRadius: "12px",
+    padding: "18px 20px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "14px",
+  };
+  const label: CSSProperties = {
+    fontSize: "10.5px", fontWeight: 700, color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "6px",
+  };
+  const num = (value: number, onChange: (v: number) => void, suffix?: string) => (
+    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+      <input
+        type="number"
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{
+          width: "90px", height: "34px", background: "oklch(0.20 0.008 250)",
+          border: "1px solid oklch(0.32 0.01 250)", borderRadius: "8px",
+          padding: "0 10px", color: "oklch(0.94 0.004 250)", fontFamily: MONO,
+          fontSize: "13px",
+        }}
+      />
+      {suffix && <span style={{ fontSize: "12px", color: "oklch(0.55 0.01 250)" }}>{suffix}</span>}
+    </div>
+  );
+  const field = (title: string, node: ReactNode) => (
+    <div>
+      <div style={label}>{title}</div>
+      {node}
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px", maxWidth: "760px", animation: "fadeIn 0.2s ease" }}>
+      <div>
+        <div style={{ fontSize: "22px", fontWeight: 700 }}>Impostazioni</div>
+        <div style={{ fontSize: "13px", color: "oklch(0.62 0.01 250)", marginTop: "4px" }}>
+          Parametri di business, senza toccare il codice. Salva per applicare (vale
+          dai prossimi calcoli e giri sniper).
+        </div>
+      </div>
+
+      {/* Soglie alert */}
+      <div style={card}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Soglie alert Telegram</div>
+        <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
+          {field("Deal Score minimo", num(s.alert_min_score, (v) => setS({ ...s, alert_min_score: v })))}
+          {field("Margine minimo", num(s.alert_min_margin_pct, (v) => setS({ ...s, alert_min_margin_pct: v }), "%"))}
+          {field("Calo prezzo minimo", num(s.alert_min_drop_pct, (v) => setS({ ...s, alert_min_drop_pct: v }), "%"))}
+        </div>
+      </div>
+
+      {/* Margine obiettivo */}
+      <div style={card}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Margine obiettivo (per max bid e offerta)</div>
+        <div style={{ display: "flex", gap: "24px", flexWrap: "wrap" }}>
+          {Object.entries(s.target_margin_pct).map(([cat, v]) =>
+            field(
+              cat === "smartphone" ? "iPhone" : "Auto",
+              num(v, (nv) => setS({ ...s, target_margin_pct: { ...s.target_margin_pct, [cat]: nv } }), "%"),
+            ),
+          )}
+        </div>
+      </div>
+
+      {/* Ricambi Apple */}
+      <div style={card}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Prezzi ricambi Apple (solo pezzo, no manodopera)</div>
+        <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px" }}>
+          Inserisci i prezzi esatti del ricambio dal sito Apple (Self Service Repair).
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr", gap: "10px", alignItems: "center" }}>
+          <div />
+          <div style={label}>Schermo</div>
+          <div style={label}>Batteria</div>
+          {Object.entries(s.apple_part_eur).map(([tier, parts]) => (
+            <Fragment key={tier}>
+              <div style={{ fontSize: "13px", fontWeight: 600 }}>{TIER_LABEL[tier] ?? tier}</div>
+              {["schermo-rotto", "batteria-esausta"].map((pk) => (
+                <div key={pk}>
+                  {num(parts[pk] ?? 0, (nv) =>
+                    setS({
+                      ...s,
+                      apple_part_eur: {
+                        ...s.apple_part_eur,
+                        [tier]: { ...parts, [pk]: nv },
+                      },
+                    }),
+                    "€",
+                  )}
+                </div>
+              ))}
+            </Fragment>
+          ))}
+        </div>
+      </div>
+
+      {/* Telegram chat */}
+      <div style={card}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Chat Telegram</div>
+        <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px" }}>
+          Il token del bot resta in <span style={{ fontFamily: MONO }}>.env</span>. Qui gli ID chat di destinazione.
+        </div>
+        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+          {([
+            ["telegram_chat_tech", "iPhone"],
+            ["telegram_chat_auto", "Auto"],
+            ["telegram_chat_ops", "Sistema"],
+          ] as [keyof AppSettings, string][]).map(([k, lab]) =>
+            field(
+              lab,
+              <input
+                value={(s[k] as string | null) ?? ""}
+                onChange={(e) => setS({ ...s, [k]: e.target.value || null })}
+                placeholder="chat id"
+                style={{
+                  width: "150px", height: "34px", background: "oklch(0.20 0.008 250)",
+                  border: "1px solid oklch(0.32 0.01 250)", borderRadius: "8px",
+                  padding: "0 10px", color: "oklch(0.94 0.004 250)", fontFamily: MONO,
+                  fontSize: "13px",
+                }}
+              />,
+            ),
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+        <div
+          onClick={saving ? undefined : save}
+          style={{
+            padding: "10px 22px", borderRadius: "9px", fontSize: "14px", fontWeight: 700,
+            cursor: saving ? "default" : "pointer",
+            background: "var(--accent)", color: "oklch(0.12 0.008 250)",
+            opacity: saving ? 0.6 : 1,
+          }}
+        >
+          {saving ? "Salvataggio…" : "Salva impostazioni"}
+        </div>
+        {msg && <span style={{ fontSize: "13px", color: "oklch(0.75 0.15 150)" }}>{msg}</span>}
+      </div>
+    </div>
+  );
 }
 
 function AutomationsScreen() {

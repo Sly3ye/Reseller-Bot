@@ -862,7 +862,9 @@ async def run_sniper_all_products(
     # soglia), scartando sospetti/truffe. I cali di prezzo vanno comunque.
     if new_by_cat or drops_by_cat:
         from backend.services.reads import enrich_for_alerts  # lazy: evita import circolare
+        from backend.services import settings_store
 
+        min_score = settings_store.get_all()["alert_min_score"]
         db = get_db()
         for cat in set(new_by_cat) | set(drops_by_cat):
             new_rows = new_by_cat.get(cat, [])
@@ -873,7 +875,7 @@ async def run_sniper_all_products(
                     it
                     for it in items
                     if it.get("dealClass") == "affare"
-                    and (it.get("score") or 0) >= settings.alert_min_score
+                    and (it.get("score") or 0) >= min_score
                 ]
                 await notify_deals(db, cat, deals, drops)
             except Exception:
