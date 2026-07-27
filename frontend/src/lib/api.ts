@@ -27,6 +27,16 @@ export type PriceDrop = {
 
 export type ScorePoint = { label: string; points: number };
 
+export type SellerProfile = {
+  active: number;
+  sold: number;
+  avgDaysToSell: number | null;
+  dropRate: number;
+  avgDropPct: number | null;
+  type: string | null;
+  motivated: boolean;
+};
+
 export type RepairInfo = {
   items: { defect: string; label: string; cost: number }[];
   total: number;
@@ -54,6 +64,7 @@ export type ApiOpportunity = {
   // Segnale NLP + venditore
   sellerType: string | null;
   sellerActiveCount: number | null;
+  sellerProfile: SellerProfile | null;
   defects: string[];
   urgencyFlags: string[];
   features: string[];

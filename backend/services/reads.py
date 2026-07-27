@@ -162,12 +162,15 @@ def _parse_ts(value: Any) -> datetime | None:
         return None
 
 
-def _seller_active_counts(
+def _seller_profiles(
     db: Client, table: str, rows: list[dict[str, Any]]
-) -> dict[str, int]:
-    """seller_id → n. annunci ATTIVI in `table` (storico venditore, A3).
+) -> dict[str, dict[str, Any]]:
+    """seller_id → profilo venditore (intelligence, leva di trattativa).
 
-    Un "privato" con 6 annunci attivi si tratta come un commerciante.
+    Per ogni venditore degli annunci nel lotto: quanti annunci attivi ha, quanti
+    ne ha già venduti e in quanti giorni, e quanto spesso ribassa (segnale di
+    disponibilità a trattare). Un venditore che vende in fretta o ribassa spesso
+    è "motivato" → più margine di trattativa.
     """
     seller_ids = list({r.get("seller_id") for r in rows if r.get("seller_id")})
     if not seller_ids:
@@ -175,19 +178,59 @@ def _seller_active_counts(
     try:
         found = (
             db.table(table)
-            .select("seller_id")
+            .select("seller_id, status, asking_price, original_price, "
+                    "found_at, updated_at, seller_type")
             .in_("seller_id", seller_ids)
-            .in_("status", list(_ACTIVE_STATUSES))
+            .limit(20000)
             .execute()
-        )
+        ).data or []
     except Exception:
         return {}
-    counts: dict[str, int] = {}
-    for row in found.data or []:
+
+    agg: dict[str, dict[str, Any]] = {}
+    for row in found:
         sid = row.get("seller_id")
-        if sid:
-            counts[sid] = counts.get(sid, 0) + 1
-    return counts
+        if not sid:
+            continue
+        d = agg.setdefault(
+            sid,
+            {"active": 0, "sold": 0, "days": [], "listed": 0, "drops": 0,
+             "dropPcts": [], "type": row.get("seller_type")},
+        )
+        status = row.get("status")
+        if status in _ACTIVE_STATUSES:
+            d["active"] += 1
+        elif status in _SOLD_STATUSES:
+            d["sold"] += 1
+            found_ts = _parse_ts(row.get("found_at"))
+            removed_ts = _parse_ts(row.get("updated_at"))
+            if found_ts and removed_ts:
+                days = (removed_ts - found_ts).total_seconds() / 86400
+                if 0 <= days <= 365:
+                    d["days"].append(days)
+        d["listed"] += 1
+        orig = _to_float(row.get("original_price"))
+        ask = _to_float(row.get("asking_price"))
+        if orig and ask and orig > ask:
+            d["drops"] += 1
+            d["dropPcts"].append((orig - ask) / orig * 100)
+
+    profiles: dict[str, dict[str, Any]] = {}
+    for sid, d in agg.items():
+        avg_days = round(statistics.fmean(d["days"]), 1) if d["days"] else None
+        drop_rate = round(d["drops"] / d["listed"] * 100) if d["listed"] else 0
+        avg_drop_pct = round(statistics.fmean(d["dropPcts"]), 1) if d["dropPcts"] else None
+        motivated = bool((avg_days is not None and avg_days <= 14) or drop_rate >= 40)
+        profiles[sid] = {
+            "active": d["active"],
+            "sold": d["sold"],
+            "avgDaysToSell": avg_days,
+            "dropRate": drop_rate,
+            "avgDropPct": avg_drop_pct,
+            "type": d["type"],
+            "motivated": motivated,
+        }
+    return profiles
 
 
 _KM_MODEL_MIN_SAMPLES = 8
@@ -472,7 +515,7 @@ def _build_enrich_ctx(
         "variant_pools": _variant_price_pools(db, table),
         "sold_refs": _sold_variant_refs(db, table),
         "price_history": _latest_price_history(db, [r["id"] for r in rows]),
-        "seller_counts": _seller_active_counts(db, table, rows),
+        "seller_profiles": _seller_profiles(db, table, rows),
         "km_models": {},
     }
     avg_by_target, avg_by_model = _market_avgs(db, target_cat)
@@ -525,9 +568,9 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     shaped = _shape_opportunity(row, model, market_avg, ctx["price_history"].get(row["id"]))
 
     seller_id = row.get("seller_id")
-    shaped["sellerActiveCount"] = (
-        ctx["seller_counts"].get(seller_id) if seller_id else None
-    )
+    profile = ctx["seller_profiles"].get(seller_id) if seller_id else None
+    shaped["sellerProfile"] = profile
+    shaped["sellerActiveCount"] = profile["active"] if profile else None
 
     shaped["expectedPrice"] = None
     shaped["marginVsExpected"] = None

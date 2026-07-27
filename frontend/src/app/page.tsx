@@ -1622,13 +1622,28 @@ function NegotiationAssistant(props: {
         : item.sellerType === "dealer"
           ? "concessionario"
           : "privato";
+    const p = item.sellerProfile;
+    const bits: string[] = [];
+    if (p) {
+      if (p.active) bits.push(`${p.active} attivi`);
+      if (p.sold) {
+        bits.push(
+          `${p.sold} venduti` + (p.avgDaysToSell != null ? ` in ~${p.avgDaysToSell}gg` : ""),
+        );
+      }
+      if (p.dropRate >= 20) {
+        bits.push(
+          `ribassa nel ${p.dropRate}%` + (p.avgDropPct != null ? ` (−${p.avgDropPct}%)` : ""),
+        );
+      }
+    } else if (item.sellerActiveCount != null) {
+      bits.push(`${item.sellerActiveCount} annunci attivi`);
+    }
     stats.push({
-      label: "Venditore",
+      label: p?.motivated ? "Venditore · 🎯 motivato" : "Venditore",
       value: label,
-      hint:
-        item.sellerActiveCount != null
-          ? `${item.sellerActiveCount} annunci attivi`
-          : undefined,
+      hint: bits.length ? bits.join(" · ") : undefined,
+      color: p?.motivated ? "oklch(0.75 0.15 150)" : undefined,
     });
   }
   if (item.repair) {
@@ -2380,6 +2395,31 @@ function BuyDetail(props: { m: ApiModelStat }) {
                 {m.demandIndex >= 1 ? "↑ comprare" : m.demandIndex >= 0.5 ? "→ stabile" : "↓ saturo"}
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Momentum prezzo (trend storico) */}
+      {m.changePct != null && (
+        <div style={block}>
+          <div style={blkLabel}>Momentum prezzo</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+            {m.avg != null && <div>media attuale {eur(m.avg)}</div>}
+            <div
+              style={{
+                color:
+                  m.changePct <= -3
+                    ? "oklch(0.72 0.16 150)"
+                    : m.changePct >= 3
+                      ? "oklch(0.70 0.16 30)"
+                      : "oklch(0.62 0.01 250)",
+              }}
+              title="Variazione della media di mercato sullo storico (market_trends)"
+            >
+              {m.changePct >= 0 ? "+" : ""}
+              {m.changePct}% sullo storico{" "}
+              {m.changePct <= -3 ? "↓ in calo (compra)" : m.changePct >= 3 ? "↑ in salita" : "→ stabile"}
+            </div>
           </div>
         </div>
       )}
