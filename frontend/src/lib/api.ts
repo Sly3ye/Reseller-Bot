@@ -91,6 +91,13 @@ export type ApiOpportunity = {
   repair: RepairInfo | null;
   defectPenaltyEur: number | null;
   suggestedOffer: number | null;
+  // Analitiche operative (compravendita)
+  fairValueSource: "km" | "venduti" | "listati" | null;
+  valuationSamples: number | null;
+  valuationConfidence: "alta" | "media" | "bassa" | null;
+  roiPerDayPct: number | null;
+  maxBid: number | null;
+  buyAtAsking: boolean;
 };
 
 export type PriceBand = {
@@ -145,7 +152,12 @@ export type ApiModelStat = {
   // listati (fallback/confronto)
   fastSalePrice: number | null;
   maxSalePrice: number | null;
+  // domanda/offerta (ultimi 7gg)
+  inflow7d: number;
+  outflow7d: number;
+  demandIndex: number | null;
   // ranking
+  roiPerDayPct: number | null;
   opportunityScore: number | null;
 };
 

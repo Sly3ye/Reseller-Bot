@@ -1290,6 +1290,23 @@ function SniperRow(props: {
                 </div>
               ) : null;
             })()}
+            {item.buyAtAsking && item.dealClass !== "sospetto" && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  padding: "1px 7px",
+                  borderRadius: "4px",
+                  background: "oklch(0.72 0.16 150 / 0.16)",
+                  color: "oklch(0.80 0.15 150)",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+                title="Il prezzo richiesto è già sotto il tetto d'acquisto: conviene anche senza trattare"
+              >
+                🟢 compra ora
+              </div>
+            )}
             {item.urgencyFlags.length > 0 && (
               <div
                 style={{
@@ -1522,18 +1539,33 @@ function NegotiationAssistant(props: {
 }) {
   const { item } = props;
 
+  const sourceLabel: Record<string, string> = {
+    venduti: "dai venduti",
+    km: "prezzo~km",
+    listati: "dai listati",
+  };
+
   const stats: { label: string; value: string; hint?: string; color?: string }[] = [];
   if (item.fairValue !== null) {
+    const base = item.fairValueSource ? sourceLabel[item.fairValueSource] : null;
+    const conf = item.valuationConfidence
+      ? `affidabilità ${item.valuationConfidence}` +
+        (item.valuationSamples ? ` (${item.valuationSamples} campioni)` : "")
+      : null;
+    const parts = [
+      item.marginVsFairPct !== null
+        ? `${item.marginVsFairPct >= 0 ? "+" : ""}${item.marginVsFairPct}% vs richiesto`
+        : null,
+      item.pricePosition !== null
+        ? `più economico del ${Math.round(100 - item.pricePosition)}%`
+        : null,
+      base,
+      conf,
+    ].filter(Boolean);
     stats.push({
       label: "Valore equo stimato",
       value: eur(item.fairValue),
-      hint:
-        item.marginVsFairPct !== null
-          ? `${item.marginVsFairPct >= 0 ? "+" : ""}${item.marginVsFairPct}% vs richiesto` +
-            (item.pricePosition !== null
-              ? ` · più economico del ${Math.round(100 - item.pricePosition)}%`
-              : "")
-          : undefined,
+      hint: parts.length ? parts.join(" · ") : undefined,
       color:
         item.dealClass === "affare"
           ? "oklch(0.75 0.15 150)"
@@ -1542,12 +1574,30 @@ function NegotiationAssistant(props: {
             : "var(--accent-text)",
     });
   }
+  if (item.maxBid !== null) {
+    stats.push({
+      label: "Prezzo d'acquisto max",
+      value: eur(item.maxBid),
+      hint: item.buyAtAsking
+        ? "✓ conviene anche al prezzo richiesto"
+        : "tetto per centrare il margine obiettivo",
+      color: item.buyAtAsking ? "oklch(0.75 0.15 150)" : "oklch(0.80 0.13 75)",
+    });
+  }
   if (item.suggestedOffer !== null) {
     stats.push({
       label: "Offerta consigliata",
       value: eur(item.suggestedOffer),
       hint: "prezzo di apertura trattativa",
       color: "var(--accent-text)",
+    });
+  }
+  if (item.roiPerDayPct !== null) {
+    stats.push({
+      label: "ROI / giorno di capitale",
+      value: `${item.roiPerDayPct >= 0 ? "+" : ""}${item.roiPerDayPct}%/gg`,
+      hint: "margine ÷ giorni medi di vendita",
+      color: "oklch(0.78 0.14 195)",
     });
   }
   if (item.daysOnline !== null) {
@@ -2158,7 +2208,7 @@ function BuyRanking(props: { models: ApiModelStat[]; loading: boolean }) {
         Cosa comprare
       </div>
       <div style={{ fontSize: "12.5px", color: "oklch(0.62 0.01 250)", marginBottom: "10px" }}>
-        Modelli ordinati per opportunità (margine potenziale × liquidità). Clicca una riga per il dettaglio.
+        Modelli ordinati per ROI/giorno di capitale (margine ÷ giorni di vendita). Clicca una riga per il dettaglio.
       </div>
       <div style={{ border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflow: "hidden" }}>
         <div
@@ -2172,7 +2222,7 @@ function BuyRanking(props: { models: ApiModelStat[]; loading: boolean }) {
           }}
         >
           <div>Modello</div>
-          <div title="Margine potenziale × liquidità">Opp.</div>
+          <div title="ROI per giorno di capitale = margine ÷ giorni medi di vendita">ROI/gg</div>
           <div title="Mediana ↔ 10° percentile: quanto margine c'è">Margine pot.</div>
           <div title="Prezzo di vendita reale (mediana venduti)">Venduto</div>
           <div title="Giorni medi di vendita">Giorni</div>
@@ -2201,10 +2251,11 @@ function BuyRanking(props: { models: ApiModelStat[]; loading: boolean }) {
 
 function BuyRow(props: { m: ApiModelStat; open: boolean; onToggle: () => void }) {
   const { m } = props;
+  const roi = m.roiPerDayPct;
   const oppColor =
-    (m.opportunityScore ?? 0) >= 15
+    roi != null && roi >= 1
       ? "oklch(0.75 0.15 150)"
-      : (m.opportunityScore ?? 0) >= 7
+      : roi != null && roi >= 0.4
         ? "oklch(0.75 0.14 75)"
         : "oklch(0.62 0.01 250)";
   return (
@@ -2224,7 +2275,7 @@ function BuyRow(props: { m: ApiModelStat; open: boolean; onToggle: () => void })
       >
         <div style={{ fontWeight: 600 }}>{m.name}</div>
         <div style={{ fontFamily: MONO, fontWeight: 700, color: oppColor }}>
-          {m.opportunityScore != null ? m.opportunityScore : "—"}
+          {roi != null ? `${roi}%` : "—"}
         </div>
         <div style={{ fontFamily: MONO }}>
           {m.marginPotentialPct != null ? `${m.marginPotentialPct}%` : "—"}
@@ -2300,6 +2351,33 @@ function BuyDetail(props: { m: ApiModelStat }) {
             {m.spreadEur != null && (
               <div style={{ color: "oklch(0.75 0.15 150)" }}>
                 spread affare ~{eur(m.spreadEur)} ({m.marginPotentialPct}%)
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Domanda / offerta (ultimi 7 giorni) */}
+      {(m.inflow7d > 0 || m.outflow7d > 0) && (
+        <div style={block}>
+          <div style={blkLabel}>Domanda / offerta (7gg)</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+            <div>nuovi immessi: {m.inflow7d}</div>
+            <div>venduti: {m.outflow7d}</div>
+            {m.demandIndex != null && (
+              <div
+                style={{
+                  color:
+                    m.demandIndex >= 1
+                      ? "oklch(0.75 0.15 150)"
+                      : m.demandIndex >= 0.5
+                        ? "oklch(0.75 0.14 75)"
+                        : "oklch(0.70 0.16 30)",
+                }}
+                title="venduti ÷ nuovi immessi: >1 = si vende più in fretta di quanto entra offerta (prezzi in salita)"
+              >
+                indice domanda ×{m.demandIndex}{" "}
+                {m.demandIndex >= 1 ? "↑ comprare" : m.demandIndex >= 0.5 ? "→ stabile" : "↓ saturo"}
               </div>
             )}
           </div>
