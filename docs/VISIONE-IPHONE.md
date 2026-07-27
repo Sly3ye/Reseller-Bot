@@ -40,8 +40,8 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 - ✅ "Cosa comprare" ordinato per **ROI/giorno** + dettaglio per modello: box
   prezzi, **domanda/offerta 7gg**, **momentum prezzo**, premio memoria, impatto
   condizione, prezzo→giorni, distribuzione motivi AI, venditori / finti privati
-- ◻️ 🟡 **Pagina/sezione Venditori** (ranking globale: più attivi / più
-  motivati / finti privati) — oggi il profilo venditore è solo per-annuncio
+- ✅ **Sezione Venditori** (ranking globale: più attivi / più motivati / finti
+  privati) — la priorità di contatto
 - ◻️ 🟡 **Curva di deprezzamento per variante** (non solo top model) + confronto
   tra modelli
 - 🔧 Sell-through, time-to-sale, prezzo di vendita reale: implementati, **maturano
@@ -83,8 +83,13 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 2. ✅ **Impostazioni da UI** (soglie, margine, prezzi ricambi Apple, Telegram) — FATTO
 3. ✅ **Feedback loop P&L** (previsto vs reale) — FATTO
 4. ✅ **Pannello salute + copertura** — FATTO
-5. 🟡 **Sezione Venditori** in Market Intelligence
+5. ✅ **Sezione Venditori** in Market Intelligence — FATTO
 6. ⚪ **Deprezzamento / stagionalità** — aspettano l'accumulo di storico
+
+> **Stato: i gap 🔴 e 🟡 sono chiusi.** Resta solo il ⚪ deprezzamento/
+> stagionalità, che dipende dall'accumulo di mesi di `market_trends`. Il
+> verticale iPhone è di fatto completo e utilizzabile: quando lo storico sarà
+> maturo si aggiungono le curve, poi si passa alle **auto**.
 
 ---
 

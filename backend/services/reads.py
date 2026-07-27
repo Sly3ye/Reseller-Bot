@@ -1182,4 +1182,84 @@ def get_market_intelligence(
         "trend": trend_series,
         "trendProduct": trend_product,
         "models": models,
+        "sellers": _seller_ranking(db, table),
     }
+
+
+def _seller_ranking(
+    db: Client, table: str, limit: int = 25
+) -> list[dict[str, Any]]:
+    """Ranking globale venditori (intelligence): chi è più attivo e più motivato.
+
+    Aggrega attivi + venduti per seller_id: quanti annunci ha, quanti ne vende e
+    in quanti giorni, quanto ribassa. Un privato con molti annunci o che ribassa
+    spesso è la priorità di contatto (leva di trattativa). Motivato = vende in
+    fretta o ribassa spesso.
+    """
+    try:
+        rows = (
+            db.table(table)
+            .select(
+                "seller_id, seller_type, status, asking_price, original_price, "
+                "found_at, updated_at, title"
+            )
+            .in_("status", list(_ACTIVE_STATUSES) + list(_SOLD_STATUSES))
+            .limit(20000)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return []
+
+    agg: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        sid = row.get("seller_id")
+        if not sid:
+            continue
+        d = agg.setdefault(
+            sid,
+            {"active": 0, "sold": 0, "days": [], "listed": 0, "drops": 0,
+             "dropPcts": [], "type": row.get("seller_type"), "title": row.get("title")},
+        )
+        status = row.get("status")
+        if status in _ACTIVE_STATUSES:
+            d["active"] += 1
+        elif status in _SOLD_STATUSES:
+            d["sold"] += 1
+            f = _parse_ts(row.get("found_at"))
+            u = _parse_ts(row.get("updated_at"))
+            if f and u:
+                days = (u - f).total_seconds() / 86400
+                if 0 <= days <= 365:
+                    d["days"].append(days)
+        d["listed"] += 1
+        orig = _to_float(row.get("original_price"))
+        ask = _to_float(row.get("asking_price"))
+        if orig and ask and orig > ask:
+            d["drops"] += 1
+            d["dropPcts"].append((orig - ask) / orig * 100)
+
+    out: list[dict[str, Any]] = []
+    for sid, d in agg.items():
+        if d["active"] + d["sold"] < 2:  # solo venditori con un minimo di storia
+            continue
+        avg_days = round(statistics.fmean(d["days"]), 1) if d["days"] else None
+        drop_rate = round(d["drops"] / d["listed"] * 100) if d["listed"] else 0
+        out.append(
+            {
+                "sellerId": sid,
+                "type": d["type"],
+                "active": d["active"],
+                "sold": d["sold"],
+                "avgDaysToSell": avg_days,
+                "dropRate": drop_rate,
+                "avgDropPct": round(statistics.fmean(d["dropPcts"]), 1) if d["dropPcts"] else None,
+                "motivated": bool((avg_days is not None and avg_days <= 14) or drop_rate >= 40),
+                "sampleTitle": d["title"],
+            }
+        )
+
+    # Motivati in cima, poi per volume totale (attivi + venduti).
+    out.sort(key=lambda s: (s["motivated"], s["active"] + s["sold"]), reverse=True)
+    return out[:limit]

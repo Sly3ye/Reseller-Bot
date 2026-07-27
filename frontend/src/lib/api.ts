@@ -173,6 +173,18 @@ export type ApiModelStat = {
   opportunityScore: number | null;
 };
 
+export type SellerRankRow = {
+  sellerId: string;
+  type: string | null;
+  active: number;
+  sold: number;
+  avgDaysToSell: number | null;
+  dropRate: number;
+  avgDropPct: number | null;
+  motivated: boolean;
+  sampleTitle: string | null;
+};
+
 export type ApiTrends = {
   activeListings: number;
   avgMarketPrice: number | null;
@@ -182,6 +194,7 @@ export type ApiTrends = {
   trend: { date: string; price: number }[];
   trendProduct: string | null;
   models: ApiModelStat[];
+  sellers: SellerRankRow[];
 };
 
 export type DealStage =

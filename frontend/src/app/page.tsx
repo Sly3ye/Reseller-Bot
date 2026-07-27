@@ -33,6 +33,7 @@ import {
   type OpportunityFacets,
   type PresetMode,
   type ScraperHealth,
+  type SellerRankRow,
   type SortMode,
   type ViewMode,
 } from "@/lib/api";
@@ -2432,8 +2433,75 @@ function IntelScreen(props: {
           </div>
 
           <BuyRanking models={intel?.models ?? []} loading={props.loading} />
+
+          <SellerRanking sellers={intel?.sellers ?? []} />
         </>
       )}
+    </div>
+  );
+}
+
+function SellerRanking(props: { sellers: SellerRankRow[] }) {
+  const { sellers } = props;
+  if (sellers.length === 0) return null;
+  const typeLabel = (t: string | null) =>
+    t === "finto_privato" ? "⚠️ finto privato" : t === "dealer" ? "concessionario" : "privato";
+  const header: CSSProperties = {
+    fontSize: "11px", fontWeight: 600, color: "oklch(0.46 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.05em",
+  };
+  const cols = "1.8fr 1fr 0.7fr 0.7fr 0.9fr 0.9fr";
+  return (
+    <div>
+      <div style={{ fontSize: "15px", fontWeight: 700, marginBottom: "4px" }}>Venditori</div>
+      <div style={{ fontSize: "12.5px", color: "oklch(0.62 0.01 250)", marginBottom: "10px" }}>
+        Chi è più attivo e più motivato (vende in fretta o ribassa spesso) — la priorità di contatto.
+      </div>
+      <div style={{ border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: cols, gap: "10px", padding: "10px 16px", background: "oklch(0.20 0.008 250)", ...header }}>
+          <div>Venditore</div>
+          <div>Tipo</div>
+          <div title="Annunci attivi">Attivi</div>
+          <div title="Annunci venduti">Venduti</div>
+          <div title="Giorni medi di vendita">Giorni</div>
+          <div title="% annunci ribassati">Ribassa</div>
+        </div>
+        {sellers.map((s) => (
+          <div
+            key={s.sellerId}
+            style={{
+              display: "grid", gridTemplateColumns: cols, gap: "10px",
+              padding: "11px 16px", alignItems: "center", fontSize: "13px",
+              borderTop: "1px solid oklch(0.24 0.008 250)",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+                {s.motivated && (
+                  <span style={{ fontSize: "11px", color: "oklch(0.75 0.15 150)", fontWeight: 700 }}>🎯</span>
+                )}
+                <span style={{ fontFamily: MONO, fontSize: "12px", color: "oklch(0.6 0.01 250)" }}>
+                  #{s.sellerId}
+                </span>
+              </div>
+              {s.sampleTitle && (
+                <div style={{ fontSize: "11.5px", color: "oklch(0.5 0.01 250)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {s.sampleTitle}
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: "12px", color: s.type === "finto_privato" ? "oklch(0.78 0.16 30)" : "oklch(0.7 0.01 250)" }}>
+              {typeLabel(s.type)}
+            </div>
+            <div style={{ fontFamily: MONO }}>{s.active}</div>
+            <div style={{ fontFamily: MONO }}>{s.sold || "—"}</div>
+            <div style={{ fontFamily: MONO }}>{s.avgDaysToSell != null ? `${s.avgDaysToSell}gg` : "—"}</div>
+            <div style={{ fontFamily: MONO, color: s.dropRate >= 40 ? "oklch(0.75 0.15 150)" : "oklch(0.7 0.01 250)" }}>
+              {s.dropRate > 0 ? `${s.dropRate}%` : "—"}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
