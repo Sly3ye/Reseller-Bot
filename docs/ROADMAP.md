@@ -137,7 +137,10 @@ Lista originale (per riferimento):
   locale (punto 3) li recupera dalla descrizione e ri-risolve la variante.
   Regex ancora migliorabili, ma il buco è coperto.
 - 🔴 **Colore iPhone**: nuovo campo NLP, necessario per i filtri (punto 5).
-- 🟡 **Prezzo di rivendita dai venduti** (vedi punto 1): l'attuale usa i listati.
+- ✅ **Valore equo dai venduti** (punto 1): `_sold_variant_refs` alimenta la
+  valutazione con la mediana di realizzo per variante (≥5 venduti), fallback
+  listati. Il `fastSalePrice` resta sui listati di proposito (positioning vs
+  concorrenza attiva).
 - ✅ **Automations panel reale**: i controlli sono collegati allo scheduler
   (`/api/automations`): avvio immediato, pausa/ripresa, cambio cadenza, stato e
   prossima esecuzione per ogni job.

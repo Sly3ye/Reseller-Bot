@@ -49,10 +49,15 @@ Dai `venduto_rimosso` del Garbage Collector si misura in **quanti giorni ruota**
 ogni modello (liquidità reale): un iPhone 13 con margine 18% che gira in 4gg
 batte un 14 Pro con margine 25% invenduto da 3 settimane.
 
-> ⚠️ **Limite noto** (vedi [ROADMAP.md](ROADMAP.md) punto 1): i "prezzi di
-> rivendita suggeriti" attuali usano la distribuzione dei prezzi **listati**,
-> non dei **venduti**. Il segnale corretto è il prezzo a cui gli annunci
-> *spariscono* — in lavorazione.
+Il **valore equo** ora poggia sui **venduti** quando c'è campione sufficiente:
+`_sold_variant_refs` calcola la mediana di realizzo per variante dai
+`venduto_rimosso` sani (≥5 campioni) e la passa a `valuation` come riferimento
+(precedenza: `prezzo~km` auto > **mediana venduti** > mediana listati). `fairValueSource`
+dichiara la base usata. Finché i venduti non si accumulano, fallback ai listati.
+
+> ℹ️ Il "prezzo di vendita rapida" (`fastSalePrice`) resta sui **listati** di
+> proposito: per vendere in fretta ti posizioni sotto la **concorrenza attiva**.
+> Il "quanto vale davvero" (`soldMedian`/`soldMax`) e il valore equo usano i venduti.
 
 ## Valutazione km-aware (auto)
 

@@ -69,10 +69,23 @@ def estimate_fair_value(
     variant_prices: list[float],
     km: int | None = None,
     km_model: tuple[float, float, int] | None = None,
+    sold_reference: float | None = None,
 ) -> float | None:
-    """Prezzo equo atteso per questo annuncio. None se dati insufficienti."""
+    """Prezzo equo atteso per questo annuncio. None se dati insufficienti.
+
+    Riferimento (dal migliore al fallback):
+      1. **auto** con modello prezzo~km → prezzo atteso a QUEI km (edonico);
+      2. **mediana dei VENDUTI** della variante (``sold_reference``): il prezzo
+         di realizzo reale, non quello listato (evita la sovrastima da vetrina);
+      3. mediana dei prezzi SANI **listati** della variante (fallback finché i
+         venduti non si accumulano).
+    """
     healthy = sorted(p for p in variant_prices if p and p > 0)
     base: float | None = statistics.median(healthy) if len(healthy) >= MIN_POOL else None
+
+    # I venduti battono i listati come riferimento (prezzo di realizzo reale).
+    if sold_reference and sold_reference > 0:
+        base = sold_reference
 
     # Auto: il riferimento migliore è il prezzo atteso a QUESTI km (edonico).
     if category == "automobile" and km_model and km:
@@ -94,12 +107,15 @@ def evaluate_value(
     variant_prices: list[float],
     km: int | None = None,
     km_model: tuple[float, float, int] | None = None,
+    sold_reference: float | None = None,
     has_images: bool = True,
 ) -> dict[str, Any]:
     """Valutazione completa: valore equo, margine vs equo, posizione, classe.
 
     Ritorna sempre le chiavi (con None dove non calcolabile) per un consumo
-    uniforme lato reads/API.
+    uniforme lato reads/API. ``fairValueSource`` dichiara su cosa poggia il
+    valore equo: ``km`` (edonico auto), ``venduti`` (realizzo reale) o
+    ``listati`` (fallback).
     """
     fair = estimate_fair_value(
         category=category,
@@ -107,11 +123,20 @@ def evaluate_value(
         variant_prices=variant_prices,
         km=km,
         km_model=km_model,
+        sold_reference=sold_reference,
     )
     position = price_position(asking, variant_prices)
 
+    if category == "automobile" and km_model and km:
+        source = "km"
+    elif sold_reference and sold_reference > 0:
+        source = "venduti"
+    else:
+        source = "listati"
+
     result: dict[str, Any] = {
         "fairValue": fair,
+        "fairValueSource": source if fair is not None else None,
         "pricePosition": position,
         "marginVsFairEur": None,
         "marginVsFairPct": None,

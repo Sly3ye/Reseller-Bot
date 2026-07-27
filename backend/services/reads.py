@@ -358,6 +358,49 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
     return pools
 
 
+# Campione minimo di venduti per fidarsi del prezzo di realizzo come riferimento.
+_MIN_SOLD_REF = 5
+
+
+def _sold_variant_refs(db: Client, table: str) -> dict[str, float]:
+    """Prezzo di realizzo REALE per VARIANTE canonica, dai VENDUTI.
+
+    Mediana (IQR-pulita) degli ``asking_price`` degli annunci ``venduto_rimosso``
+    sani, raggruppati per ``variant_key``, con ``>= _MIN_SOLD_REF`` campioni. È il
+    riferimento corretto per il valore equo (prezzo a cui si vende davvero, non a
+    cui si lista). Sotto soglia si ripiega sui listati a monte (vedi valuation).
+    """
+    try:
+        rows = (
+            db.table(table)
+            .select("variant_key, asking_price, condition_tier")
+            .in_("status", list(_SOLD_STATUSES))
+            .limit(20000)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return {}
+
+    buckets: dict[str, list[float]] = {}
+    for row in rows:
+        vk = row.get("variant_key")
+        price = _to_float(row.get("asking_price"))
+        if not vk or vk == "auto" or price is None or price <= 0:
+            continue
+        if not is_healthy(row.get("condition_tier") or "buono"):
+            continue
+        buckets.setdefault(vk, []).append(price)
+
+    refs: dict[str, float] = {}
+    for vk, prices in buckets.items():
+        cleaned = _iqr_clean(prices)
+        if len(cleaned) >= _MIN_SOLD_REF:
+            refs[vk] = round(statistics.median(cleaned), 2)
+    return refs
+
+
 def _model_key(variant_key: str | None) -> str | None:
     """Chiave modello = variante senza il suffisso memoria (iphone-13-pro-max-256
     → iphone-13-pro-max). Serve per filtrare per modello senza ambiguità."""
@@ -427,6 +470,7 @@ def _build_enrich_ctx(
         "target_cat": target_cat,
         "targets": _targets_for_category(db, target_cat),
         "variant_pools": _variant_price_pools(db, table),
+        "sold_refs": _sold_variant_refs(db, table),
         "price_history": _latest_price_history(db, [r["id"] for r in rows]),
         "seller_counts": _seller_active_counts(db, table, rows),
         "km_models": {},
@@ -490,6 +534,10 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             shaped["expectedPrice"] = round(expected, 2)
             shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
 
+    # Riferimento dai VENDUTI per questa variante (prezzo di realizzo reale);
+    # None sotto soglia campione → valuation ripiega sulla mediana dei listati.
+    sold_reference = ctx["sold_refs"].get(variant_key) if variant_key else None
+
     valuation = evaluate_value(
         category=ctx["target_cat"],
         asking=shaped["askingPrice"],
@@ -497,6 +545,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         variant_prices=pool or [],
         km=row.get("km"),
         km_model=km_model,
+        sold_reference=sold_reference,
         has_images=bool(row.get("image_urls")),
     )
     shaped.update(valuation)
