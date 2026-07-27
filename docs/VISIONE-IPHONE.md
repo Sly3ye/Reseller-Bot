@@ -62,9 +62,9 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 ## 4. Automations / Salute — *"il motore gira bene?"*
 
 - ✅ Job: avvio immediato, pausa/ripresa, cambio intervallo, prossima esecuzione
-- ◻️ 🟡 **Pannello salute scraper** (da `scrape_runs`): successi/errori, ultimo
-  giro, alert down/ripristino, stato proxy / impersonation
-- ◻️ 🟡 **Copertura**: n. target attivi, annunci/giorno, % gamma iPhone coperta
+- ✅ **Pannello salute scraper** (da `scrape_runs`): stato per categoria,
+  timeline ultimi giri, ultimo giro, stato proxy / impersonation
+- ✅ **Copertura**: target attivi, annunci in magazzino, nuovi/24h per categoria
 
 ## 5. Impostazioni — *"configura senza toccare il codice"*
 
@@ -82,7 +82,7 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 1. ✅ **Azioni sul feed** (salva/scarta + preset + sort ROI) — FATTO
 2. ✅ **Impostazioni da UI** (soglie, margine, prezzi ricambi Apple, Telegram) — FATTO
 3. ✅ **Feedback loop P&L** (previsto vs reale) — FATTO
-4. 🟡 **Pannello salute + copertura** (fiducia che il motore raccolga tutto)
+4. ✅ **Pannello salute + copertura** — FATTO
 5. 🟡 **Sezione Venditori** in Market Intelligence
 6. ⚪ **Deprezzamento / stagionalità** — aspettano l'accumulo di storico
 

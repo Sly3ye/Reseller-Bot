@@ -10,6 +10,7 @@ import {
   fetchDeals,
   fetchDealsSummary,
   fetchOpportunities,
+  fetchScraperHealth,
   fetchSettings,
   fetchTrends,
   patchOpportunityStatus,
@@ -31,6 +32,7 @@ import {
   type DealsSummary,
   type OpportunityFacets,
   type PresetMode,
+  type ScraperHealth,
   type SortMode,
   type ViewMode,
 } from "@/lib/api";
@@ -2939,18 +2941,129 @@ function SettingsScreen() {
   );
 }
 
+const HEALTH_COLOR: Record<string, string> = {
+  ok: "oklch(0.72 0.16 150)",
+  degraded: "oklch(0.78 0.14 85)",
+  down: "oklch(0.68 0.19 25)",
+  idle: "oklch(0.55 0.01 250)",
+};
+const HEALTH_LABEL: Record<string, string> = {
+  ok: "Operativo", degraded: "Degradato", down: "Bloccato", idle: "Inattivo",
+};
+
+function ScraperHealthPanel(props: { health: ScraperHealth }) {
+  const { health } = props;
+  const cats: [string, string][] = [
+    ["smartphone", "iPhone"],
+    ["automobile", "Auto"],
+  ];
+  const box: CSSProperties = {
+    background: "oklch(0.185 0.008 250)",
+    border: "1px solid oklch(0.27 0.01 250)",
+    borderRadius: "12px",
+    padding: "16px 18px",
+    flex: "1 1 300px",
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  };
+  const lab: CSSProperties = {
+    fontSize: "10.5px", fontWeight: 700, color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.04em",
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      <div style={{ display: "flex", gap: "14px", flexWrap: "wrap" }}>
+        {cats.map(([cat, label]) => {
+          const last = health.scraper[cat];
+          const cov = health.coverage[cat];
+          const recent = health.recent[cat] ?? [];
+          const status = last?.status ?? "idle";
+          return (
+            <div key={cat} style={box}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div style={{ fontSize: "15px", fontWeight: 700 }}>{label}</div>
+                <div
+                  style={{
+                    display: "flex", alignItems: "center", gap: "6px",
+                    padding: "3px 10px", borderRadius: "20px",
+                    background: "oklch(0.24 0.008 250)",
+                  }}
+                >
+                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: HEALTH_COLOR[status] }} />
+                  <span style={{ fontSize: "11.5px", fontWeight: 700, color: HEALTH_COLOR[status] }}>
+                    {HEALTH_LABEL[status] ?? status}
+                  </span>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontFamily: MONO }}>
+                <div>
+                  <div style={lab}>Target attivi</div>
+                  <div style={{ fontSize: "17px", fontWeight: 700 }}>{cov?.activeTargets ?? "—"}</div>
+                </div>
+                <div>
+                  <div style={lab}>In magazzino</div>
+                  <div style={{ fontSize: "17px", fontWeight: 700 }}>{cov?.activeListings ?? "—"}</div>
+                </div>
+                <div>
+                  <div style={lab}>Nuovi / 24h</div>
+                  <div style={{ fontSize: "17px", fontWeight: 700, color: "oklch(0.78 0.14 195)" }}>
+                    {cov?.new24h ?? "—"}
+                  </div>
+                </div>
+              </div>
+              {/* Mini timeline degli ultimi giri (più recente a destra) */}
+              <div style={{ display: "flex", gap: "3px", alignItems: "center" }}>
+                {[...recent].reverse().map((r, i) => (
+                  <span
+                    key={i}
+                    title={`${r.status} · ${relativeTime(r.ran_at)} · ${r.new_count} nuovi`}
+                    style={{
+                      width: "10px", height: "10px", borderRadius: "3px",
+                      background: HEALTH_COLOR[r.status] ?? "gray",
+                    }}
+                  />
+                ))}
+                {recent.length === 0 && (
+                  <span style={{ fontSize: "11.5px", color: "oklch(0.5 0.01 250)" }}>
+                    nessun giro registrato ancora
+                  </span>
+                )}
+              </div>
+              {last?.ran_at && (
+                <div style={{ fontSize: "11.5px", color: "oklch(0.5 0.01 250)" }}>
+                  ultimo giro {relativeTime(last.ran_at)} · {last.ok}/{last.targets} target ok · {last.scraped} annunci
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: "12px", color: "oklch(0.55 0.01 250)" }}>
+        Proxy residenziale {health.proxy_configured ? "✓ configurato" : "✗ non configurato (connessione diretta)"} ·
+        impronte TLS: {health.impersonate_pool?.join(", ") || "—"}
+      </div>
+    </div>
+  );
+}
+
 function AutomationsScreen() {
   const [jobs, setJobs] = useState<AutomationJob[]>([]);
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [health, setHealth] = useState<ScraperHealth | null>(null);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
-      const state = await fetchAutomations(signal);
+      const [state, h] = await Promise.all([
+        fetchAutomations(signal),
+        fetchScraperHealth(signal).catch(() => null),
+      ]);
       setJobs(state.jobs);
       setRunning(state.running);
+      setHealth(h);
       setErr(null);
     } catch (e) {
       if ((e as Error).name !== "AbortError") setErr("Backend non raggiungibile");
@@ -3036,6 +3149,8 @@ function AutomationsScreen() {
           </div>
         </div>
       </div>
+
+      {health && <ScraperHealthPanel health={health} />}
 
       {err && (
         <div

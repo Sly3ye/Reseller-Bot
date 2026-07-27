@@ -404,6 +404,43 @@ export async function setTriage(
     throw new Error(`PATCH /api/opportunities/${id}/triage failed (${res.status})`);
 }
 
+/* --------------------------------------------------------- Salute scraper */
+
+export type ScrapeRun = {
+  status: "ok" | "degraded" | "down" | "idle";
+  targets: number;
+  ok: number;
+  failed: number;
+  scraped: number;
+  new_count: number;
+  ran_at: string;
+};
+
+export type Coverage = {
+  activeTargets: number | null;
+  activeListings: number | null;
+  new24h: number;
+};
+
+export type ScraperHealth = {
+  proxy_configured: boolean;
+  impersonate_pool: string[];
+  scraper: Record<string, ScrapeRun | null>;
+  recent: Record<string, ScrapeRun[]>;
+  coverage: Record<string, Coverage>;
+};
+
+export async function fetchScraperHealth(
+  signal?: AbortSignal,
+): Promise<ScraperHealth> {
+  const res = await fetch(`${API_BASE_URL}/health/scraper`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /health/scraper failed (${res.status})`);
+  return res.json();
+}
+
 /* ------------------------------------------------------------- Impostazioni */
 
 export type AppSettings = {

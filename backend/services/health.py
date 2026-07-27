@@ -87,8 +87,48 @@ def record_run(
     }
 
 
+def _coverage(db: Any, cat: str, recent: list[dict[str, Any]]) -> dict[str, Any]:
+    """Copertura per categoria: target attivi, annunci in magazzino, immessi/24h."""
+    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
+
+    table = "live_opportunities_auto" if cat == "automobile" else "live_opportunities_tech"
+    active_targets = active_listings = None
+    try:
+        active_targets = (
+            db.table("target_models").select("id", count="exact")
+            .eq("is_active", True).eq("category", cat).limit(1).execute().count
+        )
+    except Exception:
+        pass
+    try:
+        active_listings = (
+            db.table(table).select("id", count="exact")
+            .in_("status", ["nuovo", "visto"]).limit(1).execute().count
+        )
+    except Exception:
+        pass
+
+    # Annunci nuovi nelle ultime 24h = somma dei new_count dei giri recenti.
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    new_24h = 0
+    for r in recent:
+        ts = None
+        try:
+            ts = datetime.fromisoformat(str(r.get("ran_at")).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        if ts and ts >= cutoff:
+            new_24h += r.get("new_count") or 0
+
+    return {
+        "activeTargets": active_targets,
+        "activeListings": active_listings,
+        "new24h": new_24h,
+    }
+
+
 def get_health() -> dict[str, Any]:
-    """Snapshot per l'endpoint /health: ultimo giro per categoria + config."""
+    """Snapshot per /health/scraper: ultimo giro, storico recente, copertura, config."""
     from backend.core.database import get_db  # noqa: PLC0415
     from backend.core.config import settings  # noqa: PLC0415
 
@@ -96,20 +136,26 @@ def get_health() -> dict[str, Any]:
         "proxy_configured": bool(settings.proxy_url),
         "impersonate_pool": settings.impersonate_pool,
         "scraper": {},
+        "recent": {},
+        "coverage": {},
     }
     db = get_db()
     for cat in ("smartphone", "automobile"):
+        recent: list[dict[str, Any]] = []
         try:
-            last = (
+            recent = (
                 db.table("scrape_runs")
                 .select("status, targets, ok, failed, scraped, new_count, ran_at")
                 .eq("category", cat)
                 .order("ran_at", desc=True)
-                .limit(1)
+                .limit(20)
                 .execute()
                 .data
+                or []
             )
-            out["scraper"][cat] = last[0] if last else None
         except Exception:
-            out["scraper"][cat] = None
+            recent = []
+        out["scraper"][cat] = recent[0] if recent else None
+        out["recent"][cat] = recent
+        out["coverage"][cat] = _coverage(db, cat, recent)
     return out
