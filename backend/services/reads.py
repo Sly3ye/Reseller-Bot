@@ -18,7 +18,7 @@ import logging
 import re
 import statistics
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse
 
@@ -362,13 +362,13 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
 _MIN_SOLD_REF = 5
 
 
-def _sold_variant_refs(db: Client, table: str) -> dict[str, float]:
-    """Prezzo di realizzo REALE per VARIANTE canonica, dai VENDUTI.
+def _sold_variant_refs(db: Client, table: str) -> dict[str, tuple[float, int]]:
+    """Prezzo di realizzo REALE per VARIANTE canonica, dai VENDUTI → (mediana, n).
 
     Mediana (IQR-pulita) degli ``asking_price`` degli annunci ``venduto_rimosso``
     sani, raggruppati per ``variant_key``, con ``>= _MIN_SOLD_REF`` campioni. È il
     riferimento corretto per il valore equo (prezzo a cui si vende davvero, non a
-    cui si lista). Sotto soglia si ripiega sui listati a monte (vedi valuation).
+    cui si lista). Il campione ``n`` alimenta il confidence della valutazione.
     """
     try:
         rows = (
@@ -393,11 +393,11 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, float]:
             continue
         buckets.setdefault(vk, []).append(price)
 
-    refs: dict[str, float] = {}
+    refs: dict[str, tuple[float, int]] = {}
     for vk, prices in buckets.items():
         cleaned = _iqr_clean(prices)
         if len(cleaned) >= _MIN_SOLD_REF:
-            refs[vk] = round(statistics.median(cleaned), 2)
+            refs[vk] = (round(statistics.median(cleaned), 2), len(cleaned))
     return refs
 
 
@@ -478,6 +478,11 @@ def _build_enrich_ctx(
     avg_by_target, avg_by_model = _market_avgs(db, target_cat)
     ctx["avg_by_target"] = avg_by_target
     ctx["avg_by_model"] = avg_by_model
+    # Giorni medi di vendita per modello (dai venduti) → ROI per giorno di capitale.
+    sold_by_model, _overall = _sold_stats(db, table, ctx["targets"])
+    ctx["sold_days"] = {
+        m: s["avgDaysToSell"] for m, s in sold_by_model.items() if s.get("avgDaysToSell")
+    }
     if target_cat == "automobile":
         auto_targets = list(
             {r["target_id"] for r in rows if r.get("target_id") and r.get("km")}
@@ -534,9 +539,11 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             shaped["expectedPrice"] = round(expected, 2)
             shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
 
-    # Riferimento dai VENDUTI per questa variante (prezzo di realizzo reale);
-    # None sotto soglia campione → valuation ripiega sulla mediana dei listati.
-    sold_reference = ctx["sold_refs"].get(variant_key) if variant_key else None
+    # Riferimento dai VENDUTI per questa variante (prezzo di realizzo reale, n
+    # campioni); None sotto soglia → valuation ripiega sui listati.
+    sold_pair = ctx["sold_refs"].get(variant_key) if variant_key else None
+    sold_reference = sold_pair[0] if sold_pair else None
+    sold_n = sold_pair[1] if sold_pair else 0
 
     valuation = evaluate_value(
         category=ctx["target_cat"],
@@ -549,6 +556,22 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         has_images=bool(row.get("image_urls")),
     )
     shaped.update(valuation)
+
+    # Confidence della valutazione = quanti campioni la sostengono (attivi + venduti).
+    samples = len(pool or []) + sold_n
+    shaped["valuationSamples"] = samples
+    shaped["valuationConfidence"] = (
+        "alta" if samples >= 15 else "media" if samples >= 6 else "bassa"
+    )
+
+    # ROI per giorno di capitale = margine vs valore equo ÷ giorni medi di
+    # vendita del modello (dai venduti). Ordina gli affari per resa reale.
+    days = ctx.get("sold_days", {}).get(model)
+    shaped["roiPerDayPct"] = (
+        round(valuation["marginVsFairPct"] / days, 2)
+        if valuation.get("marginVsFairPct") is not None and days and days > 0
+        else None
+    )
 
     score_margin = (
         valuation["marginVsFairPct"]
@@ -569,6 +592,8 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             features=shaped["features"],
             battery_pct=shaped["batteryPct"],
             has_price_drop=shaped["priceDrop"] is not None,
+            # Tetto d'acquisto sul realizzo reale (venduti sani) se disponibile.
+            resale_ref=sold_reference or market_avg,
         )
     )
     # Anti-truffa affinato con l'AI locale:
@@ -720,6 +745,8 @@ def _sold_stats(
 
     by_model: dict[str, list[tuple[float, float]]] = {}
     all_days: list[float] = []
+    outflow_7d: dict[str, int] = {}
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
     for row in rows:
         if not is_healthy(row.get("condition_tier") or "buono"):
             continue
@@ -734,6 +761,8 @@ def _sold_stats(
             continue
         by_model.setdefault(model, []).append((price, days))
         all_days.append(days)
+        if removed >= cutoff_7d:
+            outflow_7d[model] = outflow_7d.get(model, 0) + 1
 
     per_model: dict[str, dict[str, Any]] = {}
     for model, pts in by_model.items():
@@ -746,6 +775,7 @@ def _sold_stats(
             "sampleSold": len(pts),
             "soldMedian": round(statistics.median(prices)),
             "soldMax": round(max(prices)),
+            "outflow7d": outflow_7d.get(model, 0),
             "priceBands": _price_bands(pts),
         }
     overall = round(statistics.median(all_days), 1) if all_days else None
@@ -804,7 +834,7 @@ def _model_analytics(
             db.table(table)
             .select(
                 "target_id, storage_gb, condition_tier, asking_price, "
-                "seller_id, seller_type, ai_analysis"
+                "seller_id, seller_type, ai_analysis, found_at"
             )
             .in_("status", list(_ACTIVE_STATUSES))
             .limit(20000)
@@ -815,6 +845,8 @@ def _model_analytics(
     except Exception:
         return {}
 
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
+
     agg: dict[str, dict[str, Any]] = {}
     for row in rows:
         model = targets.get(row.get("target_id"))
@@ -824,11 +856,14 @@ def _model_analytics(
             model,
             {
                 "all": [], "healthy": [], "byStorage": {}, "byCond": {},
-                "sellers": set(), "fintoPrivato": 0,
+                "sellers": set(), "fintoPrivato": 0, "inflow7d": 0,
                 "ai": {"analyzed": 0, "legittimo": 0, "difetto": 0,
                        "sospetto": 0, "riparabili": 0},
             },
         )
+        found = _parse_ts(row.get("found_at"))
+        if found and found >= cutoff_7d:
+            d["inflow7d"] += 1
         price = _to_float(row.get("asking_price"))
         if price and price > 0:
             d["all"].append(price)
@@ -892,6 +927,7 @@ def _model_analytics(
             },
             "sellers": len(d["sellers"]),
             "fintoPrivato": d["fintoPrivato"],
+            "inflow7d": d["inflow7d"],
             "ai": d["ai"],
         }
     return out
@@ -979,6 +1015,18 @@ def get_market_intelligence(
             if margin_pot is not None
             else None
         )
+        # ROI per giorno di capitale = margine potenziale ÷ giorni medi di
+        # vendita: il vero ordinamento del "cosa comprare" (resa/tempo).
+        avg_days = sold.get("avgDaysToSell")
+        roi_per_day = (
+            round(margin_pot / avg_days, 2)
+            if margin_pot is not None and avg_days and avg_days > 0
+            else None
+        )
+        # Domanda/offerta: venduti vs nuovi immessi nell'ultima settimana.
+        inflow7d = a.get("inflow7d") or 0
+        outflow7d = sold.get("outflow7d") or 0
+        demand_index = round(outflow7d / inflow7d, 2) if inflow7d > 0 else None
 
         models.append(
             {
@@ -1009,14 +1057,24 @@ def get_market_intelligence(
                 # listati (fallback/confronto)
                 "fastSalePrice": resale.get("fastSalePrice"),
                 "maxSalePrice": resale.get("maxSalePrice"),
+                # domanda/offerta (ultimi 7gg)
+                "inflow7d": inflow7d,
+                "outflow7d": outflow7d,
+                "demandIndex": demand_index,
                 # ranking
+                "roiPerDayPct": roi_per_day,
                 "opportunityScore": opportunity,
             }
         )
 
-    # Ordina per opportunità (poi volume) — il "cosa comprare".
+    # Ordina per ROI/giorno di capitale (resa reale/tempo); fallback su
+    # opportunity score, poi volume — il "cosa comprare".
     models.sort(
-        key=lambda m: (m.get("opportunityScore") or -1, m.get("volume") or 0),
+        key=lambda m: (
+            m.get("roiPerDayPct") or -1,
+            m.get("opportunityScore") or -1,
+            m.get("volume") or 0,
+        ),
         reverse=True,
     )
 

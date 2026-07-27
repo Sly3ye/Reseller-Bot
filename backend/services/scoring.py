@@ -161,6 +161,31 @@ def suggested_offer(
     return int(offer // step * step)
 
 
+def max_bid(
+    category: str,
+    resale: float | None,
+    penalty_eur: int = 0,
+    repair_eur: int = 0,
+) -> int | None:
+    """Prezzo d'acquisto MASSIMO per centrare il margine obiettivo (walk-away).
+
+    A differenza di ``suggested_offer`` (apertura, sotto il richiesto), è il
+    *tetto*: sopra questa cifra l'affare non rende abbastanza, a prescindere dal
+    richiesto. Base = ``resale`` (prezzo di realizzo reale = mediana dei venduti
+    della variante SANA), meno costi di riparazione/penalità, meno il margine
+    obiettivo. Per i "rotti riparabili" ``resale`` è il prezzo del funzionante e
+    ``repair_eur`` copre il ripristino.
+    """
+    if resale is None or resale <= 0:
+        return None
+    target = TARGET_MARGIN_PCT.get(category, 15.0)
+    step = OFFER_ROUNDING.get(category, 10)
+    bid = resale * (1 - target / 100) - penalty_eur - repair_eur
+    if bid <= 0:
+        return None
+    return int(bid // step * step)
+
+
 # ------------------------------------------------------------------ score
 
 def _freshness_points(found_at: str | None) -> int:
@@ -266,8 +291,13 @@ def evaluate_opportunity(
     features: list[str] | None,
     battery_pct: int | None,
     has_price_drop: bool,
+    resale_ref: float | None = None,
 ) -> dict[str, Any]:
-    """Valutazione completa di un'opportunità per l'API (score + trattativa)."""
+    """Valutazione completa di un'opportunità per l'API (score + trattativa).
+
+    ``resale_ref`` = prezzo di realizzo del funzionante (mediana venduti sani);
+    se assente si ripiega su ``market_avg``. Serve al ``maxBid`` (tetto d'acquisto).
+    """
     defects = defects or []
     urgency = urgency or []
     features = features or []
@@ -275,6 +305,9 @@ def evaluate_opportunity(
     repairs = repair_costs(category, title, defects)
     repair_total = sum(item["cost"] for item in repairs)
     penalty_total, penalty_breakdown = defect_penalty_eur(category, title, defects)
+
+    resale = resale_ref if (resale_ref and resale_ref > 0) else market_avg
+    bid = max_bid(category, resale, penalty_total, repair_total)
 
     # Margine netto post-riparazione (radar riparazioni): per i "rotti
     # riparabili" il vero margine è contro la media del funzionante, meno il
@@ -315,5 +348,10 @@ def evaluate_opportunity(
         "defectPenaltyBreakdown": penalty_breakdown or None,
         "suggestedOffer": suggested_offer(
             category, market_avg, asking, penalty_total, repair_total
+        ),
+        "maxBid": bid,
+        # True = conviene comprarlo anche al prezzo richiesto (asking ≤ tetto).
+        "buyAtAsking": (
+            bool(bid is not None and asking is not None and asking <= bid)
         ),
     }

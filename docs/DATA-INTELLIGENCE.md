@@ -64,6 +64,25 @@ dichiara la base usata. Finché i venduti non si accumulano, fallback ai listati
 Regressione lineare `prezzo ~ km` per target (≥8 campioni, pendenza negativa) →
 prezzo atteso di quella specifica auto dati i suoi km.
 
+## Analitiche operative (compravendita)
+
+Costruite sui dati già raccolti, per passare dal "quanto vale" al "quanto pago
+e cosa conviene davvero":
+
+- **Max bid** (`scoring.max_bid`, per annuncio): il *tetto* d'acquisto per
+  centrare il margine obiettivo = realizzo venduti − riparazione/penalità −
+  margine. Diverso dall'offerta d'apertura (`suggestedOffer`): è il punto di
+  walk-away. `buyAtAsking` = True quando conviene anche al prezzo richiesto.
+- **ROI per giorno di capitale** (`roiPerDayPct`): margine ÷ giorni medi di
+  vendita (dai venduti). È il nuovo ordinamento del "cosa comprare": un +18% che
+  gira in 4gg batte un +25% fermo 3 settimane. A livello di modello e di annuncio.
+- **Domanda/offerta** (`inflow7d`/`outflow7d`/`demandIndex`): venduti vs nuovi
+  immessi nell'ultima settimana per variante. `demandIndex > 1` = si vende più in
+  fretta di quanto entra offerta → pressione prezzi al rialzo ("comprare ora").
+- **Confidence della valutazione** (`valuationConfidence` + `valuationSamples`):
+  quanti campioni (attivi + venduti) sostengono il valore equo → ti fidi degli
+  affari "solidi" ed eviti di agire su pool sottili.
+
 ## Pipeline P&L (`api/deals.py`)
 
 Il gestionale: ogni affare attraversa `interessante → contattato → offerta →
