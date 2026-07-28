@@ -51,6 +51,13 @@ docker compose exec -T backend env \
 
 # 5. Pulizia del DB temporaneo
 docker compose exec -T db dropdb -U postgres reseller_pc
+
+# 6. IMMAGINI: le foto non stanno nel DB (sono file sul volume `media`, le righe
+#    le referenziano per percorso). Senza questo passo gli annunci importati
+#    compaiono nel feed SENZA foto. È additivo: i file sono nominati per ID
+#    annuncio, quindi non collidono con quelli già presenti sul Mac.
+docker compose exec -T backend sh -c "mkdir -p /data/media && tar xzf - -C /data/media" \
+  < media_pc_AAAA-MM-GG.tar.gz
 ```
 > Sostituisci `PWD` con `POSTGRES_PASSWORD` e `reseller_pc_AAAA-MM-GG.dump` col
 > nome reale del file scaricato da Drive. Se il Postgres principale **non** è in
@@ -61,7 +68,30 @@ docker compose exec -T db dropdb -U postgres reseller_pc
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure
   forzalo — `market_trends` (curve/momentum) si ricostruisce dai nuovi annunci.
 - **Verifica in UI**: Market Intelligence, Tempo di vendita e il feed devono
-  mostrare più volume/venduti.
+  mostrare più volume/venduti, **con le foto** (se mancano, è saltato il passo 6).
+
+### Contenuto del dump del 2026-07-28 (per verificare il merge)
+
+| Tabella | Righe nel dump |
+|---|---|
+| `live_opportunities_tech` | 1.645 |
+| `live_opportunities_auto` | 66 |
+| `target_models` | 25 (22 iPhone attivi + 2 BMW + 1 pilota spento) |
+| `price_history` | 8 |
+| `scrape_runs` | 72 |
+| `market_trends` | 0 — il batch notturno non aveva ancora girato qui |
+| `deals`, `products` | 0 |
+
+Immagini: **4.609 file**, ~416 MB scompattati.
+
+Dopo il merge, sul principale gli annunci tech devono essere *almeno* la somma
+dei due (meno i `listing_url` già presenti, che sono deduplicati di proposito).
+
+> ⚠️ **La gamma iPhone è cambiata**: la flotta include ora la generazione 17
+> (17, 17 Air, 17 Pro, 17 Pro Max, 17e). Prima del merge, sul Mac rilancia
+> `python scripts/seed_targets.py` (dopo il `git pull`): così i target si
+> allineano per `(category, query)` e gli annunci gen 17 finiscono sui target
+> giusti invece di crearne di nuovi.
 
 ## Note sull'allineamento dei target
 - Gli **iPhone** combaciano al 100% (query deterministiche da `seed_targets.py`).

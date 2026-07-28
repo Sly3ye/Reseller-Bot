@@ -48,14 +48,28 @@ auto ogni ~15. Da qui in poi il DB si riempie.
   vendita** e **Market Intelligence** matureranno con i dati.
 
 ## Quando hai finito di lavorare qui
-1. **Dump del DB** del PC (formato custom, compresso):
+1. **Dump del DB** del PC (formato custom, compresso). In `backups/`, che è
+   git-ignorata: un dump non va mai committato.
    ```bash
+   mkdir -p backups
    docker compose exec -T db pg_dump -U postgres -d reseller -Fc \
-     > reseller_pc_$(date +%F).dump
+     > backups/reseller_pc_$(date +%F).dump
    ```
-2. Carica `reseller_pc_*.dump` su **Google Drive**.
-3. `git push` di tutto il codice (incluso questo repo aggiornato).
-4. Sul Mac: segui [MERGE-DB.md](MERGE-DB.md) per unire il dump al DB principale.
+2. **Archivio delle immagini.** Le foto NON stanno nel DB: sono file sul volume
+   `media`, e le righe le referenziano per percorso. Senza questo archivio, dopo
+   il merge il Mac mostra il feed **senza foto** (galleria e lightbox vuote) per
+   tutti gli annunci importati.
+   ```bash
+   docker compose exec -T backend sh -c "cd /data/media && tar czf - ." \
+     > backups/media_pc_$(date +%F).tar.gz
+   ```
+3. Carica **entrambi** i file su **Google Drive**.
+4. `git push` di tutto il codice (incluso questo repo aggiornato).
+5. Sul Mac: segui [MERGE-DB.md](MERGE-DB.md) per unire dump e immagini.
+
+> Il dump è una **fotografia**: se dopo averlo fatto lo scheduler continua a
+> raccogliere, quegli annunci non ci sono. Rifallo come ultima cosa prima di
+> spegnere (rilanciare il merge non duplica nulla, è idempotente).
 
 > **Regola d'oro:** il DB del Mac è la base. Al merge si *aggiunge* ad esso; non
 > si ripristina mai il dump del PC *sopra* il principale.

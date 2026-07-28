@@ -11,6 +11,9 @@ __pycache__/
 # Immagini scaricate (storage locale) e backup del DB
 media/
 backups/
+# Dump e archivi media anche fuori da backups/ (non devono mai finire in git)
+*.dump
+media_pc_*.tar.gz
 
 .pytest_cache/
 .mypy_cache/
