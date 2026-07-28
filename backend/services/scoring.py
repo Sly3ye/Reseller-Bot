@@ -19,6 +19,7 @@ correggono con l'esperienza reale registrata nella pipeline P&L (deals).
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -379,4 +380,95 @@ def evaluate_opportunity(
         "buyAtAsking": (
             bool(bid is not None and asking is not None and asking <= bid)
         ),
+    }
+
+
+# ------------------------------------------------------- Risk Score anti-frode
+#
+# Nel flipping di iPhone usati la prima causa di PERDITA TOTALE non è pagare
+# troppo, ma comprare un telefono INVENDIBILE o non ricevere la merce. I segnali
+# esistono già nei dati (difetti NLP, classe affare, tipo venditore); qui li
+# aggreghiamo in un semaforo unico + il pattern-truffa a distanza che nessun
+# altro modulo cattura (pagamento anticipato / solo spedizione / no resi).
+# Funzione pura → testabile senza DB.
+
+# Frasi tipiche della truffa "compra a distanza": pagamento anticipato senza
+# tutele, niente ritiro/verifica di persona, circuiti non protetti.
+_SCAM_TEXT_RE = re.compile(
+    r"\b("
+    r"solo\s+spedizion\w+|niente\s+ritiro|no\s+ritiro|no\s+incontr\w+|"
+    r"pagamento\s+anticipat\w+|ricarica\s+postepay|bonifico\s+anticipat\w+|"
+    r"paypal\s+amici|amici\s+e\s+parenti|no\s+res\w+|nessun\s+reso|"
+    r"western\s+union|money\s*gram|solo\s+contrassegn\w+|"
+    r"spedizione\s+prima\s+del\s+pagamento"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Segnali difetto che rendono il telefono NON un bene rivendibile come sano.
+_UNSELLABLE_DEFECTS = frozenset({"icloud-bloccato", "per-ricambi", "da-riparare"})
+
+_RISK_LABEL = {"alto": "🛑 Rischio alto", "medio": "⚠️ Rischio medio", "basso": "Rischio basso"}
+
+
+def risk_assessment(
+    *,
+    defects: list[str] | None,
+    description: str | None,
+    deal_class: str | None,
+    ai_scam_high: bool = False,
+    seller_type: str | None = None,
+    seller_sold_count: int | None = None,
+) -> dict[str, Any] | None:
+    """Valuta il rischio di comprare *questo* annuncio (frode / invendibilità).
+
+    Ritorna ``{"level", "label", "score", "reasons": [...]}`` oppure ``None`` se
+    non c'è nessun segnale (così la UI non mostra un badge vuoto). Lo ``score``
+    0–100 è la somma dei pesi dei segnali; il ``level`` è la soglia.
+    """
+    defects = defects or []
+    reasons: list[str] = []
+    score = 0
+
+    # 1) iCloud bloccato = perdita quasi totale (telefono usabile solo a pezzi).
+    if "icloud-bloccato" in defects:
+        score += 45
+        reasons.append("iCloud/blocco attivazione dichiarato — inservibile se non sbloccato")
+
+    # 2) Pattern truffa a distanza dal testo (pagamento anticipato, no ritiro…).
+    if description and _SCAM_TEXT_RE.search(description):
+        score += 30
+        reasons.append("Linguaggio da truffa a distanza (pagamento anticipato / no ritiro)")
+
+    # 3) Prezzo troppo basso non giustificato (classe già declassata a sospetto),
+    #    o AI che vede rischio truffa alto.
+    if deal_class == "sospetto" or ai_scam_high:
+        score += 25
+        reasons.append("Prezzo troppo basso per il mercato (possibile truffa/errore)")
+
+    # 4) Altri difetti che tolgono la rivendibilità come "sano".
+    other = [d for d in defects if d in _UNSELLABLE_DEFECTS and d != "icloud-bloccato"]
+    if other:
+        score += 12
+        reasons.append("Dichiarato per ricambi / da riparare (non rivendibile come sano)")
+
+    # 5) Finto privato = rivenditore mascherato: non è frode, ma niente tutele da
+    #    privato e prezzo spesso gonfiato → segnale minore.
+    if seller_type == "finto_privato":
+        score += 10
+        reasons.append("Venditore finto-privato (rivenditore mascherato)")
+
+    # 6) Venditore senza storico noto: sconosciuto, cautela in più.
+    if seller_sold_count is not None and seller_sold_count == 0:
+        score += 6
+        reasons.append("Venditore senza vendite tracciate (storico ignoto)")
+
+    if score <= 0:
+        return None
+    level = "alto" if score >= 45 else "medio" if score >= 20 else "basso"
+    return {
+        "level": level,
+        "label": _RISK_LABEL[level],
+        "score": min(100, score),
+        "reasons": reasons,
     }

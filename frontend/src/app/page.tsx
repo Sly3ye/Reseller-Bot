@@ -1431,6 +1431,33 @@ function SniperRow(props: {
                 🟢 compra ora
               </div>
             )}
+            {item.risk && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  padding: "1px 7px",
+                  borderRadius: "4px",
+                  background:
+                    item.risk.level === "alto"
+                      ? "oklch(0.62 0.22 25 / 0.20)"
+                      : item.risk.level === "medio"
+                        ? "oklch(0.75 0.16 60 / 0.18)"
+                        : "oklch(0.55 0.02 260 / 0.18)",
+                  color:
+                    item.risk.level === "alto"
+                      ? "oklch(0.78 0.19 25)"
+                      : item.risk.level === "medio"
+                        ? "oklch(0.82 0.15 70)"
+                        : "oklch(0.72 0.02 260)",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+                title={item.risk.reasons.join(" · ")}
+              >
+                {item.risk.label}
+              </div>
+            )}
             {item.urgencyFlags.length > 0 && (
               <div
                 style={{
@@ -1606,6 +1633,56 @@ function SniperRow(props: {
             inPipeline={props.inPipeline}
             onAddToPipeline={props.onAddToPipeline}
           />
+          {item.risk && (
+            <div
+              style={{
+                border: `1px solid ${
+                  item.risk.level === "alto"
+                    ? "oklch(0.55 0.20 25 / 0.55)"
+                    : item.risk.level === "medio"
+                      ? "oklch(0.68 0.15 60 / 0.45)"
+                      : "oklch(0.40 0.02 260 / 0.5)"
+                }`,
+                background:
+                  item.risk.level === "alto"
+                    ? "oklch(0.30 0.10 25 / 0.30)"
+                    : item.risk.level === "medio"
+                      ? "oklch(0.32 0.08 60 / 0.22)"
+                      : "oklch(0.22 0.01 260)",
+                borderRadius: "8px",
+                padding: "12px 14px",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "12.5px",
+                  fontWeight: 700,
+                  color:
+                    item.risk.level === "alto"
+                      ? "oklch(0.82 0.18 25)"
+                      : item.risk.level === "medio"
+                        ? "oklch(0.85 0.14 70)"
+                        : "oklch(0.78 0.02 260)",
+                  marginBottom: "6px",
+                }}
+              >
+                {item.risk.label} — controlla prima di comprare
+              </div>
+              <ul
+                style={{
+                  margin: 0,
+                  paddingLeft: "18px",
+                  fontSize: "12.5px",
+                  lineHeight: 1.6,
+                  color: "oklch(0.82 0.008 250)",
+                }}
+              >
+                {item.risk.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ul>
+            </div>
+          )}
           <div>
             <div
               style={{

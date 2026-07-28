@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 from backend.core.database import Client
 
 from backend.core.database import get_db
-from backend.services.scoring import evaluate_opportunity
+from backend.services.scoring import evaluate_opportunity, risk_assessment
 from backend.services.valuation import evaluate_value
 from backend.services.variants import is_healthy
 
@@ -665,6 +665,18 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         shaped["scoreBreakdown"] = [
             {"label": "⚠️ Prezzo sospetto (possibile truffa/errore)", "points": 0}
         ]
+
+    # Risk Score anti-frode: aggrega i segnali di rischio (iCloud lock, pattern
+    # truffa a distanza, prezzo sospetto, finto privato, venditore senza storico)
+    # in un semaforo unico e visibile. Usa il dealClass FINALE (post-AI).
+    shaped["risk"] = risk_assessment(
+        defects=shaped["defects"],
+        description=shaped.get("description"),
+        deal_class=shaped.get("dealClass"),
+        ai_scam_high=ai_scam_high,
+        seller_type=row.get("seller_type"),
+        seller_sold_count=(profile or {}).get("sold"),
+    )
     return shaped
 
 

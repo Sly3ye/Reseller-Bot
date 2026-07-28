@@ -8,9 +8,9 @@ Stato: ✅ fatto · 🔧 parziale (c'è ma da rifinire / matura coi dati) · ◻
 Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 
 > **Principio.** Per ogni annuncio e per ogni modello il sistema deve rispondere
-> a 4 domande operative: **quanto vale davvero · quanto posso pagarlo · quanto e
-> quando lo rivendo · di chi mi fido.** Coperte tutte, con dati affidabili e
-> visibili in UI, l'iPhone è completo.
+> a 5 domande operative: **quanto vale davvero · quanto posso pagarlo · quanto e
+> quando lo rivendo · di chi mi fido · è sicuro comprarlo.** Coperte tutte, con
+> dati affidabili e visibili in UI, l'iPhone è completo.
 
 ---
 
@@ -20,8 +20,12 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 
 - ✅ Filtri (modello, memoria, colore, condizione, classe affare, margine min,
   ricerca) + facets + paginazione + sort (score / recenti / margine)
-- ✅ Card: badge condizione/classe affare/urgenza/riparazione/🟢 compra ora,
-  specs (memoria, colore, batteria, luogo), Deal Score
+- ✅ Card: badge condizione/classe affare/urgenza/riparazione/🟢 compra ora/
+  🛑 rischio, specs (memoria, colore, batteria, luogo), Deal Score
+- ✅ **Risk Score anti-frode** (5ª domanda "è sicuro comprarlo"): semaforo che
+  aggrega iCloud lock, pattern truffa a distanza (pagamento anticipato / no
+  ritiro), prezzo sospetto, finto-privato, venditore senza storico; badge in
+  card + pannello motivi nell'espansa. Dati già estratti, zero re-scrape.
 - ✅ Espansa: valore equo (fonte + affidabilità), **max bid**, offerta
   consigliata, **ROI/giorno**, ribasso, **venditore + profilo motivato**,
   margine netto post-riparazione (solo ricambio Apple), analisi AI, breakdown

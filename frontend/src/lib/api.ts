@@ -110,6 +110,15 @@ export type ApiOpportunity = {
   roiPerDayPct: number | null;
   maxBid: number | null;
   buyAtAsking: boolean;
+  // Risk Score anti-frode (null = nessun segnale di rischio)
+  risk: RiskInfo | null;
+};
+
+export type RiskInfo = {
+  level: "alto" | "medio" | "basso";
+  label: string;
+  score: number;
+  reasons: string[];
 };
 
 export type PriceBand = {
