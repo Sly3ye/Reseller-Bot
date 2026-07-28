@@ -8,7 +8,7 @@ paragone per la qualità delle stime del bot.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -56,7 +56,56 @@ class DealUpdate(BaseModel):
     notes: str | None = None
 
 
-def _shape_deal(row: dict[str, Any]) -> dict[str, Any]:
+# Da quanti giorni un affare può restare fermo in uno stadio prima che sia un
+# problema. Non sono numeri sacri: sono la soglia oltre la quale un pezzo smette
+# di essere un affare e diventa capitale immobilizzato che si deprezza.
+_STALE_AFTER_DAYS: dict[str, int] = {
+    "interessante": 7,    # o lo contatti o lo lasci andare
+    "contattato": 5,      # trattativa che non si muove
+    "offerta": 5,         # offerta senza risposta
+    "comprato": 14,       # comprato e non ancora messo in vendita: soldi fermi
+    "in_vendita": 30,     # invenduto: il prezzo è fuori mercato
+}
+
+_STALE_HINTS: dict[str, str] = {
+    "interessante": "fermo qui: contattalo o scartalo",
+    "contattato": "nessuna risposta: rilancia o passa oltre",
+    "offerta": "offerta senza esito: chiudi o ritira",
+    "comprato": "comprato e non ancora in vendita: capitale fermo",
+    "in_vendita": "invenduto da troppo: il prezzo è fuori mercato",
+}
+
+
+def _staleness(
+    stage: str, days_in_stage: int | None, carry_month_eur: int | None
+) -> dict[str, Any] | None:
+    """Allerta sui deal fermi: da quanto, quanto è grave, quanto sta costando.
+
+    ``carry_month_eur`` = deprezzamento mensile della variante (curva di
+    deprezzamento): trasforma "è fermo da 40 giorni" in "ti è già costato 33€",
+    che è l'unica formulazione che fa agire.
+    """
+    limit = _STALE_AFTER_DAYS.get(stage)
+    if limit is None or days_in_stage is None or days_in_stage < limit:
+        return None
+    return {
+        "days": days_in_stage,
+        "limit": limit,
+        # Oltre il doppio della soglia non è più un ritardo, è un problema.
+        "level": "critico" if days_in_stage >= limit * 2 else "attenzione",
+        "hint": _STALE_HINTS.get(stage, "fermo da troppo tempo"),
+        # Solo per gli stadi in cui il pezzo è già tuo: il deprezzamento corre.
+        "carryLossEur": (
+            round(carry_month_eur * days_in_stage / 30)
+            if carry_month_eur and stage in ("comprato", "in_vendita")
+            else None
+        ),
+    }
+
+
+def _shape_deal(
+    row: dict[str, Any], carry_month_eur: int | None = None
+) -> dict[str, Any]:
     """Aggiunge i campi calcolati: investito, profitto netto, margine reale."""
     buy = float(row["buy_price"]) if row.get("buy_price") is not None else None
     sell = float(row["sell_price"]) if row.get("sell_price") is not None else None
@@ -94,8 +143,24 @@ def _shape_deal(row: dict[str, Any]) -> dict[str, Any]:
         if margin_pct is not None and held_days and held_days > 0:
             roi_per_day = round(margin_pct / held_days, 2)
 
+    # Tempo-in-stadio: ``updated_at`` cambia a ogni passaggio di stadio, quindi
+    # è il proxy giusto per "da quanto è fermo QUI" (diverso dall'età del deal).
+    stage = str(row.get("stage") or "")
+    now = datetime.now(timezone.utc)
+    last_move = _parse_ts(row.get("updated_at"))
+    created = _parse_ts(row.get("created_at"))
+    days_in_stage = max(0, (now - last_move).days) if last_move else None
+    age_days = max(0, (now - created).days) if created else None
+
     return {
         **row,
+        "daysInStage": days_in_stage,
+        "ageDays": age_days,
+        "stale": (
+            _staleness(stage, days_in_stage, carry_month_eur)
+            if stage not in ("venduto", "sfumato")
+            else None
+        ),
         "invested": invested,
         "extraCostsTotal": costs or 0,
         "profit": profit,
@@ -105,6 +170,46 @@ def _shape_deal(row: dict[str, Any]) -> dict[str, Any]:
         "heldDays": held_days,
         "roiPerDayPct": roi_per_day,
     }
+
+
+def _carry_by_deal(db: Any, rows: list[dict[str, Any]]) -> dict[str, int]:
+    """{deal_id: € persi al mese} risalendo alla variante dell'annuncio agganciato.
+
+    Serve a dire "questo pezzo fermo ti è già costato X€" invece del solo numero
+    di giorni. I deal senza ``listing_id`` (inseriti a mano) restano senza:
+    nessuna variante, nessuna curva, nessun numero inventato.
+    """
+    from backend.services.depreciation import carry_cost_by_variant
+    from backend.services.reads import _opportunities_table, _variant_price_pools
+
+    wanted = {
+        str(r["listing_id"]): str(r["id"])
+        for r in rows
+        if r.get("listing_id") and r.get("category") != "automobile"
+    }
+    if not wanted:
+        return {}
+
+    table = _opportunities_table("smartphone")
+    try:
+        listings = (
+            db.table(table)
+            .select("id, variant_key")
+            .in_("id", list(wanted))
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return {}
+
+    carry = carry_cost_by_variant(_variant_price_pools(db, table))
+    out: dict[str, int] = {}
+    for listing in listings:
+        month = carry.get(listing.get("variant_key"))
+        if month:
+            out[wanted[str(listing["id"])]] = month
+    return out
 
 
 @router.get("")
@@ -117,7 +222,8 @@ async def list_deals(stage: Stage | None = None) -> list[dict]:
         rows = query.limit(200).execute().data or []
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return [_shape_deal(row) for row in rows]
+    carry = _carry_by_deal(db, rows)
+    return [_shape_deal(row, carry.get(str(row["id"]))) for row in rows]
 
 
 @router.get("/summary")
@@ -129,7 +235,8 @@ async def deals_summary() -> dict:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    shaped = [_shape_deal(row) for row in rows]
+    carry = _carry_by_deal(db, rows)
+    shaped = [_shape_deal(row, carry.get(str(row["id"]))) for row in rows]
     sold = [d for d in shaped if d["stage"] == "venduto" and d["profit"] is not None]
     open_deals = [
         d for d in shaped if d["stage"] in ("comprato", "in_vendita")
@@ -160,7 +267,15 @@ async def deals_summary() -> dict:
     held = [d["heldDays"] for d in sold if d.get("heldDays") is not None]
     roi_days = [d["roiPerDayPct"] for d in sold if d.get("roiPerDayPct") is not None]
 
+    # Affari fermi oltre soglia e quanto sta costando tenerli (deprezzamento
+    # maturato sui pezzi già acquistati).
+    stale = [d for d in shaped if d.get("stale")]
+    stale_loss = sum(d["stale"].get("carryLossEur") or 0 for d in stale)
+
     return {
+        "staleDeals": len(stale),
+        "staleCriticalDeals": len([d for d in stale if d["stale"]["level"] == "critico"]),
+        "staleCarryLossEur": stale_loss or None,
         "totalDeals": len(shaped),
         "sold": len(sold),
         "openDeals": len(open_deals),

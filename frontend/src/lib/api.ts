@@ -122,6 +122,14 @@ export type ApiOpportunity = {
   valuationConfidence: "alta" | "media" | "bassa" | null;
   roiPerDayPct: number | null;
   maxBid: number | null;
+  // Costo di magazzino: deprezzamento maturato mentre resta invenduto,
+  // già scontato dal maxBid.
+  carryCost: {
+    monthEur: number;
+    holdDays: number;
+    totalEur: number;
+    estimatedDays: boolean;
+  } | null;
   buyAtAsking: boolean;
   // Risk Score anti-frode (null = nessun segnale di rischio)
   risk: RiskInfo | null;
@@ -257,6 +265,17 @@ export type Deal = {
   estimateErrorEur: number | null;
   heldDays: number | null;
   roiPerDayPct: number | null;
+  // Tempo-in-stadio + allerta sugli affari fermi (con il deprezzamento
+  // maturato sui pezzi già comprati).
+  daysInStage: number | null;
+  ageDays: number | null;
+  stale: {
+    days: number;
+    limit: number;
+    level: "attenzione" | "critico";
+    hint: string;
+    carryLossEur: number | null;
+  } | null;
 };
 
 export type DealsSummary = {
@@ -273,6 +292,10 @@ export type DealsSummary = {
   estimationAccuracyPct: number | null;
   avgHeldDays: number | null;
   realizedRoiPerDayPct: number | null;
+  // Affari fermi oltre soglia e costo del deprezzamento che stanno accumulando.
+  staleDeals: number;
+  staleCriticalDeals: number;
+  staleCarryLossEur: number | null;
 };
 
 export type SortMode = "score" | "recent" | "margin" | "roi";

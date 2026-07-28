@@ -185,6 +185,13 @@ def build_curves(
 
             point = {
                 "modelKey": _model_key(number, line),
+                # Chiave della variante canonica (None per la serie "tutte le
+                # memorie"): permette di agganciare la curva al singolo annuncio.
+                "variantKey": (
+                    f"{_model_key(number, line)}-{storage}"
+                    if storage is not None
+                    else None
+                ),
                 "model": _model_name(number, line),
                 "line": line,
                 "lineLabel": _LINE_LABELS.get(line, line),
@@ -222,6 +229,21 @@ def build_curves(
         )
 
     return {"curves": curves, "models": models}
+
+
+def carry_cost_by_variant(pools: dict[str, list[float]]) -> dict[str, int]:
+    """{variant_key: € persi al mese} — il costo di tenere fermo quel modello.
+
+    Serve al **tetto d'acquisto**: se un pezzo si vende in 30 giorni e nel
+    frattempo il modello perde 25€, quei 25€ sono un costo dell'operazione
+    esattamente come un ricambio, e vanno tolti da quanto puoi permetterti di
+    pagarlo. Senza, il max bid è ottimista su tutto ciò che gira lento.
+    """
+    return {
+        p["variantKey"]: p["carryCostMonthEur"]
+        for p in build_curves(pools)["models"]
+        if p.get("variantKey") and p.get("carryCostMonthEur")
+    }
 
 
 def _summary(models: list[dict[str, Any]]) -> dict[str, Any]:

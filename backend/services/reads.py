@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 from backend.core.database import Client
 
 from backend.core.database import get_db
+from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import evaluate_opportunity, risk_assessment
 from backend.services.valuation import evaluate_value
 from backend.services.variants import is_healthy
@@ -35,6 +36,12 @@ _LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
 
 _ACTIVE_STATUSES = ("nuovo", "visto")
 _SOLD_STATUSES = ("venduto_rimosso", "scaduto")
+
+# Giorni di permanenza in stock assunti quando i venduti non bastano ancora a
+# misurarli davvero (serve al costo di magazzino nel tetto d'acquisto). Un mese
+# è la stima prudente: appena il Garbage Collector accumula venduti, subentra
+# il dato reale per modello.
+DEFAULT_HOLD_DAYS = 30
 
 # I target_model salvano la categoria come 'automobile' / 'smartphone'; il
 # frontend può passare anche l'alias 'auto'.
@@ -604,6 +611,12 @@ def _build_enrich_ctx(
     ctx["sold_days"] = {
         m: s["avgDaysToSell"] for m, s in sold_by_model.items() if s.get("avgDaysToSell")
     }
+    # Deprezzamento mensile per variante (curva di deprezzamento) → costo di
+    # magazzino nel tetto d'acquisto. Solo tech: le varianti auto sono per
+    # generazione, non per età del modello.
+    ctx["carry_month"] = (
+        carry_cost_by_variant(ctx["variant_pools"]) if target_cat != "automobile" else {}
+    )
     if target_cat == "automobile":
         auto_targets = list(
             {r["target_id"] for r in rows if r.get("target_id") and r.get("km")}
@@ -697,6 +710,23 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         else None
     )
 
+    # Costo di magazzino: deprezzamento della variante × giorni attesi in stock.
+    # Finché il Garbage Collector non ha accumulato venduti, i giorni reali non
+    # esistono e si assume un mese (DEFAULT_HOLD_DAYS): il payload dichiara
+    # quali giorni ha usato, così in UI si vede se è una stima o un dato.
+    carry_month = ctx.get("carry_month", {}).get(variant_key)
+    hold_days = int(days) if days and days > 0 else DEFAULT_HOLD_DAYS
+    shaped["carryCost"] = (
+        {
+            "monthEur": carry_month,
+            "holdDays": hold_days,
+            "totalEur": round(carry_month * hold_days / 30),
+            "estimatedDays": not (days and days > 0),
+        }
+        if carry_month
+        else None
+    )
+
     score_margin = (
         valuation["marginVsFairPct"]
         if valuation["marginVsFairPct"] is not None
@@ -716,8 +746,11 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             features=shaped["features"],
             battery_pct=shaped["batteryPct"],
             has_price_drop=shaped["priceDrop"] is not None,
-            # Tetto d'acquisto sul realizzo reale (venduti sani) se disponibile.
+            # Tetto d'acquisto sul realizzo reale (venduti sani) se disponibile,
+            # al netto del deprezzamento maturato mentre resta invenduto.
             resale_ref=sold_reference or market_avg,
+            carry_month_eur=carry_month,
+            hold_days=hold_days,
         )
     )
     # Anti-truffa affinato con l'AI locale:

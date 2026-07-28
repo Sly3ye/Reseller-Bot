@@ -29,6 +29,12 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 - ✅ **Watch di prezzo** (E): storico completo dei ribassi del singolo annuncio
   (quante volte, quanto in € e %, da quanti giorni fermo) → quanto è motivato
   il venditore. Badge "↓ motivato" in card + chip "Ribassi" nell'espansa.
+- ✅ **Costo di magazzino nel tetto d'acquisto**: il max bid sconta il
+  deprezzamento che matura mentre il pezzo resta invenduto (curva della variante
+  × giorni attesi di vendita). Senza, il tetto è ottimista proprio su ciò che
+  gira lento. Voce dedicata nell'espansa.
+- ✅ **Alert Telegram sui salvati** ⭐: un annuncio che segui ti avvisa a **ogni**
+  ribasso, anche sotto la soglia minima di calo.
 - ✅ Espansa: valore equo (fonte + affidabilità), **max bid**, offerta
   consigliata, **ROI/giorno**, ribasso, **venditore + profilo motivato**,
   margine netto post-riparazione (solo ricambio Apple), analisi AI, breakdown
@@ -81,7 +87,11 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 - ✅ **Feedback loop visibile**: accuratezza stime, scarto medio (sotto/sovra-
   stima), stima→reale medio per i venduti
 - ✅ **ROI/giorno realizzato** (margine reale ÷ giorni in stock)
-- ◻️ ⚪ Tempo-in-stadio + alert "in vendita da troppo"
+- ✅ **Tempo-in-stadio + alert "fermo da troppo"**: giorni nello stadio corrente
+  e nel ciclo, soglia per stadio (7gg interessante, 5gg contattato/offerta,
+  14gg comprato, 30gg in vendita), livello attenzione/critico e — sui pezzi già
+  comprati — **quanto ti è costato finora** in deprezzamento maturato. Badge in
+  riga + banner di riepilogo.
 
 ## 4. Automations / Salute — *"il motore gira bene?"*
 

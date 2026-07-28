@@ -1891,13 +1891,28 @@ function NegotiationAssistant(props: {
     });
   }
   if (item.maxBid !== null) {
+    const cc = item.carryCost;
     stats.push({
       label: "Prezzo d'acquisto max",
       value: eur(item.maxBid),
-      hint: item.buyAtAsking
-        ? "✓ conviene anche al prezzo richiesto"
-        : "tetto per centrare il margine obiettivo",
+      hint:
+        (item.buyAtAsking
+          ? "✓ conviene anche al prezzo richiesto"
+          : "tetto per centrare il margine obiettivo") +
+        (cc ? ` · già al netto di ${eur(cc.totalEur)} di deprezzamento` : ""),
       color: item.buyAtAsking ? "oklch(0.75 0.15 150)" : "oklch(0.80 0.13 75)",
+    });
+  }
+  // Costo di magazzino: quanto vale in meno il pezzo quando riesci a rivenderlo.
+  if (item.carryCost) {
+    const cc = item.carryCost;
+    stats.push({
+      label: "Costo di magazzino",
+      value: `−${eur(cc.totalEur)}`,
+      hint: `si deprezza di ${eur(cc.monthEur)}/mese · ${cc.holdDays}gg ${
+        cc.estimatedDays ? "stimati in stock" : "medi di vendita"
+      }`,
+      color: "oklch(0.72 0.10 40)",
     });
   }
   if (item.suggestedOffer !== null) {
@@ -2598,6 +2613,34 @@ function PipelineScreen(props: {
         </div>
       </div>
 
+      {summary != null && summary.staleDeals > 0 && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "12px",
+            background: "oklch(0.22 0.05 60)",
+            border: "1px solid oklch(0.38 0.09 60)",
+            borderRadius: "12px",
+            padding: "14px 18px",
+            fontSize: "13px",
+          }}
+        >
+          <span style={{ fontSize: "18px" }}>⏳</span>
+          <div>
+            <b>
+              {summary.staleDeals} {summary.staleDeals === 1 ? "affare fermo" : "affari fermi"}
+              {summary.staleCriticalDeals > 0 && ` (${summary.staleCriticalDeals} critici)`}
+            </b>
+            <div style={{ color: "oklch(0.72 0.02 60)", marginTop: "2px" }}>
+              {summary.staleCarryLossEur != null
+                ? `Il deprezzamento maturato mentre restano invenduti vale già ${eur(summary.staleCarryLossEur)}: sbloccali o abbassa il prezzo.`
+                : "Sbloccali: o si muovono, o smettono di essere affari."}
+            </div>
+          </div>
+        </div>
+      )}
+
       {summary && summary.sold > 0 && summary.estimationAccuracyPct != null && (
         <div
           style={{
@@ -2771,6 +2814,36 @@ function PipelineRow(props: {
         <div style={{ fontSize: "13px", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {deal.title ?? "—"}
         </div>
+        {deal.stale && (
+          <div
+            title={`Fermo in questo stadio da ${deal.stale.days} giorni (soglia ${deal.stale.limit})`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "5px",
+              marginTop: "3px",
+              padding: "2px 7px",
+              borderRadius: "5px",
+              fontSize: "10.5px",
+              fontWeight: 700,
+              background:
+                deal.stale.level === "critico"
+                  ? "oklch(0.30 0.10 25)"
+                  : "oklch(0.30 0.07 75)",
+              color:
+                deal.stale.level === "critico"
+                  ? "oklch(0.82 0.15 25)"
+                  : "oklch(0.85 0.13 75)",
+            }}
+          >
+            {deal.stale.level === "critico" ? "🛑" : "⏳"} fermo da {deal.stale.days}gg
+            {deal.stale.carryLossEur != null && (
+              <span style={{ fontFamily: MONO, opacity: 0.9 }}>
+                · −{eur(deal.stale.carryLossEur)}
+              </span>
+            )}
+          </div>
+        )}
         <div style={{ fontSize: "11px", color: "oklch(0.46 0.01 250)", fontFamily: MONO }}>
           {deal.category === "automobile" ? "🚗" : "📱"}{" "}
           {deal.estimatedMarginEur != null ? `stima +${eur(deal.estimatedMarginEur)}` : ""}

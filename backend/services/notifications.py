@@ -31,6 +31,11 @@ TELEGRAM_API = "https://api.telegram.org"
 
 ALERT_NEW = "new_deal"
 ALERT_DROP = "price_drop"
+# Calo su un annuncio SALVATO (⭐). Il tipo include il nuovo prezzo: il vincolo
+# di unicità è (listing_id, alert_type), quindi ogni ribasso successivo è una
+# chiave diversa e ti arriva. Sui salvati vuoi seguire tutta la discesa, non
+# solo il primo gradino.
+ALERT_SAVED_DROP = "saved_drop"
 
 
 # ---------------------------------------------------------- alert di sistema
@@ -218,6 +223,43 @@ def _fmt_price_drop(event: dict[str, Any], market_avg: float | None) -> str:
     return "\n".join(lines)
 
 
+def _fmt_saved_drop(event: dict[str, Any]) -> str:
+    """Ribasso su un annuncio che hai messo tra i salvati: sempre notificato."""
+    title = html.escape(str(event.get("title") or "Annuncio"))
+    old = event["old_price"]
+    new = event["new_price"]
+    drop_pct = (old - new) / old * 100 if old else 0
+    return "\n".join(
+        [
+            f"⭐ <b>UN TUO SALVATO È CALATO −{drop_pct:.0f}%</b>",
+            f"<b>{title}</b>",
+            f"💰 {_fmt_eur(old)} → <b>{_fmt_eur(new)}</b>",
+            "Lo stavi seguendo: il venditore si sta muovendo.",
+            str(event.get("listing_url") or ""),
+        ]
+    )
+
+
+def _saved_listing_ids(db: Client, table: str, ids: list[str]) -> set[str]:
+    """Quali fra questi annunci sono marcati ⭐ salvato (triage)."""
+    if not ids:
+        return set()
+    try:
+        rows = (
+            db.table(table)
+            .select("id")
+            .in_("id", ids)
+            .eq("triage", "salvato")
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        logger.warning("triage non leggibile: alert sui salvati saltati.")
+        return set()
+    return {str(r["id"]) for r in rows}
+
+
 # ---------------------------------------------------------------- dedup DB
 
 def _claim_alerts(
@@ -299,14 +341,37 @@ async def notify_deals(
             )
         )
 
+    # Annunci ⭐ salvati fra quelli che hanno cambiato prezzo: su questi il calo
+    # si notifica SEMPRE, anche sotto la soglia minima — li stai seguendo apposta.
+    from backend.services.reads import _opportunities_table  # lazy: import circolare
+
+    saved = await asyncio.to_thread(
+        _saved_listing_ids,
+        db,
+        _opportunities_table(category),
+        [str(e["listing_id"]) for e in drop_events if e.get("listing_id")],
+    )
+
     for event in drop_events:
         old, new = event.get("old_price"), event.get("new_price")
         drop_pct = (old - new) / old * 100 if old else 0
+        listing_id = str(event["listing_id"])
+        if listing_id in saved:
+            to_send.append(
+                (
+                    listing_id,
+                    # Il nuovo prezzo nella chiave: ogni ribasso è un alert.
+                    f"{ALERT_SAVED_DROP}:{new}",
+                    _fmt_saved_drop(event),
+                    None,
+                )
+            )
+            continue
         if drop_pct < cfg["alert_min_drop_pct"]:
             continue
         to_send.append(
             (
-                str(event["listing_id"]),
+                listing_id,
                 ALERT_DROP,
                 _fmt_price_drop(event, None),
                 None,

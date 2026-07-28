@@ -58,18 +58,16 @@ async def main() -> None:
     print("-" * 66)
 
     # 1) Download del JSON grezzo da hades tramite api_client (proxy), cronometrato.
-    async with scraper._make_api_client() as api_client:
-        params = {"q": QUERY, "t": "s", "lim": "100", "start": "0"}
-        started = time.perf_counter()
-        try:
-            response = await scraper._get_with_retry(
-                api_client, scraper.HADES_URL, params
-            )
-        except Exception as exc:  # proxy KO, auth 407, timeout…
-            print(f"❌ Errore chiamando hades via proxy: {type(exc).__name__}: {exc}")
-            raise SystemExit(1)
-        elapsed = time.perf_counter() - started
-        payload = response.json()
+    # La sessione la apre _get_with_retry, una nuova per ogni tentativo.
+    params = {"q": QUERY, "t": "s", "lim": "100", "start": "0"}
+    started = time.perf_counter()
+    try:
+        response = await scraper._get_with_retry(scraper.HADES_URL, params)
+    except Exception as exc:  # proxy KO, auth 407, timeout…
+        print(f"❌ Errore chiamando hades via proxy: {type(exc).__name__}: {exc}")
+        raise SystemExit(1)
+    elapsed = time.perf_counter() - started
+    payload = response.json()
 
     ads = payload.get("ads") or []
     print(f"[api_client/proxy] JSON scaricato da hades in {elapsed:.3f}s")

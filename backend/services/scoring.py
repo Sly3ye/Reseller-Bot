@@ -192,6 +192,7 @@ def max_bid(
     resale: float | None,
     penalty_eur: int = 0,
     repair_eur: int = 0,
+    carry_eur: int = 0,
 ) -> int | None:
     """Prezzo d'acquisto MASSIMO per centrare il margine obiettivo (walk-away).
 
@@ -201,12 +202,17 @@ def max_bid(
     della variante SANA), meno costi di riparazione/penalità, meno il margine
     obiettivo. Per i "rotti riparabili" ``resale`` è il prezzo del funzionante e
     ``repair_eur`` copre il ripristino.
+
+    ``carry_eur`` = **deprezzamento maturato mentre lo tieni in magazzino** (curva
+    di deprezzamento della variante × giorni attesi di vendita). È un costo reale
+    dell'operazione come il ricambio: senza, il tetto è ottimista su tutto ciò
+    che gira lento, che è proprio dove si perdono i soldi.
     """
     if resale is None or resale <= 0:
         return None
     target = TARGET_MARGIN_PCT.get(category, 15.0)
     step = OFFER_ROUNDING.get(category, 10)
-    bid = resale * (1 - target / 100) - penalty_eur - repair_eur
+    bid = resale * (1 - target / 100) - penalty_eur - repair_eur - carry_eur
     if bid <= 0:
         return None
     return int(bid // step * step)
@@ -318,11 +324,17 @@ def evaluate_opportunity(
     battery_pct: int | None,
     has_price_drop: bool,
     resale_ref: float | None = None,
+    carry_month_eur: int | None = None,
+    hold_days: int | None = None,
 ) -> dict[str, Any]:
     """Valutazione completa di un'opportunità per l'API (score + trattativa).
 
     ``resale_ref`` = prezzo di realizzo del funzionante (mediana venduti sani);
     se assente si ripiega su ``market_avg``. Serve al ``maxBid`` (tetto d'acquisto).
+
+    ``carry_month_eur`` (deprezzamento mensile della variante) e ``hold_days``
+    (giorni attesi di vendita) danno il **costo di magazzino** dell'operazione,
+    scontato dal tetto d'acquisto.
     """
     defects = defects or []
     urgency = urgency or []
@@ -333,7 +345,12 @@ def evaluate_opportunity(
     penalty_total, penalty_breakdown = defect_penalty_eur(category, title, defects)
 
     resale = resale_ref if (resale_ref and resale_ref > 0) else market_avg
-    bid = max_bid(category, resale, penalty_total, repair_total)
+
+    # Costo di magazzino: quanto si deprezza mentre resta invenduto.
+    carry_total = 0
+    if carry_month_eur and hold_days:
+        carry_total = round(carry_month_eur * hold_days / 30)
+    bid = max_bid(category, resale, penalty_total, repair_total, carry_total)
 
     # Margine netto post-riparazione (radar riparazioni): per i "rotti
     # riparabili" il vero margine è contro la media del funzionante, meno il

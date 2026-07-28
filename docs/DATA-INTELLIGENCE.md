@@ -79,6 +79,11 @@ e cosa conviene davvero":
 - **Domanda/offerta** (`inflow7d`/`outflow7d`/`demandIndex`): venduti vs nuovi
   immessi nell'ultima settimana per variante. `demandIndex > 1` = si vende più in
   fretta di quanto entra offerta → pressione prezzi al rialzo ("comprare ora").
+- **Costo di magazzino** (`carryCost`, per annuncio): deprezzamento della
+  variante × giorni attesi di vendita, **sottratto dal max bid**. È un costo
+  reale dell'operazione come il ricambio. Finché i venduti non bastano a
+  misurare i giorni, si assume un mese (`DEFAULT_HOLD_DAYS`) e il payload lo
+  dichiara (`estimatedDays`), così in UI si distingue la stima dal dato.
 - **Confidence della valutazione** (`valuationConfidence` + `valuationSamples`):
   quanti campioni (attivi + venduti) sostengono il valore equo → ti fidi degli
   affari "solidi" ed eviti di agire su pool sottili.
@@ -115,3 +120,9 @@ Il gestionale: ogni affare attraversa `interessante → contattato → offerta �
 comprato → in_vendita → venduto`, con prezzo pagato, costi accessori e prezzo di
 rivendita → **profitto netto reale**. Chiude il feedback loop: confronta il
 margine stimato dal bot con quello effettivamente incassato.
+
+**Affari fermi** (`daysInStage` / `stale`): ``updated_at`` cambia a ogni
+passaggio di stadio, quindi misura da quanto un affare è fermo *lì*. Oltre la
+soglia dello stadio scatta l'allerta (critico al doppio), e sui pezzi già
+comprati viene quantificato il **deprezzamento maturato**: "fermo da 65 giorni"
+diventa "ti è già costato 63€", che è l'unica formulazione che fa agire.
