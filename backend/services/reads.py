@@ -946,6 +946,81 @@ def _sold_stats(
     return per_model, overall
 
 
+def get_time_to_sale(
+    category: str,
+    client: Client | None = None,
+) -> dict[str, Any]:
+    """Tempo di vendita affettabile per modello / colore / taglia (e incroci).
+
+    Dai VENDUTI (``venduto_rimosso`` = annuncio sparito da Subito) ritorna i
+    fatti grezzi ridotti — modello, colore, memoria, giorni di vendita
+    (found→sparizione), prezzo — più i valori distinti di ogni dimensione. Il
+    pivot (quali dimensioni incrociare) lo fa la UI, così l'utente combina
+    liberamente modello/colore/taglia e legge i giorni medi per ogni fetta.
+    Solo listing sani, giorni in [0, 365]."""
+    db = client or get_db()
+    target_cat = _target_category(category)
+    table = _opportunities_table(category)
+    targets = _targets_for_category(db, target_cat)
+    try:
+        rows = (
+            db.table(table)
+            .select(
+                "target_id, color, storage_gb, asking_price, "
+                "found_at, updated_at, condition_tier"
+            )
+            .in_("status", list(_SOLD_STATUSES))
+            .order("updated_at", desc=True)
+            .limit(8000)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        rows = []
+
+    records: list[dict[str, Any]] = []
+    models: set[str] = set()
+    colors: set[str] = set()
+    storages: set[int] = set()
+    for row in rows:
+        if not is_healthy(row.get("condition_tier") or "buono"):
+            continue
+        model = targets.get(row.get("target_id"))
+        found = _parse_ts(row.get("found_at"))
+        removed = _parse_ts(row.get("updated_at"))
+        if not model or not found or not removed:
+            continue
+        days = (removed - found).total_seconds() / 86400
+        if not (0 <= days <= 365):
+            continue
+        color = row.get("color")
+        storage = row.get("storage_gb")
+        price = _to_float(row.get("asking_price"))
+        records.append(
+            {
+                "model": model,
+                "color": color,
+                "storageGb": int(storage) if storage else None,
+                "days": round(days, 1),
+                "price": round(price) if price and price > 0 else None,
+            }
+        )
+        models.add(model)
+        if color:
+            colors.add(color)
+        if storage:
+            storages.add(int(storage))
+
+    return {
+        "records": records,
+        "models": sorted(models),
+        "colors": sorted(colors),
+        "storages": sorted(storages),
+        "sampleSold": len(records),
+    }
+
+
 def _resale_suggestions(
     db: Client, table: str, targets: dict[str, str]
 ) -> dict[str, dict[str, float]]:

@@ -12,6 +12,7 @@ import {
   fetchOpportunities,
   fetchScraperHealth,
   fetchSettings,
+  fetchTimeToSale,
   fetchTrends,
   patchOpportunityStatus,
   pauseAutomation,
@@ -35,6 +36,7 @@ import {
   type ScraperHealth,
   type SellerRankRow,
   type SortMode,
+  type TimeToSaleData,
   type ViewMode,
 } from "@/lib/api";
 import {
@@ -49,7 +51,7 @@ import {
 const MONO = "var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace";
 
 type Vertical = "tech" | "auto";
-type Screen = "sniper" | "intel" | "pipeline" | "automations" | "settings";
+type Screen = "sniper" | "intel" | "tempo" | "pipeline" | "automations" | "settings";
 type MarginFilter = "all" | "high";
 
 const PAGE_SIZE = 30;
@@ -526,6 +528,41 @@ export default function FlipRadar() {
             Market Intelligence
           </div>
 
+          <div onClick={() => setScreen("tempo")} style={navItem(screen === "tempo")}>
+            <div
+              style={{
+                width: "16px",
+                height: "16px",
+                borderRadius: "50%",
+                border: "2px solid currentColor",
+                position: "relative",
+                flexShrink: 0,
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: "2px",
+                  left: "6px",
+                  width: "2px",
+                  height: "5px",
+                  background: "currentColor",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  top: "6px",
+                  left: "6px",
+                  width: "5px",
+                  height: "2px",
+                  background: "currentColor",
+                }}
+              />
+            </div>
+            Tempo di vendita
+          </div>
+
           <div onClick={() => setScreen("pipeline")} style={navItem(screen === "pipeline")}>
             <div
               style={{
@@ -681,6 +718,8 @@ export default function FlipRadar() {
               batchLastRun={batchLastRun}
             />
           )}
+
+          {screen === "tempo" && <TimeToSaleScreen category={category} />}
 
           {screen === "pipeline" && (
             <PipelineScreen
@@ -2110,6 +2149,383 @@ const STAGES: { key: DealStage; label: string }[] = [
   { key: "venduto", label: "Venduto" },
   { key: "sfumato", label: "Sfumato" },
 ];
+
+/* --------------------------------------------------- TEMPO DI VENDITA */
+
+type TtsDim = "model" | "color" | "storage";
+
+const TTS_DIM_LABEL: Record<TtsDim, string> = {
+  model: "Modello",
+  color: "Colore",
+  storage: "Taglia",
+};
+
+function ttsStorageLabel(st: number | null): string {
+  if (st == null) return "n/d";
+  return st >= 1024 ? "1TB" : `${st}GB`;
+}
+
+function median(xs: number[]): number {
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function TimeToSaleScreen(props: { category: Category }) {
+  const [data, setData] = useState<TimeToSaleData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Dimensioni su cui raggruppare (qualsiasi sottoinsieme: 0, 1, 2 o 3).
+  const [groupBy, setGroupBy] = useState<TtsDim[]>(["model"]);
+  // Filtri opzionali per restringere prima di raggruppare.
+  const [fModel, setFModel] = useState<string>("");
+  const [fColor, setFColor] = useState<string>("");
+  const [fStorage, setFStorage] = useState<string>("");
+
+  useEffect(() => {
+    const c = new AbortController();
+    void Promise.resolve().then(() => {
+      if (c.signal.aborted) return;
+      setLoading(true);
+      setError(null);
+      // I filtri sono specifici del verticale: azzerali al cambio.
+      setFModel("");
+      setFColor("");
+      setFStorage("");
+    });
+    fetchTimeToSale(props.category, c.signal)
+      .then((d) => {
+        if (c.signal.aborted) return;
+        setData(d);
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (c.signal.aborted || e?.name === "AbortError") return;
+        setError("Impossibile caricare i tempi di vendita.");
+        setLoading(false);
+      });
+    return () => c.abort();
+  }, [props.category]);
+
+  const toggleDim = (d: TtsDim) =>
+    setGroupBy((cur) =>
+      cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d],
+    );
+
+  const orderedGroup = useMemo(
+    () => (["model", "color", "storage"] as TtsDim[]).filter((d) => groupBy.includes(d)),
+    [groupBy],
+  );
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const recs = data.records.filter(
+      (r) =>
+        (!fModel || r.model === fModel) &&
+        (!fColor || r.color === fColor) &&
+        (!fStorage || String(r.storageGb) === fStorage),
+    );
+    // Raggruppa per la combinazione di dimensioni attive.
+    const groups = new Map<
+      string,
+      { keys: Record<TtsDim, string>; days: number[]; prices: number[] }
+    >();
+    for (const r of recs) {
+      const keys: Record<TtsDim, string> = {
+        model: r.model,
+        color: r.color ?? "n/d",
+        storage: ttsStorageLabel(r.storageGb),
+      };
+      const k = orderedGroup.length
+        ? orderedGroup.map((d) => keys[d]).join(" · ")
+        : "__all__";
+      let g = groups.get(k);
+      if (!g) {
+        g = { keys, days: [], prices: [] };
+        groups.set(k, g);
+      }
+      g.days.push(r.days);
+      if (r.price != null) g.prices.push(r.price);
+    }
+    return [...groups.values()]
+      .map((g) => ({
+        keys: g.keys,
+        avgDays: g.days.reduce((a, b) => a + b, 0) / g.days.length,
+        n: g.days.length,
+        medianPrice: g.prices.length ? median(g.prices) : null,
+      }))
+      .sort((a, b) => a.avgDays - b.avgDays);
+  }, [data, fModel, fColor, fStorage, orderedGroup]);
+
+  const filteredTotal = rows.reduce((a, r) => a + r.n, 0);
+  const overallAvg = filteredTotal
+    ? rows.reduce((a, r) => a + r.avgDays * r.n, 0) / filteredTotal
+    : null;
+
+  const dimCols = orderedGroup.length
+    ? orderedGroup.map(() => "1.2fr").join(" ")
+    : "1fr";
+  const gridCols = `${dimCols} 0.9fr 0.7fr 1fr`;
+
+  const daysColor = (d: number) =>
+    d <= 7
+      ? "oklch(0.75 0.15 150)"
+      : d <= 21
+        ? "oklch(0.78 0.14 75)"
+        : "oklch(0.72 0.16 30)";
+
+  const selectStyle: CSSProperties = {
+    background: "oklch(0.16 0.008 250)",
+    border: "1px solid oklch(0.30 0.01 250)",
+    borderRadius: "7px",
+    color: "oklch(0.90 0.01 250)",
+    padding: "6px 10px",
+    fontSize: "13px",
+  };
+
+  const chip = (active: boolean): CSSProperties => ({
+    padding: "6px 12px",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: 600,
+    cursor: "pointer",
+    userSelect: "none",
+    border: active ? "1px solid var(--accent)" : "1px solid oklch(0.30 0.01 250)",
+    background: active ? "var(--accent-soft)" : "transparent",
+    color: active ? "var(--accent-text)" : "oklch(0.62 0.01 250)",
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+      <div>
+        <div style={{ fontSize: "22px", fontWeight: 700 }}>Tempo di vendita</div>
+        <div style={{ fontSize: "13px", color: "oklch(0.55 0.01 250)", marginTop: "4px" }}>
+          Giorni medi di vendita dai venduti (annuncio sparito da Subito). Incrocia
+          modello, colore e taglia come vuoi.
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{ color: "oklch(0.55 0.01 250)", fontSize: "14px" }}>Carico…</div>
+      )}
+      {error && <div style={{ color: "oklch(0.72 0.16 30)", fontSize: "14px" }}>{error}</div>}
+
+      {!loading && !error && data && data.sampleSold === 0 && (
+        <div
+          style={{
+            background: "oklch(0.19 0.008 250)",
+            border: "1px solid oklch(0.27 0.01 250)",
+            borderRadius: "12px",
+            padding: "24px",
+            color: "oklch(0.60 0.01 250)",
+            fontSize: "14px",
+            lineHeight: 1.6,
+          }}
+        >
+          Nessun venduto ancora tracciato in questo verticale. Il dato matura man mano
+          che il Garbage Collector marca gli annunci spariti come <b>venduto_rimosso</b>:
+          servono almeno alcune vendite per stimare i giorni.
+        </div>
+      )}
+
+      {!loading && !error && data && data.sampleSold > 0 && (
+        <>
+          {/* Controlli */}
+          <div
+            style={{
+              background: "oklch(0.19 0.008 250)",
+              border: "1px solid oklch(0.27 0.01 250)",
+              borderRadius: "12px",
+              padding: "16px 18px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "14px",
+            }}
+          >
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "oklch(0.55 0.01 250)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                Raggruppa per
+              </span>
+              {(["model", "color", "storage"] as TtsDim[]).map((d) => (
+                <div key={d} onClick={() => toggleDim(d)} style={chip(groupBy.includes(d))}>
+                  {TTS_DIM_LABEL[d]}
+                </div>
+              ))}
+              <span style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)" }}>
+                {orderedGroup.length === 0 ? "→ totale complessivo" : ""}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  color: "oklch(0.55 0.01 250)",
+                  textTransform: "uppercase",
+                  letterSpacing: "0.04em",
+                }}
+              >
+                Filtra
+              </span>
+              <select value={fModel} onChange={(e) => setFModel(e.target.value)} style={selectStyle}>
+                <option value="">Tutti i modelli</option>
+                {data.models.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+              <select value={fColor} onChange={(e) => setFColor(e.target.value)} style={selectStyle}>
+                <option value="">Tutti i colori</option>
+                {data.colors.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+              <select value={fStorage} onChange={(e) => setFStorage(e.target.value)} style={selectStyle}>
+                <option value="">Tutte le taglie</option>
+                {data.storages.map((s) => (
+                  <option key={s} value={String(s)}>
+                    {ttsStorageLabel(s)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Riepilogo */}
+          <div style={{ display: "flex", gap: "14px", flexWrap: "wrap" }}>
+            <div
+              style={{
+                background: "oklch(0.19 0.008 250)",
+                border: "1px solid oklch(0.27 0.01 250)",
+                borderRadius: "12px",
+                padding: "14px 18px",
+                minWidth: "180px",
+              }}
+            >
+              <div style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700 }}>
+                Media (selezione)
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: "24px", fontWeight: 700, marginTop: "4px" }}>
+                {overallAvg != null ? `${overallAvg.toFixed(1)} gg` : "—"}
+              </div>
+            </div>
+            <div
+              style={{
+                background: "oklch(0.19 0.008 250)",
+                border: "1px solid oklch(0.27 0.01 250)",
+                borderRadius: "12px",
+                padding: "14px 18px",
+                minWidth: "180px",
+              }}
+            >
+              <div style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)", textTransform: "uppercase", letterSpacing: "0.04em", fontWeight: 700 }}>
+                Venduti nel campione
+              </div>
+              <div style={{ fontFamily: MONO, fontSize: "24px", fontWeight: 700, marginTop: "4px" }}>
+                {filteredTotal}
+              </div>
+            </div>
+          </div>
+
+          {/* Tabella pivot */}
+          <div
+            style={{
+              background: "oklch(0.19 0.008 250)",
+              border: "1px solid oklch(0.27 0.01 250)",
+              borderRadius: "12px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: gridCols,
+                gap: "10px",
+                padding: "10px 16px",
+                borderBottom: "1px solid oklch(0.27 0.01 250)",
+                fontSize: "10.5px",
+                fontWeight: 700,
+                color: "oklch(0.55 0.01 250)",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {orderedGroup.length ? (
+                orderedGroup.map((d) => <div key={d}>{TTS_DIM_LABEL[d]}</div>)
+              ) : (
+                <div>Totale</div>
+              )}
+              <div style={{ textAlign: "right" }}>Giorni medi</div>
+              <div style={{ textAlign: "right" }}>Campione</div>
+              <div style={{ textAlign: "right" }}>Prezzo mediano</div>
+            </div>
+            {rows.length === 0 && (
+              <div style={{ padding: "16px", color: "oklch(0.55 0.01 250)", fontSize: "13px" }}>
+                Nessun venduto per questa selezione.
+              </div>
+            )}
+            {rows.map((r, i) => {
+              const thin = r.n < 3;
+              return (
+                <div
+                  key={i}
+                  title={thin ? "Pochi venduti: dato poco affidabile" : undefined}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: gridCols,
+                    gap: "10px",
+                    padding: "11px 16px",
+                    alignItems: "center",
+                    fontSize: "13px",
+                    borderTop: i === 0 ? "none" : "1px solid oklch(0.23 0.008 250)",
+                    opacity: thin ? 0.5 : 1,
+                  }}
+                >
+                  {orderedGroup.length ? (
+                    orderedGroup.map((d) => (
+                      <div key={d} style={{ fontWeight: 600 }}>
+                        {r.keys[d]}
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ fontWeight: 600 }}>tutti i venduti</div>
+                  )}
+                  <div style={{ fontFamily: MONO, fontWeight: 700, textAlign: "right", color: daysColor(r.avgDays) }}>
+                    {r.avgDays.toFixed(1)} gg
+                  </div>
+                  <div style={{ fontFamily: MONO, textAlign: "right", color: "oklch(0.60 0.01 250)" }}>
+                    {r.n}
+                    {thin ? " ⚠" : ""}
+                  </div>
+                  <div style={{ fontFamily: MONO, textAlign: "right" }}>
+                    {r.medianPrice != null ? eur(r.medianPrice) : "—"}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)" }}>
+            Ordinato dal più veloce da vendere. Le righe con meno di 3 venduti (⚠) sono
+            statisticamente fragili. Solo annunci in condizioni sane.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function PipelineScreen(props: {
   deals: Deal[];

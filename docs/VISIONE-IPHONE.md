@@ -60,6 +60,15 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 - ⚪ **Stagionalità** (finestra keynote iPhone): bloccata finché non c'è storico
   `market_trends` di più mesi
 
+## 2b. Tempo di vendita — *"quanti giorni ci mette a vendersi"* (schermata dedicata)
+
+- ✅ **Pivot dei giorni di vendita** dai venduti (`venduto_rimosso`,
+  found→sparizione): si sceglie di raggruppare per **modello / colore / taglia**
+  in qualsiasi combinazione (uno, due, tutti o totale) e si filtra per valore
+  (es. un modello → giorni per ogni suo colore). Tabella ordinata dal più veloce,
+  con campione e prezzo mediano; righe sotto 3 venduti marcate come fragili.
+  Dati già presenti, nuova dimensione colore/taglia prima inutilizzata.
+
 ## 3. Pipeline P&L — *"il gestionale che chiude il loop"*
 
 - ✅ Stadi interessante → contattato → offerta → comprato → in_vendita →

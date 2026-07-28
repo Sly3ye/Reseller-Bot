@@ -346,6 +346,35 @@ export async function fetchTrends(
   return res.json();
 }
 
+// Tempo di vendita: fatti grezzi dei venduti da incrociare in UI.
+export type TimeToSaleRecord = {
+  model: string;
+  color: string | null;
+  storageGb: number | null;
+  days: number;
+  price: number | null;
+};
+
+export type TimeToSaleData = {
+  records: TimeToSaleRecord[];
+  models: string[];
+  colors: string[];
+  storages: number[];
+  sampleSold: number;
+};
+
+export async function fetchTimeToSale(
+  category: Category,
+  signal?: AbortSignal,
+): Promise<TimeToSaleData> {
+  const res = await fetch(`${API_BASE_URL}/api/time-to-sale?category=${category}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /api/time-to-sale failed (${res.status})`);
+  return res.json();
+}
+
 export async function fetchDeals(signal?: AbortSignal): Promise<Deal[]> {
   const res = await fetch(`${API_BASE_URL}/api/deals`, {
     cache: "no-store",

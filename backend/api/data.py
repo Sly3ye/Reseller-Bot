@@ -3,7 +3,11 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from backend.services import get_market_intelligence, list_opportunities
+from backend.services import (
+    get_market_intelligence,
+    get_time_to_sale,
+    list_opportunities,
+)
 from backend.services.reads import _opportunities_table
 
 router = APIRouter(prefix="/api", tags=["data"])
@@ -61,6 +65,18 @@ async def get_trends(
     """Market Intelligence: KPIs, price trend series and per-model stats."""
     try:
         return get_market_intelligence(category=category)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/time-to-sale")
+async def get_time_to_sale_endpoint(
+    category: Category = Query(default="smartphone"),
+) -> dict:
+    """Tempo di vendita affettabile: fatti grezzi dei venduti (modello, colore,
+    taglia, giorni, prezzo) + valori distinti. Il pivot lo fa la UI."""
+    try:
+        return get_time_to_sale(category=category)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
