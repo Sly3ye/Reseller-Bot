@@ -37,6 +37,18 @@ _LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
 _ACTIVE_STATUSES = ("nuovo", "visto")
 _SOLD_STATUSES = ("venduto_rimosso", "scaduto")
 
+# Le due tabelle non hanno le stesse colonne: chiedere una colonna dell'altro
+# verticale fa fallire l'intera query (500 sul feed auto, o — peggio — analitiche
+# vuote dentro un try/except, che sembrano "dati non ancora sufficienti").
+_TECH_ONLY_COLUMNS = frozenset({"storage_gb", "battery_pct", "ai_analysis"})
+_AUTO_ONLY_COLUMNS = frozenset({"year", "km", "transmission", "fuel"})
+
+
+def _cols(table: str, *names: str) -> str:
+    """Lista di colonne per una select, senza quelle assenti in quel verticale."""
+    drop = _TECH_ONLY_COLUMNS if table.endswith("_auto") else _AUTO_ONLY_COLUMNS
+    return ", ".join(n for n in names if n not in drop)
+
 # Giorni di permanenza in stock assunti quando i venduti non bastano ancora a
 # misurarli davvero (serve al costo di magazzino nel tetto d'acquisto). Un mese
 # è la stima prudente: appena il Garbage Collector accumula venduti, subentra
@@ -544,7 +556,7 @@ def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
     conteggi, dai listing attivi — popola i menu a tendina della dashboard."""
     rows = (
         db.table(table)
-        .select("variant_key, storage_gb, color, condition_tier")
+        .select(_cols(table, "variant_key", "storage_gb", "color", "condition_tier"))
         .in_("status", list(_ACTIVE_STATUSES))
         .execute()
         .data
@@ -818,7 +830,7 @@ def list_opportunities(
     facets = _opportunity_facets(db, table)
 
     query = db.table(table).select("*").in_("status", list(_ACTIVE_STATUSES))
-    if storage is not None:
+    if storage is not None and not table.endswith("_auto"):
         query = query.eq("storage_gb", storage)
     if color:
         query = query.eq("color", color)
@@ -999,8 +1011,10 @@ def get_time_to_sale(
         rows = (
             db.table(table)
             .select(
-                "target_id, color, storage_gb, asking_price, "
-                "found_at, updated_at, condition_tier"
+                _cols(
+                    table, "target_id", "color", "storage_gb", "asking_price",
+                    "found_at", "updated_at", "condition_tier",
+                )
             )
             .in_("status", list(_SOLD_STATUSES))
             .order("updated_at", desc=True)
@@ -1105,8 +1119,11 @@ def _model_analytics(
         rows = (
             db.table(table)
             .select(
-                "target_id, storage_gb, condition_tier, asking_price, "
-                "seller_id, seller_type, ai_analysis, found_at"
+                _cols(
+                    table, "target_id", "storage_gb", "condition_tier",
+                    "asking_price", "seller_id", "seller_type", "ai_analysis",
+                    "found_at",
+                )
             )
             .in_("status", list(_ACTIVE_STATUSES))
             .limit(20000)
