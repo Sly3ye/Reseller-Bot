@@ -124,7 +124,7 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 > **Stato: tutti i gap implementabili sono chiusi.** Resta solo la ⚪
 > stagionalità, che dipende dall'accumulo di mesi di `market_trends` e non si
 > può anticipare. Il verticale iPhone è completo e utilizzabile: si passa alle
-> **auto**.
+> **auto** → [VISIONE-AUTO.md](VISIONE-AUTO.md).
 
 ---
 
