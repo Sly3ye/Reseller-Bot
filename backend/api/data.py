@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.services import (
+    get_depreciation,
     get_market_intelligence,
     get_time_to_sale,
     list_opportunities,
@@ -65,6 +66,19 @@ async def get_trends(
     """Market Intelligence: KPIs, price trend series and per-model stats."""
     try:
         return get_market_intelligence(category=category)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/depreciation")
+async def get_depreciation_endpoint(
+    category: Category = Query(default="smartphone"),
+) -> dict:
+    """Curva di deprezzamento per variante: prezzo mediano in funzione dell'età
+    del modello, perdita attesa a 12 mesi, costo di magazzino, confronto fra
+    generazioni della stessa linea."""
+    try:
+        return get_depreciation(category=category)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

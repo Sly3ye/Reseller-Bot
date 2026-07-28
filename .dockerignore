@@ -6,6 +6,6 @@ __pycache__
 frontend
 media
 database
-scripts
+
 *.md
 .env

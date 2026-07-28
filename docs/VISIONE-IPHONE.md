@@ -53,8 +53,12 @@ Lista filtrabile + card espandibile con assistente di trattativa.
   (sell-through, giorni di vendita, domanda/offerta) accanto a ogni modello +
   offerta per taglio di memoria (annunci attivi). Distingue margine alto ma
   illiquido (capitale fermo) dall'affare che gira davvero.
-- ◻️ 🟡 **Curva di deprezzamento per variante** (non solo top model) + confronto
-  tra modelli
+- ✅ **Curva di deprezzamento per variante** + confronto tra modelli: prezzo
+  mediano per **età del modello**, una curva per linea (base/Plus/Pro/Pro Max) e
+  taglio di memoria. Dà **perdita attesa a 12 mesi** (€ e %), **costo di
+  magazzino** (€/mese di capitale che evapora) e **valore residuo %** fra
+  generazioni. Cross-sezionale (il 14 Pro di oggi = il 15 Pro fra un anno),
+  quindi leggibile subito senza aspettare mesi di `market_trends`.
 - 🔧 Sell-through, time-to-sale, prezzo di vendita reale: implementati, **maturano
   con i venduti** (il Garbage Collector deve accumulare `venduto_rimosso`)
 - ⚪ **Stagionalità** (finestra keynote iPhone): bloccata finché non c'è storico
@@ -104,12 +108,13 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 3. ✅ **Feedback loop P&L** (previsto vs reale) — FATTO
 4. ✅ **Pannello salute + copertura** — FATTO
 5. ✅ **Sezione Venditori** in Market Intelligence — FATTO
-6. ⚪ **Deprezzamento / stagionalità** — aspettano l'accumulo di storico
+6. ✅ **Curva di deprezzamento** per variante + confronto modelli — FATTO
+7. ⚪ **Stagionalità** (finestra keynote) — aspetta l'accumulo di storico
 
-> **Stato: i gap 🔴 e 🟡 sono chiusi.** Resta solo il ⚪ deprezzamento/
-> stagionalità, che dipende dall'accumulo di mesi di `market_trends`. Il
-> verticale iPhone è di fatto completo e utilizzabile: quando lo storico sarà
-> maturo si aggiungono le curve, poi si passa alle **auto**.
+> **Stato: tutti i gap implementabili sono chiusi.** Resta solo la ⚪
+> stagionalità, che dipende dall'accumulo di mesi di `market_trends` e non si
+> può anticipare. Il verticale iPhone è completo e utilizzabile: si passa alle
+> **auto**.
 
 ---
 

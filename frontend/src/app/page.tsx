@@ -9,6 +9,7 @@ import {
   fetchAutomations,
   fetchDeals,
   fetchDealsSummary,
+  fetchDepreciation,
   fetchOpportunities,
   fetchScraperHealth,
   fetchSettings,
@@ -31,6 +32,9 @@ import {
   type Deal,
   type DealStage,
   type DealsSummary,
+  type DepreciationCurve,
+  type DepreciationData,
+  type DepreciationPoint,
   type OpportunityFacets,
   type PresetMode,
   type ScraperHealth,
@@ -109,6 +113,7 @@ export default function FlipRadar() {
   const [total, setTotal] = useState(0);
   const [facets, setFacets] = useState<OpportunityFacets>(EMPTY_FACETS);
   const [intel, setIntel] = useState<ApiTrends | null>(null);
+  const [depreciation, setDepreciation] = useState<DepreciationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,6 +136,11 @@ export default function FlipRadar() {
       .then(setIntel)
       .catch(() => {
         if (!controller.signal.aborted) setIntel(null);
+      });
+    fetchDepreciation(category, controller.signal)
+      .then(setDepreciation)
+      .catch(() => {
+        if (!controller.signal.aborted) setDepreciation(null);
       });
     return () => controller.abort();
   }, [category]);
@@ -714,6 +724,7 @@ export default function FlipRadar() {
               loading={loading}
               error={error}
               intel={intel}
+              depreciation={depreciation}
               trendPaths={trendPaths}
               batchLastRun={batchLastRun}
             />
@@ -2827,6 +2838,7 @@ function IntelScreen(props: {
   loading: boolean;
   error: string | null;
   intel: ApiTrends | null;
+  depreciation: DepreciationData | null;
   trendPaths: { linePath: string; areaPath: string; min: number; max: number } | null;
   batchLastRun: string;
 }) {
@@ -2968,10 +2980,387 @@ function IntelScreen(props: {
 
           <BuyRanking models={intel?.models ?? []} loading={props.loading} />
 
+          <DepreciationSection data={props.depreciation} />
+
           <SellerRanking sellers={intel?.sellers ?? []} />
         </>
       )}
     </div>
+  );
+}
+
+// Colore per linea di prodotto: la stessa linea tiene il colore fra grafico,
+// legenda e tabella, così l'occhio segue una generazione sola.
+const LINE_COLORS: Record<string, string> = {
+  "": "oklch(0.70 0.15 250)",
+  mini: "oklch(0.75 0.13 200)",
+  plus: "oklch(0.72 0.15 300)",
+  pro: "oklch(0.75 0.15 150)",
+  "pro-max": "oklch(0.78 0.15 75)",
+  e: "oklch(0.72 0.15 20)",
+};
+
+function lineColor(line: string): string {
+  return LINE_COLORS[line] ?? "oklch(0.70 0.02 250)";
+}
+
+function DepreciationSection(props: { data: DepreciationData | null }) {
+  const { data } = props;
+  const [storage, setStorage] = useState<number | null>(128);
+
+  const curves = useMemo(
+    () => (data?.curves ?? []).filter((c) => c.storage === storage),
+    [data, storage],
+  );
+
+  if (!data || !data.supported || data.curves.length === 0) return null;
+
+  const summary = data.summary;
+  const rows = [...curves]
+    .flatMap((c) => c.points)
+    .sort((a, b) => (b.loss12mPct ?? -1) - (a.loss12mPct ?? -1));
+
+  const card: CSSProperties = {
+    background: "oklch(0.19 0.008 250)",
+    border: "1px solid oklch(0.27 0.01 250)",
+    borderRadius: "12px",
+    padding: "22px",
+  };
+  const header: CSSProperties = {
+    fontSize: "11px",
+    fontWeight: 600,
+    color: "oklch(0.46 0.01 250)",
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    textAlign: "right",
+    padding: "0 10px 8px",
+  };
+  const cell: CSSProperties = {
+    fontFamily: MONO,
+    fontSize: "13px",
+    textAlign: "right",
+    padding: "9px 10px",
+    borderTop: "1px solid oklch(0.24 0.01 250)",
+  };
+  const chip = (active: boolean): CSSProperties => ({
+    padding: "5px 12px",
+    borderRadius: "999px",
+    fontSize: "12px",
+    fontWeight: 600,
+    cursor: "pointer",
+    border: `1px solid ${active ? "var(--accent)" : "oklch(0.30 0.01 250)"}`,
+    background: active ? "oklch(0.28 0.06 250)" : "transparent",
+    color: active ? "var(--accent)" : "oklch(0.62 0.01 250)",
+  });
+
+  return (
+    <div style={card}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "16px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "14px", fontWeight: 700 }}>
+            📉 Curva di deprezzamento
+          </div>
+          <div
+            style={{
+              fontSize: "12.5px",
+              color: "oklch(0.62 0.01 250)",
+              marginTop: "3px",
+              maxWidth: "620px",
+            }}
+          >
+            Prezzo mediano per età del modello, a parità di linea e memoria. Il 14
+            Pro di oggi è quanto varrà il 15 Pro fra un anno: da lì la perdita
+            attesa e il costo di tenerlo fermo in magazzino.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <div onClick={() => setStorage(null)} style={chip(storage === null)}>
+            tutte
+          </div>
+          {data.storages.map((s) => (
+            <div key={s} onClick={() => setStorage(s)} style={chip(storage === s)}>
+              {s >= 1024 ? "1TB" : `${s}GB`}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {(summary.best || summary.worst) && (
+        <div
+          style={{
+            display: "flex",
+            gap: "22px",
+            flexWrap: "wrap",
+            margin: "16px 0 4px",
+            fontSize: "12.5px",
+          }}
+        >
+          {summary.best && (
+            <div>
+              <span style={{ color: "oklch(0.46 0.01 250)" }}>Tiene il valore </span>
+              <b style={{ color: "oklch(0.75 0.15 150)" }}>
+                {summary.best.model} {summary.best.storageLabel}
+              </b>{" "}
+              <span style={{ fontFamily: MONO }}>−{summary.best.loss12mPct}%/anno</span>
+            </div>
+          )}
+          {summary.worst && (
+            <div>
+              <span style={{ color: "oklch(0.46 0.01 250)" }}>Brucia di più </span>
+              <b style={{ color: "oklch(0.72 0.16 25)" }}>
+                {summary.worst.model} {summary.worst.storageLabel}
+              </b>{" "}
+              <span style={{ fontFamily: MONO }}>−{summary.worst.loss12mPct}%/anno</span>
+            </div>
+          )}
+          {summary.avgLoss12mPct != null && (
+            <div>
+              <span style={{ color: "oklch(0.46 0.01 250)" }}>Media gamma </span>
+              <span style={{ fontFamily: MONO }}>−{summary.avgLoss12mPct}%/anno</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {curves.length > 0 ? (
+        <>
+          <DepreciationChart curves={curves} />
+          <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", marginTop: "10px" }}>
+            {curves.map((c) => (
+              <div
+                key={c.line}
+                style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}
+              >
+                <span
+                  style={{
+                    width: "14px",
+                    height: "3px",
+                    borderRadius: "2px",
+                    background: lineColor(c.line),
+                  }}
+                />
+                <span style={{ color: "oklch(0.72 0.01 250)" }}>{c.lineLabel}</span>
+                <span style={{ color: "oklch(0.46 0.01 250)", fontFamily: MONO }}>
+                  n={c.sample}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ overflowX: "auto", marginTop: "18px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: "720px" }}>
+              <thead>
+                <tr>
+                  <th style={{ ...header, textAlign: "left" }}>Modello</th>
+                  <th style={header}>Età</th>
+                  <th style={header}>Mediana</th>
+                  <th style={header}>Valore residuo</th>
+                  <th style={header}>Perdita 12 mesi</th>
+                  <th style={header}>Costo magazzino</th>
+                  <th style={header}>Campione</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((p) => (
+                  <tr key={`${p.modelKey}-${p.storageLabel}`}>
+                    <td style={{ ...cell, textAlign: "left", fontFamily: "inherit" }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          width: "8px",
+                          height: "8px",
+                          borderRadius: "50%",
+                          background: lineColor(p.line),
+                          marginRight: "8px",
+                        }}
+                      />
+                      {p.model}
+                      <span style={{ color: "oklch(0.46 0.01 250)" }}> {p.storageLabel}</span>
+                    </td>
+                    <td style={{ ...cell, color: "oklch(0.62 0.01 250)" }}>
+                      {p.ageYears.toFixed(1)}a
+                    </td>
+                    <td style={{ ...cell, fontWeight: 700 }}>{eur(p.median)}</td>
+                    <td style={cell}>
+                      {p.retentionPct != null ? (
+                        <span style={{ color: retentionColor(p.retentionPct) }}>
+                          {p.retentionPct}%
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td style={cell}>
+                      {p.loss12mPct != null ? (
+                        <span
+                          title={`Stimato dal salto verso ${p.vsModel}`}
+                          style={{ color: lossColor(p.loss12mPct) }}
+                        >
+                          −{eur(p.loss12mEur ?? 0)} · {p.loss12mPct}%
+                        </span>
+                      ) : (
+                        <span style={{ color: "oklch(0.40 0.01 250)" }}>
+                          generazione più vecchia
+                        </span>
+                      )}
+                    </td>
+                    <td style={cell}>
+                      {p.carryCostMonthEur != null ? (
+                        <span style={{ color: "oklch(0.62 0.01 250)" }}>
+                          {eur(p.carryCostMonthEur)}/mese
+                        </span>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td style={{ ...cell, color: "oklch(0.46 0.01 250)" }}>{p.sample}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ fontSize: "11.5px", color: "oklch(0.46 0.01 250)", marginTop: "10px" }}>
+            Valore residuo = rispetto al modello più recente della stessa linea. Le
+            mediane vengono dagli annunci attivi sani (outlier esclusi con IQR);
+            servono almeno 3 annunci per variante e 2 generazioni per tracciare una
+            curva.
+          </div>
+        </>
+      ) : (
+        <div
+          style={{
+            padding: "28px",
+            textAlign: "center",
+            color: "oklch(0.46 0.01 250)",
+            fontSize: "13px",
+          }}
+        >
+          Campione insufficiente per questo taglio di memoria.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function retentionColor(pct: number): string {
+  if (pct >= 80) return "oklch(0.75 0.15 150)";
+  if (pct >= 60) return "oklch(0.80 0.14 85)";
+  return "oklch(0.72 0.16 25)";
+}
+
+function lossColor(pct: number): string {
+  if (pct <= 12) return "oklch(0.75 0.15 150)";
+  if (pct <= 22) return "oklch(0.80 0.14 85)";
+  return "oklch(0.72 0.16 25)";
+}
+
+function DepreciationChart(props: { curves: DepreciationCurve[] }) {
+  const { curves } = props;
+  const W = 600;
+  const H = 230;
+  const padL = 46;
+  const padR = 14;
+  const padT = 14;
+  const padB = 30;
+
+  const points: DepreciationPoint[] = curves.flatMap((c) => c.points);
+  if (points.length === 0) return null;
+
+  const ages = points.map((p) => p.ageYears);
+  const minAge = Math.min(...ages);
+  const maxAge = Math.max(...ages);
+  const maxPrice = Math.max(...points.map((p) => p.median));
+  const ageSpan = maxAge - minAge || 1;
+
+  const x = (age: number) => padL + ((age - minAge) / ageSpan) * (W - padL - padR);
+  // Asse Y sempre ancorato a 0: la caduta si legge in proporzione al valore.
+  const y = (price: number) => padT + (1 - price / (maxPrice * 1.1)) * (H - padT - padB);
+
+  const gridPrices = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(maxPrice * 1.1 * f));
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      style={{ width: "100%", height: "260px", display: "block", marginTop: "14px" }}
+    >
+      {gridPrices.map((price) => (
+        <g key={price}>
+          <line
+            x1={padL}
+            x2={W - padR}
+            y1={y(price)}
+            y2={y(price)}
+            stroke="oklch(0.26 0.01 250)"
+            strokeWidth="1"
+          />
+          <text
+            x={padL - 8}
+            y={y(price) + 4}
+            textAnchor="end"
+            fontSize="10"
+            fill="oklch(0.46 0.01 250)"
+          >
+            {price}€
+          </text>
+        </g>
+      ))}
+
+      {curves.map((c) => {
+        const sorted = [...c.points].sort((a, b) => a.ageYears - b.ageYears);
+        const path = sorted
+          .map((p, i) => `${i === 0 ? "M" : "L"} ${x(p.ageYears)} ${y(p.median)}`)
+          .join(" ");
+        return (
+          <g key={c.line}>
+            <path
+              d={path}
+              fill="none"
+              stroke={lineColor(c.line)}
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {sorted.map((p) => (
+              <circle
+                key={p.modelKey}
+                cx={x(p.ageYears)}
+                cy={y(p.median)}
+                r="4"
+                fill="oklch(0.19 0.008 250)"
+                stroke={lineColor(c.line)}
+                strokeWidth="2"
+              >
+                <title>
+                  {`${p.model} ${p.storageLabel} · ${p.ageYears.toFixed(1)} anni · ${p.median}€ (n=${p.sample})`}
+                </title>
+              </circle>
+            ))}
+          </g>
+        );
+      })}
+
+      {/* Asse X: l'età in anni, un tick per generazione presente. */}
+      {[...new Set(points.map((p) => Math.round(p.ageYears * 10) / 10))].map((age) => (
+        <text
+          key={age}
+          x={x(age)}
+          y={H - 10}
+          textAnchor="middle"
+          fontSize="10"
+          fill="oklch(0.46 0.01 250)"
+        >
+          {age.toFixed(1)}a
+        </text>
+      ))}
+    </svg>
   );
 }
 

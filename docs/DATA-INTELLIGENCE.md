@@ -83,6 +83,32 @@ e cosa conviene davvero":
   quanti campioni (attivi + venduti) sostengono il valore equo → ti fidi degli
   affari "solidi" ed eviti di agire su pool sottili.
 
+## Curva di deprezzamento (`depreciation.py`)
+
+Quanto vale un iPhone **in funzione di quanti anni ha**, e quanto costa tenerlo
+fermo. Approccio **cross-sezionale**: a parità di linea (base/mini/Plus/Pro/Pro
+Max/"e") e di memoria, i modelli in vendita oggi sono lo stesso oggetto a età
+diverse — la mediana del 14 Pro 256GB di oggi stima quanto varrà il 15 Pro
+256GB fra un anno. Nessuna raccolta aggiuntiva: parte dai pool per variante già
+IQR-puliti della valutazione (≥3 annunci per variante, ≥2 generazioni per linea).
+
+- **Perdita a 12 mesi** (€ e %): salto verso la generazione precedente,
+  annualizzato sulla distanza d'età reale fra le due.
+- **Costo di magazzino** (€/mese): quella perdita ÷ 12 — il capitale che evapora
+  mentre l'annuncio è fermo. Da leggere insieme alla **liquidità**: margine alto
+  + bassa liquidità + deprezzamento veloce = affare che si mangia da solo.
+- **Valore residuo %**: rispetto al modello più recente della stessa linea → il
+  confronto diretto fra generazioni.
+
+Le date di uscita sono una **regola, non una tabella**: settembre dell'anno
+`2008 + numero` (13→2021 … 17→2025), febbraio dell'anno dopo per la linea "e"
+(16e → feb 2025). Vale anche per i modelli non ancora usciti, quindi non va
+aggiornata a ogni keynote.
+
+> ⚠️ Diverso dal **trend storico** di `market_trends` (come si è mosso il prezzo
+> di *questo* modello nei giorni scorsi), che richiede mesi di storico. Questa
+> curva è leggibile dal primo giorno di raccolta.
+
 ## Pipeline P&L (`api/deals.py`)
 
 Il gestionale: ogni affare attraversa `interessante → contattato → offerta →

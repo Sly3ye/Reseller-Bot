@@ -346,6 +346,59 @@ export async function fetchTrends(
   return res.json();
 }
 
+// Curva di deprezzamento: prezzo mediano in funzione dell'età del modello.
+export type DepreciationPoint = {
+  modelKey: string;
+  model: string;
+  line: string;
+  lineLabel: string;
+  storage: number | null;
+  storageLabel: string;
+  ageYears: number;
+  releasedAt: string;
+  median: number;
+  sample: number;
+  retentionPct: number | null;
+  loss12mEur: number | null;
+  loss12mPct: number | null;
+  carryCostMonthEur: number | null;
+  vsModel: string | null;
+};
+
+export type DepreciationCurve = {
+  line: string;
+  lineLabel: string;
+  storage: number | null;
+  storageLabel: string;
+  points: DepreciationPoint[];
+  sample: number;
+};
+
+export type DepreciationData = {
+  supported: boolean;
+  asOf?: string;
+  storages: number[];
+  curves: DepreciationCurve[];
+  models: DepreciationPoint[];
+  summary: {
+    best: { model: string; storageLabel: string; loss12mPct: number } | null;
+    worst: { model: string; storageLabel: string; loss12mPct: number } | null;
+    avgLoss12mPct: number | null;
+  };
+};
+
+export async function fetchDepreciation(
+  category: Category,
+  signal?: AbortSignal,
+): Promise<DepreciationData> {
+  const res = await fetch(`${API_BASE_URL}/api/depreciation?category=${category}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /api/depreciation failed (${res.status})`);
+  return res.json();
+}
+
 // Tempo di vendita: fatti grezzi dei venduti da incrociare in UI.
 export type TimeToSaleRecord = {
   model: string;

@@ -66,8 +66,9 @@ def test_scoring():
         seller_type="privato", defects=["schermo-rotto"], urgency=[],
         features=[], battery_pct=None, has_price_drop=False,
     )
-    check("repair_total", ev["repair"]["total"], 300)
-    check("net_margin", ev["repair"]["netMarginEur"], 50.0)
+    # Ricambi Apple per fascia (dalle Impostazioni): un Pro Max costa 380, non 300.
+    check("repair_total", ev["repair"]["total"], 380)
+    check("net_margin", ev["repair"]["netMarginEur"], -30.0)
     check("offer<asking", ev["suggestedOffer"] is not None and ev["suggestedOffer"] < 300, True)
     ev2 = scoring.evaluate_opportunity(
         category="automobile", title="Golf GTI", asking=17500.0, market_avg=21000.0,
