@@ -12,6 +12,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
+# Script operativi (seed della flotta, merge tra istanze) eseguibili in-container
+# via `docker compose exec backend python scripts/<nome>.py`.
+COPY scripts/ ./scripts/
 
 # Le immagini scaricate vivono qui (montato come volume in docker-compose).
 ENV MEDIA_ROOT=/data/media
