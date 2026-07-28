@@ -29,6 +29,7 @@ from tenacity import (
     retry_if_exception_type,
     stop_after_attempt,
     wait_exponential,
+    wait_random,
 )
 
 from backend.core.config import settings
@@ -57,6 +58,10 @@ class SubitoScraper(BaseScraper):
     IMAGE_CONCURRENCY = 6    # download immagini paralleli (CDN diretta)
 
     MAX_RETRIES = 5          # tentativi sull'api_client (nodo proxy/ban/rate limit)
+    # Timeout dedicato alle chiamate hades: un nodo residenziale che non manda
+    # un byte in 15s è morto, inutile aspettarne 30 per cinque volte di fila
+    # (17 target in serie devono stare dentro il giro da 5 minuti dello sniper).
+    API_TIMEOUT_S = 15.0
 
     LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
     CONTENT_TYPE_EXT = {
@@ -91,17 +96,23 @@ class SubitoScraper(BaseScraper):
         curl_cffi imita il fingerprint di Safari/Firefox (configurabile via
         SCRAPER_IMPERSONATE) e passa. Instradata dal proxy residenziale se
         configurato; le immagini restano su httpx diretto (vedi _make_cdn_client).
+
+        Sessione USA E GETTA, una per richiesta: curl_cffi tiene il pool di
+        connessioni aperto, quindi riusare la sessione significa riuscire dallo
+        STESSO nodo residenziale con la STESSA impronta — e un 403 di Akamai (o
+        un nodo morto) si ripeterebbe identico a ogni retry. Ricrearla forza il
+        gateway IPRoyal a dare un IP nuovo e ripesca un'impronta dal pool.
         """
         proxies = None
         if settings.proxy_url:
             proxies = {"http": settings.proxy_url, "https": settings.proxy_url}
-        # Rotazione: un profilo a caso dal pool per ogni sessione (per target),
-        # così un eventuale flag Akamai su un profilo non blocca tutto.
+        # Rotazione: un profilo a caso dal pool a ogni richiesta, così un
+        # eventuale flag Akamai su un profilo non blocca tutto.
         pool = settings.impersonate_pool or ["safari"]
         return AsyncSession(
             impersonate=random.choice(pool),
             proxies=proxies,
-            timeout=self.timeout_s,
+            timeout=min(self.timeout_s, self.API_TIMEOUT_S),
             headers={"Accept": "application/json"},
         )
 
@@ -151,49 +162,47 @@ class SubitoScraper(BaseScraper):
         listings: list[ScrapedListing] = []
         seen_urls: set[str] = set()
 
-        async with self._make_api_client() as api_client:
-            start = 0
-            count_all: int | None = None
-            for _ in range(request_cap):
+        start = 0
+        count_all: int | None = None
+        for _ in range(request_cap):
+            if len(listings) >= max_results:
+                break
+
+            payload = await self._fetch_page(
+                query, page_size, start, min_price, max_price
+            )
+            ads = payload.get("ads") or []
+            if not ads:
+                break
+            if count_all is None:
+                count_all = payload.get("count_all") or 0
+
+            for ad in ads:
+                if filters and not self._passes_filters(ad, filters):
+                    continue
+                listing = self._parse_ad(ad)
+                if listing is None or listing.url in seen_urls:
+                    continue
+                if filters and not self._passes_listing_filters(listing, filters):
+                    continue
+                if match_query and not self._matches_query(listing.title, match_query):
+                    continue
+                if not self._within_price(listing.price_amount, min_price, max_price):
+                    continue
+
+                seen_urls.add(listing.url)
+                listings.append(listing)
                 if len(listings) >= max_results:
                     break
 
-                payload = await self._fetch_page(
-                    api_client, query, page_size, start, min_price, max_price
-                )
-                ads = payload.get("ads") or []
-                if not ads:
-                    break
-                if count_all is None:
-                    count_all = payload.get("count_all") or 0
-
-                for ad in ads:
-                    if filters and not self._passes_filters(ad, filters):
-                        continue
-                    listing = self._parse_ad(ad)
-                    if listing is None or listing.url in seen_urls:
-                        continue
-                    if filters and not self._passes_listing_filters(listing, filters):
-                        continue
-                    if match_query and not self._matches_query(listing.title, match_query):
-                        continue
-                    if not self._within_price(listing.price_amount, min_price, max_price):
-                        continue
-
-                    seen_urls.add(listing.url)
-                    listings.append(listing)
-                    if len(listings) >= max_results:
-                        break
-
-                start += page_size
-                if count_all and start >= count_all:
-                    break
+            start += page_size
+            if count_all and start >= count_all:
+                break
 
         return listings[:max_results]
 
     async def _fetch_page(
         self,
-        client: AsyncSession,
         query: str,
         limit: int,
         start: int,
@@ -213,34 +222,37 @@ class SubitoScraper(BaseScraper):
         if max_price is not None:
             params["pe"] = str(max_price)
 
-        response = await self._get_with_retry(client, self.HADES_URL, params)
+        response = await self._get_with_retry(self.HADES_URL, params)
         return response.json()
 
     @retry(
         stop=stop_after_attempt(MAX_RETRIES),
-        wait=wait_exponential(multiplier=0.5, max=8),
+        # Jitter: 17 target in serie ritentano sfalsati, non tutti sullo stesso
+        # istante (un burst sincrono è esattamente ciò che Akamai profila).
+        wait=wait_exponential(multiplier=0.5, max=8) + wait_random(0, 1.5),
         retry=retry_if_exception_type((CurlError, RetryableHTTPError)),
         reraise=True,
     )
-    async def _get_with_retry(
-        self,
-        client: AsyncSession,
-        url: str,
-        params: dict[str, str],
-    ):
+    async def _get_with_retry(self, url: str, params: dict[str, str]):
         """GET con retry (tenacity): fino a 5 tentativi su 403/429/500 o errori di
         rete/proxy (CurlError copre timeout, connessione, ProxyError).
 
-        Un ban temporaneo / rate limit del nodo residenziale IPRoyal viene
-        ritentato con exponential backoff (cambiando IP a ogni giro).
+        Ogni tentativo apre una sessione NUOVA: è ciò che cambia davvero nodo
+        residenziale e impronta TLS (vedi ``_make_api_client``). Ritentare sulla
+        stessa sessione riusava la connessione, quindi lo stesso IP già bloccato
+        da Akamai o lo stesso nodo IPRoyal morto — e i 5 tentativi fallivano
+        tutti allo stesso modo.
         """
-        response = await client.get(url, params=params)
-        if response.status_code in RETRYABLE_STATUS:
-            raise RetryableHTTPError(f"HTTP {response.status_code} da hades")
-        if response.status_code >= 400:
-            # altri 4xx/5xx: errore reale, non si ritenta (fuori dal retry set)
-            raise RuntimeError(f"HTTP {response.status_code} da hades (non ritentabile)")
-        return response
+        async with self._make_api_client() as client:
+            response = await client.get(url, params=params)
+            if response.status_code in RETRYABLE_STATUS:
+                raise RetryableHTTPError(f"HTTP {response.status_code} da hades")
+            if response.status_code >= 400:
+                # altri 4xx/5xx: errore reale, non si ritenta (fuori dal retry set)
+                raise RuntimeError(
+                    f"HTTP {response.status_code} da hades (non ritentabile)"
+                )
+            return response
 
     # ----------------------------------------------------------------- parse
 

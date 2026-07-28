@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import re
 import statistics
 import uuid
@@ -816,7 +817,12 @@ async def run_sniper_all_products(
     # UNA volta a fine giro, arricchiti con la BI completa (non per-target).
     new_by_cat: dict[str, list[dict[str, Any]]] = {}
     drops_by_cat: dict[str, list[dict[str, Any]]] = {}
-    for target in targets:
+    for index, target in enumerate(targets):
+        # Pausa irregolare tra un target e l'altro: 17 ricerche identiche
+        # sparate a raffica sono un pattern che Akamai profila (ed è la causa
+        # dei 403 sporadici). Costa ~10s su un giro da 5 minuti.
+        if index:
+            await asyncio.sleep(random.uniform(0.4, 1.2))
         query = target["query"]
         target_category = target["category"]
         strict_filters = target.get("strict_filters") or None
