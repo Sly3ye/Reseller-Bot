@@ -25,6 +25,18 @@ export type PriceDrop = {
   changedAt: string | null;
 };
 
+// E — Watch di prezzo: storico completo dei ribassi del singolo annuncio.
+export type PriceWatch = {
+  firstPrice: number | null;
+  currentPrice: number | null;
+  dropCount: number;
+  totalDropEur: number | null;
+  totalDropPct: number | null;
+  lastDropAt: string | null;
+  daysSinceLastDrop: number | null;
+  motivation: "alto" | "medio" | "basso";
+};
+
 export type ScorePoint = { label: string; points: number };
 
 export type SellerProfile = {
@@ -54,6 +66,7 @@ export type ApiOpportunity = {
   marginEur: number | null;
   marginPct: number | null;
   priceDrop: PriceDrop | null;
+  priceWatch: PriceWatch | null;
   description: string | null;
   images: string[];
   foundAt: string | null;
@@ -159,6 +172,7 @@ export type ApiModelStat = {
   spreadEur: number | null;
   activeDeals: number;
   storagePremium: Record<string, number>;
+  storageVolume: Record<string, number>;
   conditionImpact: Record<string, number>;
   sellers: number;
   fintoPrivato: number;
@@ -177,6 +191,9 @@ export type ApiModelStat = {
   inflow7d: number;
   outflow7d: number;
   demandIndex: number | null;
+  // F — liquidità per variante (quanto in fretta gira / quanta domanda)
+  liquidityScore: number | null;
+  liquidityLevel: "alta" | "media" | "bassa" | null;
   // ranking
   roiPerDayPct: number | null;
   opportunityScore: number | null;

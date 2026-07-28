@@ -21,11 +21,14 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 - ✅ Filtri (modello, memoria, colore, condizione, classe affare, margine min,
   ricerca) + facets + paginazione + sort (score / recenti / margine)
 - ✅ Card: badge condizione/classe affare/urgenza/riparazione/🟢 compra ora/
-  🛑 rischio, specs (memoria, colore, batteria, luogo), Deal Score
+  🛑 rischio/↓ motivato, specs (memoria, colore, batteria, luogo), Deal Score
 - ✅ **Risk Score anti-frode** (5ª domanda "è sicuro comprarlo"): semaforo che
   aggrega iCloud lock, pattern truffa a distanza (pagamento anticipato / no
   ritiro), prezzo sospetto, finto-privato, venditore senza storico; badge in
   card + pannello motivi nell'espansa. Dati già estratti, zero re-scrape.
+- ✅ **Watch di prezzo** (E): storico completo dei ribassi del singolo annuncio
+  (quante volte, quanto in € e %, da quanti giorni fermo) → quanto è motivato
+  il venditore. Badge "↓ motivato" in card + chip "Ribassi" nell'espansa.
 - ✅ Espansa: valore equo (fonte + affidabilità), **max bid**, offerta
   consigliata, **ROI/giorno**, ribasso, **venditore + profilo motivato**,
   margine netto post-riparazione (solo ricambio Apple), analisi AI, breakdown
@@ -46,6 +49,10 @@ Lista filtrabile + card espandibile con assistente di trattativa.
   condizione, prezzo→giorni, distribuzione motivi AI, venditori / finti privati
 - ✅ **Sezione Venditori** (ranking globale: più attivi / più motivati / finti
   privati) — la priorità di contatto
+- ✅ **Liquidità per variante** (F): indice 0-100 + livello 💧 alta/media/bassa
+  (sell-through, giorni di vendita, domanda/offerta) accanto a ogni modello +
+  offerta per taglio di memoria (annunci attivi). Distingue margine alto ma
+  illiquido (capitale fermo) dall'affare che gira davvero.
 - ◻️ 🟡 **Curva di deprezzamento per variante** (non solo top model) + confronto
   tra modelli
 - 🔧 Sell-through, time-to-sale, prezzo di vendita reale: implementati, **maturano

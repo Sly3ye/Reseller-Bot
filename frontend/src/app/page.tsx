@@ -1458,6 +1458,27 @@ function SniperRow(props: {
                 {item.risk.label}
               </div>
             )}
+            {item.priceWatch && item.priceWatch.motivation === "alto" && (
+              <div
+                style={{
+                  fontSize: "11px",
+                  padding: "1px 7px",
+                  borderRadius: "4px",
+                  background: "oklch(0.72 0.18 150 / 0.16)",
+                  color: "oklch(0.82 0.16 150)",
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                }}
+                title={
+                  `Ha già ribassato ${item.priceWatch.dropCount} ${item.priceWatch.dropCount === 1 ? "volta" : "volte"}` +
+                  (item.priceWatch.totalDropEur ? ` (−${eur(item.priceWatch.totalDropEur)})` : "") +
+                  ": venditore molto motivato"
+                }
+              >
+                ↓ motivato
+              </div>
+            )}
             {item.urgencyFlags.length > 0 && (
               <div
                 style={{
@@ -1852,7 +1873,27 @@ function NegotiationAssistant(props: {
       hint: item.daysOnline >= 14 ? "invenduto: più margine di trattativa" : "annuncio recente",
     });
   }
-  if (item.priceDrop && item.priceDrop.oldPrice && item.priceDrop.newPrice) {
+  // E — Watch di prezzo: storico completo dei ribassi (quanti, quanto, quando).
+  const pw = item.priceWatch;
+  if (pw && (pw.totalDropEur || pw.dropCount > 0)) {
+    const pieces: string[] = [];
+    if (pw.totalDropEur) pieces.push(`−${eur(pw.totalDropEur)}`);
+    if (pw.totalDropPct) pieces.push(`−${pw.totalDropPct}%`);
+    const motiv =
+      pw.motivation === "alto"
+        ? "venditore molto motivato: tratta con decisione"
+        : "il venditore sta scendendo: c'è margine di trattativa";
+    const ago =
+      pw.daysSinceLastDrop != null
+        ? ` · ultimo ${pw.daysSinceLastDrop === 0 ? "oggi" : `${pw.daysSinceLastDrop}gg fa`}`
+        : "";
+    stats.push({
+      label: `Ribassi (${pw.dropCount})`,
+      value: pieces.join(" · ") || "sceso",
+      hint: motiv + ago,
+      color: pw.motivation === "alto" ? "oklch(0.72 0.18 150)" : "oklch(0.72 0.16 150)",
+    });
+  } else if (item.priceDrop && item.priceDrop.oldPrice && item.priceDrop.newPrice) {
     stats.push({
       label: "Già ribassato",
       value: `${eur(item.priceDrop.oldPrice)} → ${eur(item.priceDrop.newPrice)}`,
@@ -2667,7 +2708,37 @@ function BuyRow(props: { m: ApiModelStat; open: boolean; onToggle: () => void })
           background: props.open ? "oklch(0.22 0.008 250)" : "transparent",
         }}
       >
-        <div style={{ fontWeight: 600 }}>{m.name}</div>
+        <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: "6px" }}>
+          {m.name}
+          {m.liquidityLevel && (
+            <span
+              title={`Liquidità ${m.liquidityLevel}${m.liquidityScore != null ? ` (${m.liquidityScore}/100)` : ""}: quanto in fretta gira il capitale (sell-through, giorni di vendita, domanda)`}
+              style={{
+                fontSize: "9.5px",
+                fontWeight: 700,
+                padding: "1px 5px",
+                borderRadius: "4px",
+                textTransform: "uppercase",
+                letterSpacing: "0.03em",
+                whiteSpace: "nowrap",
+                background:
+                  m.liquidityLevel === "alta"
+                    ? "oklch(0.72 0.16 150 / 0.16)"
+                    : m.liquidityLevel === "media"
+                      ? "oklch(0.75 0.14 75 / 0.16)"
+                      : "oklch(0.70 0.16 30 / 0.16)",
+                color:
+                  m.liquidityLevel === "alta"
+                    ? "oklch(0.80 0.15 150)"
+                    : m.liquidityLevel === "media"
+                      ? "oklch(0.82 0.14 75)"
+                      : "oklch(0.78 0.16 30)",
+              }}
+            >
+              💧 {m.liquidityLevel}
+            </span>
+          )}
+        </div>
         <div style={{ fontFamily: MONO, fontWeight: 700, color: oppColor }}>
           {roi != null ? `${roi}%` : "—"}
         </div>
@@ -2803,16 +2874,52 @@ function BuyDetail(props: { m: ApiModelStat }) {
         </div>
       )}
 
-      {/* Premio memoria */}
+      {/* F — Liquidità per variante */}
+      {m.liquidityLevel && (
+        <div style={block}>
+          <div style={blkLabel}>💧 Liquidità (quanto gira)</div>
+          <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
+            <div
+              style={{
+                color:
+                  m.liquidityLevel === "alta"
+                    ? "oklch(0.75 0.15 150)"
+                    : m.liquidityLevel === "media"
+                      ? "oklch(0.78 0.14 75)"
+                      : "oklch(0.72 0.16 30)",
+              }}
+              title="Sintesi di sell-through, giorni di vendita e domanda/offerta: quanto in fretta rientra il capitale"
+            >
+              {m.liquidityLevel}
+              {m.liquidityScore != null ? ` · ${m.liquidityScore}/100` : ""}{" "}
+              {m.liquidityLevel === "alta"
+                ? "↑ gira in fretta"
+                : m.liquidityLevel === "media"
+                  ? "→ nella media"
+                  : "↓ capitale fermo"}
+            </div>
+            {m.sellThroughRate != null && <div>sell-through {m.sellThroughRate}%</div>}
+            {m.avgDaysToSell != null && <div>vende in ~{m.avgDaysToSell}gg</div>}
+          </div>
+        </div>
+      )}
+
+      {/* Premio memoria + offerta per taglio (F — liquidità/volume per variante) */}
       {storages.length > 0 && (
         <div style={block}>
-          <div style={blkLabel}>Premio memoria (mediana)</div>
+          <div style={blkLabel}>Memoria: mediana · annunci attivi</div>
           <div style={{ fontFamily: MONO, fontSize: "12px", lineHeight: 1.7 }}>
-            {storages.map(([st, price]) => (
-              <div key={st}>
-                {Number(st) >= 1024 ? "1TB" : `${st}GB`}: {eur(price)}
-              </div>
-            ))}
+            {storages.map(([st, price]) => {
+              const vol = m.storageVolume[st];
+              return (
+                <div key={st}>
+                  {Number(st) >= 1024 ? "1TB" : `${st}GB`}: {eur(price)}
+                  {vol ? (
+                    <span style={{ color: "oklch(0.55 0.01 250)" }}> · {vol} attivi</span>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

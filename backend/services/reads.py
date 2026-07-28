@@ -153,6 +153,76 @@ def _latest_price_history(
     return latest
 
 
+def _price_watch(
+    db: Client, listing_ids: list[str]
+) -> dict[str, dict[str, Any]]:
+    """listing_id → sintesi dello storico prezzi (E — Watch di prezzo).
+
+    Aggrega TUTTI i record di ``price_history`` del singolo annuncio in un
+    segnale unico: quante volte ha ribassato, di quanto in totale rispetto al
+    primo prezzo visto e da quanti giorni è fermo all'ultimo prezzo. Più
+    ribassi / calo maggiore = venditore più motivato (leva di trattativa)."""
+    if not listing_ids:
+        return {}
+    try:
+        rows = (
+            db.table("price_history")
+            .select("listing_id, old_price, new_price, changed_at")
+            .in_("listing_id", listing_ids)
+            .order("changed_at", desc=False)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return {}
+
+    by_listing: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_listing.setdefault(row["listing_id"], []).append(row)
+
+    out: dict[str, dict[str, Any]] = {}
+    for lid, recs in by_listing.items():
+        # changed_at asc → recs[0] = più vecchio, recs[-1] = più recente.
+        first = _to_float(recs[0].get("old_price"))
+        current = _to_float(recs[-1].get("new_price"))
+        drops = 0
+        for r in recs:
+            old = _to_float(r.get("old_price"))
+            new = _to_float(r.get("new_price"))
+            if old is not None and new is not None and new < old:
+                drops += 1
+        total_eur = total_pct = None
+        if first is not None and current is not None and first > current:
+            total_eur = round(first - current, 2)
+            total_pct = round(total_eur / first * 100, 1) if first > 0 else None
+        if drops <= 0 and total_eur is None:
+            continue
+        last_at = recs[-1].get("changed_at")
+        last_dt = _parse_ts(last_at)
+        days_since = (
+            max(0, (datetime.now(timezone.utc) - last_dt).days) if last_dt else None
+        )
+        # Livello di motivazione del venditore dal comportamento sul prezzo.
+        if drops >= 2 or (total_pct is not None and total_pct >= 10):
+            level = "alto"
+        elif drops >= 1 or total_eur is not None:
+            level = "medio"
+        else:
+            level = "basso"
+        out[lid] = {
+            "firstPrice": first,
+            "currentPrice": current,
+            "dropCount": drops,
+            "totalDropEur": total_eur,
+            "totalDropPct": total_pct,
+            "lastDropAt": last_at,
+            "daysSinceLastDrop": days_since,
+            "motivation": level,
+        }
+    return out
+
+
 def _parse_ts(value: Any) -> datetime | None:
     if not value:
         return None
@@ -522,6 +592,7 @@ def _build_enrich_ctx(
         "variant_pools": _variant_price_pools(db, table),
         "sold_refs": _sold_variant_refs(db, table),
         "price_history": _latest_price_history(db, [r["id"] for r in rows]),
+        "price_watch": _price_watch(db, [r["id"] for r in rows]),
         "seller_profiles": _seller_profiles(db, table, rows),
         "km_models": {},
     }
@@ -573,6 +644,9 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         market_avg = ctx["avg_by_model"].get(model)
 
     shaped = _shape_opportunity(row, model, market_avg, ctx["price_history"].get(row["id"]))
+    # E — Watch di prezzo: storico completo dei ribassi del singolo annuncio
+    # (quante volte, quanto, da quanti giorni) → quanto è motivato il venditore.
+    shaped["priceWatch"] = ctx.get("price_watch", {}).get(row["id"])
 
     seller_id = row.get("seller_id")
     profile = ctx["seller_profiles"].get(seller_id) if seller_id else None
@@ -1010,6 +1084,12 @@ def _model_analytics(
                 for st, ps in sorted(d["byStorage"].items())
                 if len(ps) >= 3
             },
+            # F — Liquidità/volume per variante (taglio memoria): n. annunci
+            # attivi sani per taglio = dove c'è offerta (e domanda) reale.
+            "storageVolume": {
+                str(st): len(ps)
+                for st, ps in sorted(d["byStorage"].items())
+            },
             "conditionImpact": {
                 t: round(statistics.median(ps))
                 for t, ps in d["byCond"].items()
@@ -1021,6 +1101,37 @@ def _model_analytics(
             "ai": d["ai"],
         }
     return out
+
+
+def _liquidity_index(
+    sell_through: float | None,
+    avg_days: float | None,
+    demand_index: float | None,
+    volume: int,
+) -> tuple[int | None, str | None]:
+    """F — Liquidità per variante: quanto in fretta gira e quanta domanda ha.
+
+    Sintesi 0–100 di sell-through (% che sparisce = venduto), velocità di
+    vendita (giorni), indice domanda/offerta 7gg. Restituisce (score, livello):
+    ``alta`` gira in fretta, ``bassa`` = capitale che resta fermo. ``None`` se
+    non ci sono ancora abbastanza dati (venduti) per stimarla."""
+    parts: list[float] = []
+    if sell_through is not None:
+        parts.append(min(sell_through, 100.0))
+    if avg_days is not None and avg_days > 0:
+        # 3gg → ~100, 30gg → ~0 (oltre è illiquido).
+        parts.append(max(0.0, min(100.0, (30 - avg_days) / 27 * 100)))
+    if demand_index is not None:
+        parts.append(min(100.0, demand_index * 50))  # indice 2.0 → 100
+    if not parts:
+        return None, None
+    score = sum(parts) / len(parts)
+    # Mercato troppo sottile (pochi annunci): il segnale è fragile, si sconta.
+    if volume < 3:
+        score *= 0.6
+    score = round(score)
+    level = "alta" if score >= 66 else "media" if score >= 33 else "bassa"
+    return score, level
 
 
 def get_market_intelligence(
@@ -1118,6 +1229,11 @@ def get_market_intelligence(
         outflow7d = sold.get("outflow7d") or 0
         demand_index = round(outflow7d / inflow7d, 2) if inflow7d > 0 else None
 
+        # F — Liquidità per variante: quanto in fretta gira il capitale.
+        liquidity_score, liquidity_level = _liquidity_index(
+            sell_through, avg_days, demand_index, volume
+        )
+
         models.append(
             {
                 "name": name,
@@ -1133,6 +1249,7 @@ def get_market_intelligence(
                 "spreadEur": a.get("spreadEur"),
                 "activeDeals": a.get("activeDeals") or 0,
                 "storagePremium": a.get("storagePremium") or {},
+                "storageVolume": a.get("storageVolume") or {},
                 "conditionImpact": a.get("conditionImpact") or {},
                 "sellers": a.get("sellers") or 0,
                 "fintoPrivato": a.get("fintoPrivato") or 0,
@@ -1151,6 +1268,9 @@ def get_market_intelligence(
                 "inflow7d": inflow7d,
                 "outflow7d": outflow7d,
                 "demandIndex": demand_index,
+                # F — liquidità (quanto in fretta gira / quanta domanda)
+                "liquidityScore": liquidity_score,
+                "liquidityLevel": liquidity_level,
                 # ranking
                 "roiPerDayPct": roi_per_day,
                 "opportunityScore": opportunity,
