@@ -51,6 +51,10 @@ ck("13 Pro != 13 base",
 ck("15 Pro 1TB", tech("Apple iPhone 15 Pro 1TB", 1024)["variant_key"], "iphone-15-pro-1024")
 ck("16e 128", tech("iPhone 16e 128GB", 128)["variant_key"], "iphone-16e-128")
 ck("13 mini", tech("iPhone 13 mini 256", 256)["variant_key"], "iphone-13-mini-256")
+# Air (gen 17): senza suffisso dedicato finirebbe nel pool del 17 base, che vale
+# ~200€ di più — media di mercato e valore equo falsati.
+ck("17 Air 256", tech("iPhone 17 Air 256GB nero", 256)["variant_key"], "iphone-17-air-256")
+ck("17 base ≠ Air", tech("iPhone 17 White 256GB", 256)["variant_key"], "iphone-17-256")
 ck("storage n/d", tech("iPhone 14 Pro")["variant_key"], "iphone-14-pro-na")
 
 print("TECH — label & condizione:")

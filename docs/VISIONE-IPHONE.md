@@ -123,7 +123,15 @@ Lista filtrabile + card espandibile con assistente di trattativa.
 Scraper HTTP/JSON anti-Akamai (curl_cffi + proxy), NLP (memoria/colore/batteria/
 difetti/corredo), varianti canoniche, valore equo **dai venduti**, Deal Score,
 max bid, ROI/giorno, domanda-offerta, confidence, pHash anti-ripubblicazione,
-shadow dealer, price history, Telegram intelligente, copertura gamma iPhone (31
-target), Postgres self-hosted + Docker.
+shadow dealer, price history, Telegram intelligente, copertura gamma iPhone
+(gamma completa fino alla gen 17, linea Air inclusa), Postgres self-hosted +
+Docker.
+
+> ⚠️ **La gamma va tenuta al passo.** La flotta era ferma alla gen 16 mentre il
+> 17 (17/Air/Pro/Pro Max/17e) era già sul mercato da mesi: modelli più cari,
+> quindi più margine per pezzo, completamente ciechi. A ogni keynote: aggiungere
+> la generazione in `scripts/seed_iphone_targets.py` **e** verificare che il
+> resolver di variante conosca eventuali linee nuove (l'Air non c'era, e un
+> "17 Air" finiva nel pool del 17 base a ~100€ di differenza).
 
 _Aggiungere qui le nuove idee man mano che emergono._

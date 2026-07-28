@@ -43,12 +43,15 @@ MIN_SAMPLE = 3
 MAX_GEN_GAP_YEARS = 3.0
 
 # iphone-15-pro-max-256 → (15, "pro-max", 256); iphone-16e-128 → (16, "e", 128).
-_VARIANT_RE = re.compile(r"^iphone-(\d+)(e)?(?:-(mini|plus|pro-max|pro))?-(\d+|na)$")
+_VARIANT_RE = re.compile(
+    r"^iphone-(\d+)(e)?(?:-(mini|plus|air|pro-max|pro))?-(\d+|na)$"
+)
 
 _LINE_LABELS = {
     "": "Base",
     "mini": "mini",
     "plus": "Plus",
+    "air": "Air",
     "pro": "Pro",
     "pro-max": "Pro Max",
     "e": "e",
@@ -96,7 +99,13 @@ def _model_key(number: int, line: str) -> str:
 def _model_name(number: int, line: str) -> str:
     if line == "e":
         return f"iPhone {number}e"
-    suffix = {"pro-max": " Pro Max", "pro": " Pro", "plus": " Plus", "mini": " mini"}
+    suffix = {
+        "pro-max": " Pro Max",
+        "pro": " Pro",
+        "plus": " Plus",
+        "mini": " mini",
+        "air": " Air",
+    }
     return f"iPhone {number}{suffix.get(line, '')}"
 
 

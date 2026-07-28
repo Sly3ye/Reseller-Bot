@@ -71,8 +71,10 @@ def _slug(text: str) -> str:
 # ------------------------------------------------------------------ tech
 
 # iPhone: numero (13..29) + suffisso opzionale. "16e" ha la e attaccata.
+# "Air" è la linea sottile introdotta con la gen 17 (al posto del Plus): senza
+# di essa un "17 Air" cadrebbe nel pool del "17" base, che vale ~200€ di più.
 _IPHONE_RE = re.compile(
-    r"iphone\s*(\d{2})\s*(pro\s*max|pro|plus|mini|e)?\b", re.IGNORECASE
+    r"iphone\s*(\d{2})\s*(pro\s*max|pro|plus|mini|air|e)?\b", re.IGNORECASE
 )
 
 
@@ -95,6 +97,7 @@ def _iphone_variant(title: str, storage_gb: int | None) -> tuple[str, str] | Non
         "pro": ("-pro", " Pro"),
         "plus": ("-plus", " Plus"),
         "mini": ("-mini", " mini"),
+        "air": ("-air", " Air"),
         "e": ("e", "e"),                # 16e: attaccato al numero
     }.get(raw, ("", ""))
 

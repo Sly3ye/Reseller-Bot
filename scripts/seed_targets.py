@@ -1,8 +1,8 @@
 """Imposta la flotta di scraping ESATTA voluta ora, in modo idempotente.
 
 Target attivi desiderati:
-  - iPhone dalla generazione 13 in poi (13, 14, 15, 16 + varianti mini/Plus/Pro/
-    Pro Max e 16e). Il 17 non è in gamma qui → escluso di fatto.
+  - iPhone dalla generazione 13 in poi (13, 14, 15, 16, 17 + varianti mini/Plus/
+    Air/Pro/Pro Max e 16e/17e).
   - Auto: solo BMW 123d e BMW 125i.
 
 Cosa fa:

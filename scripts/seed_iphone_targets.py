@@ -2,7 +2,7 @@
 
 Obiettivo: coprire quasi la totalità degli annunci iPhone attivi su Subito.
 Genera un target per ogni modello della gamma (ogni generazione × variante:
-base/mini/Plus/Pro/Pro Max, più i modelli storici e SE). Il resolver di variante
+base/mini/Plus/Air/Pro/Pro Max, più i modelli storici e SE). Il resolver di variante
 canonica segmenta poi per (modello, memoria) in lettura; qui bastano le query.
 
 Idempotente: upsert su (category, query). NON tocca i target auto.
@@ -26,6 +26,10 @@ _GENERATIONS: dict[int, list[str]] = {
     14: ["", "Plus", "Pro", "Pro Max"],
     15: ["", "Plus", "Pro", "Pro Max"],
     16: ["", "Plus", "Pro", "Pro Max"],
+    # Gen 17: l'Air prende il posto del Plus. Il resolver di variante conosce
+    # la linea Air (senza, un "17 Air" finirebbe nel pool del 17 base, che vale
+    # ~200€ di più, falsando la media di mercato).
+    17: ["", "Air", "Pro", "Pro Max"],
 }
 # Modelli speciali/storici (numero non lineare) col loro "peso" di generazione
 # per il filtro --from (X/XR/XS ≈ gen 10, SE ~ trasversale).
@@ -37,6 +41,7 @@ _SPECIAL: list[tuple[int, str]] = [
     (10, "iPhone XS"),
     (10, "iPhone XS Max"),
     (16, "iPhone 16e"),
+    (17, "iPhone 17e"),
     (11, "iPhone SE"),  # SE 2020/2022: una query li cattura entrambi
 ]
 

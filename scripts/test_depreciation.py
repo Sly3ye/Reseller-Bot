@@ -32,6 +32,7 @@ ck("variante base", d._parse_variant("iphone-15-128"), (15, "", 128))
 ck("variante pro max", d._parse_variant("iphone-13-pro-max-256"), (13, "pro-max", 256))
 ck("variante mini", d._parse_variant("iphone-13-mini-128"), (13, "mini", 128))
 ck("linea e", d._parse_variant("iphone-16e-128"), (16, "e", 128))
+ck("linea Air", d._parse_variant("iphone-17-air-256"), (17, "air", 256))
 ck("memoria non dichiarata", d._parse_variant("iphone-14-na"), (14, "", None))
 ck("non iPhone", d._parse_variant("bmw-123d-2007-2013"), None)
 
