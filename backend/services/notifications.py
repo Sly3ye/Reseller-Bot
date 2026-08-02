@@ -175,10 +175,12 @@ def _fmt_smart_deal(item: dict[str, Any], category: str) -> str:
 
     place = item.get("location")
     seller = item.get("sellerType")
+    # "concessionario" ha senso solo per le auto; per il tech è un "negozio".
+    dealer_label = "concessionario" if category == "automobile" else "negozio"
     seller_label = {
         "privato": "privato",
         "finto_privato": "⚠️ finto privato",
-        "dealer": "concessionario",
+        "dealer": dealer_label,
     }.get(str(seller), None)
     info = " · ".join(x for x in (place, seller_label) if x)
     if info:

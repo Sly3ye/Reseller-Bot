@@ -183,6 +183,10 @@ class SubitoScraper(BaseScraper):
                 listing = self._parse_ad(ad)
                 if listing is None or listing.url in seen_urls:
                     continue
+                if (listing.metadata or {}).get("is_accessory"):
+                    # Cover/vetro/caricatore "per iPhone": non è il telefono,
+                    # inquinerebbe prezzi medi e valore equo del tech.
+                    continue
                 if filters and not self._passes_listing_filters(listing, filters):
                     continue
                 if match_query and not self._matches_query(listing.title, match_query):
@@ -305,6 +309,7 @@ class SubitoScraper(BaseScraper):
                 "defects_noted": nlp["defects_noted"],
                 "urgency_flags": nlp["urgency_flags"],
                 "exclude_from_iqr": nlp["exclude_from_iqr"],
+                "is_accessory": nlp["is_accessory"],
                 # Venditore (Shadow Dealer).
                 "seller_id": seller_id,
                 "seller_type": seller_type,

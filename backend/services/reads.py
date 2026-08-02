@@ -495,13 +495,17 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
 _MIN_SOLD_REF = 5
 
 
-def _sold_variant_refs(db: Client, table: str) -> dict[str, tuple[float, int]]:
-    """Prezzo di realizzo REALE per VARIANTE canonica, dai VENDUTI → (mediana, n).
+def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[float, int]]]:
+    """Prezzo di realizzo REALE per VARIANTE canonica, dai VENDUTI.
 
-    Mediana (IQR-pulita) degli ``asking_price`` degli annunci ``venduto_rimosso``
-    sani, raggruppati per ``variant_key``, con ``>= _MIN_SOLD_REF`` campioni. È il
-    riferimento corretto per il valore equo (prezzo a cui si vende davvero, non a
-    cui si lista). Il campione ``n`` alimenta il confidence della valutazione.
+    Ritorna ``{variant_key: {tier_o_"__all__": (mediana, n)}}``: sia il
+    riferimento per FASCIA DI CONDIZIONE specifica (quando ci sono abbastanza
+    venduti in quella fascia) sia un riferimento "__all__" che mescola le
+    fasce sane come fallback. Distinguere i due evita di applicare IL
+    fattore-condizione (fascia sopra/sotto la media) sopra un prezzo che è
+    già la mediana della fascia — altrimenti si conta due volte lo stesso
+    aggiustamento e il valore equo dei "come nuovo" risulta sistematicamente
+    gonfiato. Vedi ``estimate_fair_value``.
     """
     try:
         rows = (
@@ -516,21 +520,28 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, tuple[float, int]]:
     except Exception:
         return {}
 
-    buckets: dict[str, list[float]] = {}
+    buckets: dict[str, dict[str, list[float]]] = {}
     for row in rows:
         vk = row.get("variant_key")
         price = _to_float(row.get("asking_price"))
+        tier = row.get("condition_tier") or "buono"
         if not vk or vk == "auto" or price is None or price <= 0:
             continue
-        if not is_healthy(row.get("condition_tier") or "buono"):
+        if not is_healthy(tier):
             continue
-        buckets.setdefault(vk, []).append(price)
+        vk_buckets = buckets.setdefault(vk, {})
+        vk_buckets.setdefault("__all__", []).append(price)
+        vk_buckets.setdefault(tier, []).append(price)
 
-    refs: dict[str, tuple[float, int]] = {}
-    for vk, prices in buckets.items():
-        cleaned = _iqr_clean(prices)
-        if len(cleaned) >= _MIN_SOLD_REF:
-            refs[vk] = (round(statistics.median(cleaned), 2), len(cleaned))
+    refs: dict[str, dict[str, tuple[float, int]]] = {}
+    for vk, tier_buckets in buckets.items():
+        vk_refs: dict[str, tuple[float, int]] = {}
+        for tier, prices in tier_buckets.items():
+            cleaned = _iqr_clean(prices)
+            if len(cleaned) >= _MIN_SOLD_REF:
+                vk_refs[tier] = (round(statistics.median(cleaned), 2), len(cleaned))
+        if vk_refs:
+            refs[vk] = vk_refs
     return refs
 
 
@@ -689,8 +700,18 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
 
     # Riferimento dai VENDUTI per questa variante (prezzo di realizzo reale, n
-    # campioni); None sotto soglia → valuation ripiega sui listati.
-    sold_pair = ctx["sold_refs"].get(variant_key) if variant_key else None
+    # campioni). Preferisce il riferimento della STESSA fascia di condizione
+    # dell'annuncio (in tal caso è già "il prezzo a cui si vende un come-nuovo",
+    # niente doppio aggiustamento); sotto soglia ripiega sul mix di fasce sane
+    # della variante, poi sui listati.
+    tier = row.get("condition_tier") or "buono"
+    sold_bucket = ctx["sold_refs"].get(variant_key) if variant_key else None
+    sold_tier_specific = bool(sold_bucket and tier in sold_bucket)
+    sold_pair = (
+        sold_bucket.get(tier) if sold_tier_specific
+        else sold_bucket.get("__all__") if sold_bucket
+        else None
+    )
     sold_reference = sold_pair[0] if sold_pair else None
     sold_n = sold_pair[1] if sold_pair else 0
 
@@ -702,6 +723,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         km=row.get("km"),
         km_model=km_model,
         sold_reference=sold_reference,
+        sold_reference_is_tier_specific=sold_tier_specific,
         has_images=bool(row.get("image_urls")),
     )
     shaped.update(valuation)
@@ -809,6 +831,10 @@ def list_opportunities(
     condition: str | None = None,
     deal_class: str | None = None,
     min_margin: float | None = None,
+    min_price: float | None = None,
+    max_price: float | None = None,
+    min_days: int | None = None,
+    max_days: int | None = None,
     q: str | None = None,
     view: str = "attivi",
     preset: str | None = None,
@@ -836,6 +862,10 @@ def list_opportunities(
         query = query.eq("color", color)
     if condition:
         query = query.eq("condition_tier", condition)
+    if min_price is not None:
+        query = query.gte("asking_price", min_price)
+    if max_price is not None:
+        query = query.lte("asking_price", max_price)
     rows = query.execute().data or []
 
     # Triage utente (ortogonale allo status): salvati / nascondi gli scartati.
@@ -860,6 +890,16 @@ def list_opportunities(
         items = [
             it for it in items
             if it.get("marginPct") is not None and it["marginPct"] >= min_margin
+        ]
+    if min_days is not None:
+        items = [
+            it for it in items
+            if it.get("daysOnline") is not None and it["daysOnline"] >= min_days
+        ]
+    if max_days is not None:
+        items = [
+            it for it in items
+            if it.get("daysOnline") is not None and it["daysOnline"] <= max_days
         ]
     if q:
         ql = q.strip().lower()

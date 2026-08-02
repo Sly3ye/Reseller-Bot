@@ -310,6 +310,10 @@ export type OppFilters = {
   condition?: string | null;
   dealClass?: string | null;
   minMargin?: number | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  minDays?: number | null;
+  maxDays?: number | null;
   q?: string | null;
   view?: ViewMode;
   preset?: PresetMode | null;
@@ -343,6 +347,10 @@ export async function fetchOpportunities(
   if (filters.condition) p.set("condition", filters.condition);
   if (filters.dealClass) p.set("deal_class", filters.dealClass);
   if (filters.minMargin != null) p.set("min_margin", String(filters.minMargin));
+  if (filters.minPrice != null) p.set("min_price", String(filters.minPrice));
+  if (filters.maxPrice != null) p.set("max_price", String(filters.maxPrice));
+  if (filters.minDays != null) p.set("min_days", String(filters.minDays));
+  if (filters.maxDays != null) p.set("max_days", String(filters.maxDays));
   if (filters.q) p.set("q", filters.q);
   if (filters.view) p.set("view", filters.view);
   if (filters.preset) p.set("preset", filters.preset);

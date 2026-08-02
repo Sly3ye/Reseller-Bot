@@ -132,6 +132,42 @@ _IQR_EXCLUSION_DEFECTS = frozenset({
 # del costo di riparazione noto, vedi backend/services/scoring.py.
 REPAIRABLE_DEFECTS = frozenset({"schermo-rotto", "batteria-esausta", "back-rotto"})
 
+# ------------------------------------------------------ accessori/ricambi (tech)
+
+# Nomi di oggetti che si vendono DA SOLI "per" un iPhone (non è il telefono).
+# Il match conta solo se compaiono PRIMA di "iphone" nel titolo normalizzato:
+# "Cover per iPhone 13" (accessorio in vendita) vs "iPhone 13 con cover inclusa"
+# (è il telefono, l'accessorio è solo un omaggio incluso — non va escluso).
+_ACCESSORY_KEYWORDS = (
+    "cover", "custodia", "vetro temperato", "vetro protettivo", "vetro posteriore",
+    "pellicola", "proteggi schermo", "screen protector", "caricatore",
+    "caricabatterie", "cavo lightning", "cavo usb", "cavo dati", "adattatore",
+    "powerbank", "auricolari", "cuffie", "airpods", "supporto auto",
+    "porta cellulare", "flip cover", "custodia a libro", "retro cover",
+    "guscio", "borsa porta cellulare",
+)
+
+
+def _is_accessory_listing(title: str | None) -> bool:
+    """True se il titolo vende un ACCESSORIO/RICAMBIO "per iPhone", non il
+    telefono stesso (cover, vetro, caricatore, batteria/vetro di ricambio...).
+
+    Esclude questi annunci dal feed tech: altrimenti inquinano prezzi medi,
+    valore equo e Deal Score con oggetti da pochi euro che non sono telefoni.
+    """
+    if not title:
+        return False
+    norm = _normalize(title)
+    iphone_pos = norm.find("iphone")
+    for kw in _ACCESSORY_KEYWORDS:
+        pos = norm.find(kw)
+        if pos == -1:
+            continue
+        if iphone_pos == -1 or pos < iphone_pos:
+            return True
+    return False
+
+
 # ----------------------------------------------------------------- colore (tech)
 
 # canonico → varianti (nomi commerciali Apple IT/EN). Ordine: i multi-parola e i
@@ -262,7 +298,7 @@ def parse_listing(
 
     Chiavi: ``km``, ``year``, ``storage_gb``, ``battery_pct`` (int|None),
     ``features``, ``defects_noted``, ``urgency_flags`` (list[str]),
-    ``exclude_from_iqr`` (bool).
+    ``exclude_from_iqr`` (bool), ``is_accessory`` (bool, dal SOLO titolo).
 
     Il parser è unificato auto+tech: le regex sono economiche e i dizionari
     dell'altro verticale quasi mai producono falsi positivi (un'auto non
@@ -293,4 +329,5 @@ def parse_listing(
         "defects_noted": defects,
         "urgency_flags": _match_dictionary(norm, _URGENCY_SYNONYMS),
         "exclude_from_iqr": any(d in _IQR_EXCLUSION_DEFECTS for d in defects),
+        "is_accessory": _is_accessory_listing(title),
     }

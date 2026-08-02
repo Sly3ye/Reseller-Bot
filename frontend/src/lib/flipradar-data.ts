@@ -1,3 +1,11 @@
+/** Etichetta del tipo venditore: "concessionario" ha senso solo per le auto,
+ * per il tech un account professionale è un "negozio". */
+export function sellerTypeLabel(type: string | null, category: "smartphone" | "automobile"): string {
+  if (type === "finto_privato") return "⚠️ finto privato";
+  if (type === "dealer") return category === "automobile" ? "concessionario" : "negozio";
+  return "privato";
+}
+
 export function eur(n: number): string {
   return "€" + Math.round(n).toLocaleString("it-IT");
 }

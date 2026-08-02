@@ -70,6 +70,7 @@ def estimate_fair_value(
     km: int | None = None,
     km_model: tuple[float, float, int] | None = None,
     sold_reference: float | None = None,
+    sold_reference_is_tier_specific: bool = False,
 ) -> float | None:
     """Prezzo equo atteso per questo annuncio. None se dati insufficienti.
 
@@ -79,24 +80,36 @@ def estimate_fair_value(
          di realizzo reale, non quello listato (evita la sovrastima da vetrina);
       3. mediana dei prezzi SANI **listati** della variante (fallback finché i
          venduti non si accumulano).
+
+    Il **fattore condizione** (sopra/sotto per come-nuovo/difetti) si applica
+    solo quando il riferimento NON riflette già questa fascia: se
+    ``sold_reference_is_tier_specific`` è True, ``sold_reference`` è già "il
+    prezzo a cui si vende un come-nuovo di questa variante" — moltiplicarlo di
+    nuovo per il fattore condizione conterebbe l'aggiustamento due volte e
+    gonfierebbe il valore equo (bug osservato: quasi sempre troppo alto).
     """
     healthy = sorted(p for p in variant_prices if p and p > 0)
     base: float | None = statistics.median(healthy) if len(healthy) >= MIN_POOL else None
+    apply_condition_factor = True
 
     # I venduti battono i listati come riferimento (prezzo di realizzo reale).
     if sold_reference and sold_reference > 0:
         base = sold_reference
+        apply_condition_factor = not sold_reference_is_tier_specific
 
-    # Auto: il riferimento migliore è il prezzo atteso a QUESTI km (edonico).
+    # Auto: il riferimento migliore è il prezzo atteso a QUESTI km (edonico) —
+    # il modello km non conosce la condizione, il fattore va comunque applicato.
     if category == "automobile" and km_model and km:
         slope, intercept, _n = km_model
         km_expected = intercept + slope * km
         if km_expected > 0:
             base = km_expected
+            apply_condition_factor = True
 
     if base is None or base <= 0:
         return None
-    return round(base * _condition_factor(category, condition_tier), 2)
+    factor = _condition_factor(category, condition_tier) if apply_condition_factor else 1.0
+    return round(base * factor, 2)
 
 
 def evaluate_value(
@@ -108,6 +121,7 @@ def evaluate_value(
     km: int | None = None,
     km_model: tuple[float, float, int] | None = None,
     sold_reference: float | None = None,
+    sold_reference_is_tier_specific: bool = False,
     has_images: bool = True,
 ) -> dict[str, Any]:
     """Valutazione completa: valore equo, margine vs equo, posizione, classe.
@@ -124,6 +138,7 @@ def evaluate_value(
         km=km,
         km_model=km_model,
         sold_reference=sold_reference,
+        sold_reference_is_tier_specific=sold_reference_is_tier_specific,
     )
     position = price_position(asking, variant_prices)
 

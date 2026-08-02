@@ -132,6 +132,53 @@ Lista originale (per riferimento):
 - **Distribuzione condizioni** (come-nuovo/buono/difetti) e impatto sul prezzo.
 - **Venditori più attivi / finti privati** per modello.
 
+### 8. ✅ Filtro accessori/ricambi (cover, vetri, caricatori "per iPhone") — FATTO
+Il tech si riempiva di annunci che NON sono un telefono (cover, custodie, vetri
+temperati, caricatori, batterie di ricambio...) inquinando prezzi medi e
+valore equo. `nlp_parser._is_accessory_listing`: se una parola-accessorio
+compare PRIMA di "iphone" nel titolo ("Cover per iPhone 13") è un accessorio;
+se compare dopo ("iPhone 13 con cover inclusa") è il telefono. Scartati allo
+scraping (`subito.py`), prima di essere salvati. Verificato su titoli reali,
+nessun falso positivo sui telefoni con corredo incluso.
+Limite noto: non copre "batteria iPhone 12 nuova" da sola (parola troppo
+ambigua con "batteria 89%" nei telefoni reali) — accettato per ora.
+
+### 9. ✅ Fix sovrastima valore equo (doppio conteggio condizione) — FATTO
+Il valore equo per un "come nuovo" moltiplicava la mediana dei venduti
+(già mix di fasce sane) per il fattore condizione (1.08×) → contava
+l'aggiustamento due volte, gonfiando sistematicamente il valore equo.
+`_sold_variant_refs` ora segmenta i venduti per (variante, fascia): se ci sono
+abbastanza venduti nella STESSA fascia dell'annuncio, quella mediana è già "il
+prezzo a cui si vende un come-nuovo di questa variante" e il fattore non si
+applica più. Fallback al mix (col fattore, comportamento precedente) quando la
+fascia specifica non ha ancora abbastanza campioni. Verificato su dati reali:
+fino a 211€ di sovrastima rimossa per variante.
+
+### 10. ✅ Filtri Live Sniper: giorni online + prezzo — FATTO
+`/api/opportunities` accetta `min_price`/`max_price` (filtro DB) e
+`min_days`/`max_days` (giorni online, filtro post-arricchimento). UI: campi
+range accanto ai filtri esistenti, validi per entrambe le categorie.
+
+### 11. ✅ Wording venditore: "negozio" invece di "concessionario" per il tech — FATTO
+`sellerTypeLabel(type, category)` in `flipradar-data.ts`: "concessionario" solo
+per le auto, "negozio" per il tech. Corretto anche nel messaggio Telegram.
+
+---
+
+## In discussione
+
+### 💬 Valutazione condition-aware delle condizioni (ML/AI) — punto 1, da definire insieme
+La schermata Tempo di vendita deve mostrare (quasi) tutti i venduti in un
+grafico prezzo↔giorni, ma condizione/difetti/corredo cambiano il prezzo più di
+ogni altra cosa e oggi non sono isolati nel grafico. Due strade proposte:
+1. **Filtro semplice**: grafico limitato ai venduti "come nuovo"/sani (già
+   distinguibile con `condition_tier`), pulito ma butta via molti dati.
+2. **Modello di pricing per feature** (no deep ML: regressione tipo quella già
+   usata per il prezzo~km delle auto) che stima l'impatto di condizione,
+   batteria, difetti, corredo sul prezzo, usando i dati NLP/AI già estratti.
+Il punto 9 sopra è un primo passo in questa direzione (segmentazione per
+fascia condizione sui venduti) fatto con metodo "semplice", senza ML.
+
 ---
 
 ## Refinement già annotati

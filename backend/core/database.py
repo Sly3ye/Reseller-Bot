@@ -173,6 +173,14 @@ class Query:
         self._filters.append((f"{_quote_ident(column)} <> %s", [value]))
         return self
 
+    def gte(self, column: str, value: Any) -> "Query":
+        self._filters.append((f"{_quote_ident(column)} >= %s", [value]))
+        return self
+
+    def lte(self, column: str, value: Any) -> "Query":
+        self._filters.append((f"{_quote_ident(column)} <= %s", [value]))
+        return self
+
     def in_(self, column: str, values: Iterable[Any]) -> "Query":
         vals = list(values)
         if not vals:

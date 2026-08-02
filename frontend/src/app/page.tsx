@@ -50,6 +50,7 @@ import {
   marginTier,
   relativeTime,
   scoreColor,
+  sellerTypeLabel,
 } from "@/lib/flipradar-data";
 
 const MONO = "var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace";
@@ -107,6 +108,10 @@ export default function FlipRadar() {
   const [fStorage, setFStorage] = useState<number | null>(null);
   const [fColor, setFColor] = useState<string | null>(null);
   const [fCondition, setFCondition] = useState<string | null>(null);
+  const [fMinPrice, setFMinPrice] = useState<number | null>(null);
+  const [fMaxPrice, setFMaxPrice] = useState<number | null>(null);
+  const [fMinDays, setFMinDays] = useState<number | null>(null);
+  const [fMaxDays, setFMaxDays] = useState<number | null>(null);
   const [page, setPage] = useState(0);
 
   const [opportunities, setOpportunities] = useState<ApiOpportunity[]>([]);
@@ -164,6 +169,10 @@ export default function FlipRadar() {
         color: fColor,
         condition: fCondition,
         minMargin: marginFilter === "high" ? 20 : null,
+        minPrice: fMinPrice,
+        maxPrice: fMaxPrice,
+        minDays: fMinDays,
+        maxDays: fMaxDays,
         q: search || null,
         view,
         preset,
@@ -190,6 +199,7 @@ export default function FlipRadar() {
     return () => controller.abort();
   }, [
     category, sortMode, fModel, fStorage, fColor, fCondition,
+    fMinPrice, fMaxPrice, fMinDays, fMaxDays,
     marginFilter, search, view, preset, page,
   ]);
 
@@ -698,6 +708,14 @@ export default function FlipRadar() {
               onColorChange={p0(setFColor)}
               fCondition={fCondition}
               onConditionChange={p0(setFCondition)}
+              fMinPrice={fMinPrice}
+              onMinPriceChange={p0(setFMinPrice)}
+              fMaxPrice={fMaxPrice}
+              onMaxPriceChange={p0(setFMaxPrice)}
+              fMinDays={fMinDays}
+              onMinDaysChange={p0(setFMinDays)}
+              fMaxDays={fMaxDays}
+              onMaxDaysChange={p0(setFMaxDays)}
               page={page}
               pageSize={PAGE_SIZE}
               onPageChange={setPage}
@@ -727,6 +745,7 @@ export default function FlipRadar() {
               depreciation={depreciation}
               trendPaths={trendPaths}
               batchLastRun={batchLastRun}
+              category={category}
             />
           )}
 
@@ -929,6 +948,14 @@ function SniperScreen(props: {
   onColorChange: (v: string | null) => void;
   fCondition: string | null;
   onConditionChange: (v: string | null) => void;
+  fMinPrice: number | null;
+  onMinPriceChange: (v: number | null) => void;
+  fMaxPrice: number | null;
+  onMaxPriceChange: (v: number | null) => void;
+  fMinDays: number | null;
+  onMinDaysChange: (v: number | null) => void;
+  fMaxDays: number | null;
+  onMaxDaysChange: (v: number | null) => void;
   page: number;
   pageSize: number;
   onPageChange: (v: number) => void;
@@ -1114,61 +1141,92 @@ function SniperScreen(props: {
         })}
       </div>
 
-      {/* Barra filtri (iPhone): modello, memoria, colore, condizione — da facets */}
-      {props.isTech && (
-        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-          <FacetSelect
-            label="Modello"
-            value={props.fModel}
-            onChange={props.onModelChange}
-            options={props.facets.models.map((m) => ({ value: m.key, label: `${m.label} (${m.count})` }))}
-          />
-          <FacetSelect
-            label="Memoria"
-            value={props.fStorage === null ? null : String(props.fStorage)}
-            onChange={(v) => props.onStorageChange(v === null ? null : Number(v))}
-            options={props.facets.storages.map((s) => ({
-              value: String(s.value),
-              label: `${s.value >= 1024 ? "1TB" : s.value + "GB"} (${s.count})`,
-            }))}
-          />
-          <FacetSelect
-            label="Colore"
-            value={props.fColor}
-            onChange={props.onColorChange}
-            options={props.facets.colors.map((c) => ({ value: c.value, label: `${c.value} (${c.count})` }))}
-          />
-          <FacetSelect
-            label="Condizione"
-            value={props.fCondition}
-            onChange={props.onConditionChange}
-            options={props.facets.conditions.map((c) => ({ value: c.value, label: `${c.value} (${c.count})` }))}
-          />
-          {(props.fModel || props.fStorage !== null || props.fColor || props.fCondition) && (
-            <button
-              onClick={() => {
-                props.onModelChange(null);
-                props.onStorageChange(null);
-                props.onColorChange(null);
-                props.onConditionChange(null);
-              }}
-              style={{
-                height: "34px",
-                padding: "0 12px",
-                borderRadius: "8px",
-                border: "1px solid oklch(0.32 0.01 250)",
-                background: "transparent",
-                color: "oklch(0.72 0.16 30)",
-                fontSize: "12px",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              ✕ Azzera filtri
-            </button>
-          )}
-        </div>
-      )}
+      {/* Barra filtri: modello/memoria/colore/condizione (iPhone, da facets) +
+          prezzo/giorni online (entrambe le categorie). */}
+      {(() => {
+        const anyFacetFilter =
+          props.fModel || props.fStorage !== null || props.fColor || props.fCondition;
+        const anyRangeFilter =
+          props.fMinPrice !== null || props.fMaxPrice !== null ||
+          props.fMinDays !== null || props.fMaxDays !== null;
+        return (
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            {props.isTech && (
+              <>
+                <FacetSelect
+                  label="Modello"
+                  value={props.fModel}
+                  onChange={props.onModelChange}
+                  options={props.facets.models.map((m) => ({ value: m.key, label: `${m.label} (${m.count})` }))}
+                />
+                <FacetSelect
+                  label="Memoria"
+                  value={props.fStorage === null ? null : String(props.fStorage)}
+                  onChange={(v) => props.onStorageChange(v === null ? null : Number(v))}
+                  options={props.facets.storages.map((s) => ({
+                    value: String(s.value),
+                    label: `${s.value >= 1024 ? "1TB" : s.value + "GB"} (${s.count})`,
+                  }))}
+                />
+                <FacetSelect
+                  label="Colore"
+                  value={props.fColor}
+                  onChange={props.onColorChange}
+                  options={props.facets.colors.map((c) => ({ value: c.value, label: `${c.value} (${c.count})` }))}
+                />
+                <FacetSelect
+                  label="Condizione"
+                  value={props.fCondition}
+                  onChange={props.onConditionChange}
+                  options={props.facets.conditions.map((c) => ({ value: c.value, label: `${c.value} (${c.count})` }))}
+                />
+              </>
+            )}
+            <NumberRangeField
+              label="Prezzo €"
+              min={props.fMinPrice}
+              max={props.fMaxPrice}
+              onMinChange={props.onMinPriceChange}
+              onMaxChange={props.onMaxPriceChange}
+              step={10}
+            />
+            <NumberRangeField
+              label="Giorni online"
+              min={props.fMinDays}
+              max={props.fMaxDays}
+              onMinChange={props.onMinDaysChange}
+              onMaxChange={props.onMaxDaysChange}
+            />
+            {(anyFacetFilter || anyRangeFilter) && (
+              <button
+                onClick={() => {
+                  props.onModelChange(null);
+                  props.onStorageChange(null);
+                  props.onColorChange(null);
+                  props.onConditionChange(null);
+                  props.onMinPriceChange(null);
+                  props.onMaxPriceChange(null);
+                  props.onMinDaysChange(null);
+                  props.onMaxDaysChange(null);
+                }}
+                style={{
+                  height: "34px",
+                  padding: "0 12px",
+                  borderRadius: "8px",
+                  border: "1px solid oklch(0.32 0.01 250)",
+                  background: "transparent",
+                  color: "oklch(0.72 0.16 30)",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                }}
+              >
+                ✕ Azzera filtri
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {props.error ? (
         <ErrorBanner message={props.error} />
@@ -1328,6 +1386,64 @@ function FacetSelect(props: {
         </option>
       ))}
     </select>
+  );
+}
+
+/** Coppia di input numerici min/max per un filtro a range (prezzo, giorni online). */
+function NumberRangeField(props: {
+  label: string;
+  min: number | null;
+  max: number | null;
+  onMinChange: (v: number | null) => void;
+  onMaxChange: (v: number | null) => void;
+  step?: number;
+}) {
+  const active = props.min !== null || props.max !== null;
+  const inputStyle: CSSProperties = {
+    width: "64px",
+    height: "34px",
+    background: "transparent",
+    border: "none",
+    color: "oklch(0.90 0.004 250)",
+    fontSize: "13px",
+    fontFamily: "inherit",
+    outline: "none",
+  };
+  const parse = (raw: string): number | null => (raw === "" ? null : Number(raw));
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        height: "34px",
+        background: active ? "var(--accent-soft)" : "oklch(0.20 0.008 250)",
+        border: `1px solid ${active ? "var(--accent-border)" : "oklch(0.32 0.01 250)"}`,
+        borderRadius: "8px",
+        padding: "0 8px",
+      }}
+    >
+      <span style={{ fontSize: "12px", color: active ? "var(--accent-text)" : "oklch(0.62 0.01 250)" }}>
+        {props.label}
+      </span>
+      <input
+        type="number"
+        placeholder="min"
+        value={props.min ?? ""}
+        step={props.step ?? 1}
+        onChange={(e) => props.onMinChange(parse(e.target.value))}
+        style={inputStyle}
+      />
+      <span style={{ color: "oklch(0.46 0.01 250)" }}>–</span>
+      <input
+        type="number"
+        placeholder="max"
+        value={props.max ?? ""}
+        step={props.step ?? 1}
+        onChange={(e) => props.onMaxChange(parse(e.target.value))}
+        style={inputStyle}
+      />
+    </div>
   );
 }
 
@@ -1967,12 +2083,7 @@ function NegotiationAssistant(props: {
     });
   }
   if (item.sellerType) {
-    const label =
-      item.sellerType === "finto_privato"
-        ? "⚠️ finto privato"
-        : item.sellerType === "dealer"
-          ? "concessionario"
-          : "privato";
+    const label = sellerTypeLabel(item.sellerType, props.category);
     const p = item.sellerProfile;
     const bits: string[] = [];
     if (p) {
@@ -2914,6 +3025,7 @@ function IntelScreen(props: {
   depreciation: DepreciationData | null;
   trendPaths: { linePath: string; areaPath: string; min: number; max: number } | null;
   batchLastRun: string;
+  category: Category;
 }) {
   const { intel, trendPaths } = props;
   const gradientId = "grad-trend";
@@ -3055,7 +3167,7 @@ function IntelScreen(props: {
 
           <DepreciationSection data={props.depreciation} />
 
-          <SellerRanking sellers={intel?.sellers ?? []} />
+          <SellerRanking sellers={intel?.sellers ?? []} category={props.category} />
         </>
       )}
     </div>
@@ -3437,11 +3549,10 @@ function DepreciationChart(props: { curves: DepreciationCurve[] }) {
   );
 }
 
-function SellerRanking(props: { sellers: SellerRankRow[] }) {
+function SellerRanking(props: { sellers: SellerRankRow[]; category: Category }) {
   const { sellers } = props;
   if (sellers.length === 0) return null;
-  const typeLabel = (t: string | null) =>
-    t === "finto_privato" ? "⚠️ finto privato" : t === "dealer" ? "concessionario" : "privato";
+  const typeLabel = (t: string | null) => sellerTypeLabel(t, props.category);
   const header: CSSProperties = {
     fontSize: "11px", fontWeight: 600, color: "oklch(0.46 0.01 250)",
     textTransform: "uppercase", letterSpacing: "0.05em",
