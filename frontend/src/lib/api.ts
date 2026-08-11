@@ -568,10 +568,19 @@ export type ScrapeRun = {
   ran_at: string;
 };
 
+export type TargetCoverage = {
+  query: string;
+  active: number;
+  sold: number;
+  total: number;
+  new24h: number;
+};
+
 export type Coverage = {
   activeTargets: number | null;
   activeListings: number | null;
   new24h: number;
+  targets: TargetCoverage[];
 };
 
 export type ScraperHealth = {

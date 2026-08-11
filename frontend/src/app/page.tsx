@@ -38,6 +38,7 @@ import {
   type OpportunityFacets,
   type PresetMode,
   type ScraperHealth,
+  type TargetCoverage,
   type SellerRankRow,
   type SortMode,
   type TimeToSaleData,
@@ -4062,8 +4063,10 @@ function SettingsScreen() {
       {suffix && <span style={{ fontSize: "12px", color: "oklch(0.55 0.01 250)" }}>{suffix}</span>}
     </div>
   );
+  // key: il campo viene usato anche dentro .map() (margini per categoria, chat
+  // Telegram) e il titolo è univoco in ciascuna lista.
   const field = (title: string, node: ReactNode) => (
-    <div>
+    <div key={title}>
       <div style={label}>{title}</div>
       {node}
     </div>
@@ -4284,6 +4287,109 @@ function ScraperHealthPanel(props: { health: ScraperHealth }) {
         Proxy residenziale {health.proxy_configured ? "✓ configurato" : "✗ non configurato (connessione diretta)"} ·
         impronte TLS: {health.impersonate_pool?.join(", ") || "—"}
       </div>
+      {cats.map(([cat, label]) => {
+        const rows = health.coverage[cat]?.targets ?? [];
+        return rows.length ? <TargetCoverageTable key={cat} label={label} rows={rows} /> : null;
+      })}
+    </div>
+  );
+}
+
+/** Quanto mercato abbiamo osservato, target per target. */
+function TargetCoverageTable(props: { label: string; rows: TargetCoverage[] }) {
+  const [open, setOpen] = useState(false);
+  const { rows } = props;
+  const totals = rows.reduce(
+    (a, r) => ({
+      active: a.active + r.active,
+      sold: a.sold + r.sold,
+      total: a.total + r.total,
+      new24h: a.new24h + r.new24h,
+    }),
+    { active: 0, sold: 0, total: 0, new24h: 0 },
+  );
+  const maxTotal = Math.max(...rows.map((r) => r.total), 1);
+  const head: CSSProperties = {
+    fontSize: "10.5px", fontWeight: 700, color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.04em",
+  };
+  const cols = "1.5fr 0.7fr 0.7fr 0.8fr 1.4fr";
+  return (
+    <div style={{ border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflow: "hidden" }}>
+      <div
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 16px", cursor: "pointer", background: "oklch(0.20 0.008 250)",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "14px", fontWeight: 700 }}>
+            Copertura dati · {props.label}
+          </div>
+          <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "2px" }}>
+            {rows.length} target · <b>{totals.total.toLocaleString("it-IT")}</b> annunci osservati in
+            totale ({totals.active.toLocaleString("it-IT")} ora attivi,{" "}
+            {totals.sold.toLocaleString("it-IT")} già spariti)
+          </div>
+        </div>
+        <span style={{ color: "oklch(0.55 0.01 250)" }}>{open ? "▾" : "▸"}</span>
+      </div>
+      {open && (
+        <>
+          <div
+            style={{
+              display: "grid", gridTemplateColumns: cols, gap: "10px",
+              padding: "8px 16px", background: "oklch(0.175 0.008 250)", ...head,
+            }}
+          >
+            <div>Target</div>
+            <div title="Annunci attivi adesso">Attivi</div>
+            <div title="Annunci spariti: venduti o ritirati">Spariti</div>
+            <div title="Totale annunci distinti mai osservati">Osservati</div>
+            <div />
+          </div>
+          {rows.map((r) => (
+            <div
+              key={r.query}
+              style={{
+                display: "grid", gridTemplateColumns: cols, gap: "10px",
+                padding: "8px 16px", alignItems: "center", fontSize: "12.5px",
+                borderTop: "1px solid oklch(0.24 0.008 250)",
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>{r.query}</div>
+              <div style={{ fontFamily: MONO }}>{r.active}</div>
+              <div style={{ fontFamily: MONO, color: "oklch(0.6 0.01 250)" }}>{r.sold}</div>
+              <div style={{ fontFamily: MONO, fontWeight: 700 }}>{r.total}</div>
+              <div
+                style={{
+                  height: "6px", borderRadius: "3px", background: "oklch(0.24 0.008 250)",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${(r.total / maxTotal) * 100}%`, height: "100%",
+                    background: "var(--accent)",
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+          <div
+            style={{
+              padding: "10px 16px", fontSize: "11.5px", color: "oklch(0.55 0.01 250)",
+              borderTop: "1px solid oklch(0.24 0.008 250)", lineHeight: 1.6,
+            }}
+          >
+            «Attivi» è una fotografia del momento e oscilla di continuo (ne entrano di
+            nuovi, altri spariscono): per questo il totale in dashboard sale e scende.
+            «Osservati» è cumulativo ed è il numero che conta per fidarsi delle statistiche
+            di quel modello.
+          </div>
+        </>
+      )}
     </div>
   );
 }

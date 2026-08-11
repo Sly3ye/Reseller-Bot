@@ -124,7 +124,69 @@ def _coverage(db: Any, cat: str, recent: list[dict[str, Any]]) -> dict[str, Any]
         "activeTargets": active_targets,
         "activeListings": active_listings,
         "new24h": new_24h,
+        "targets": _coverage_by_target(db, cat, table),
     }
+
+
+def _coverage_by_target(db: Any, cat: str, table: str) -> list[dict[str, Any]]:
+    """Copertura per singolo target: quanti annunci abbiamo VISTO in totale,
+    quanti sono ancora attivi e quanti sono già spariti (venduti/ritirati).
+
+    "Attivi" è una fotografia del momento e oscilla (ne entrano di nuovi, altri
+    spariscono); "totale visti" è cumulativo e dice davvero quanto mercato
+    abbiamo osservato per quel modello — il numero che conta per fidarsi delle
+    statistiche di quella variante.
+    """
+    try:
+        targets = (
+            db.table("target_models")
+            .select("id, query")
+            .eq("is_active", True)
+            .eq("category", cat)
+            .execute()
+            .data
+            or []
+        )
+        rows = (
+            db.table(table)
+            .select("target_id, status, found_at")
+            .limit(40000)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return []
+
+    from datetime import datetime, timedelta, timezone  # noqa: PLC0415
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    names = {t["id"]: t["query"] for t in targets}
+    stats: dict[str, dict[str, int]] = {
+        t["query"]: {"active": 0, "sold": 0, "total": 0, "new24h": 0} for t in targets
+    }
+    for row in rows:
+        name = names.get(row.get("target_id"))
+        if name is None:
+            continue
+        entry = stats[name]
+        entry["total"] += 1
+        status = row.get("status")
+        if status in ("nuovo", "visto"):
+            entry["active"] += 1
+        elif status == "venduto_rimosso":
+            entry["sold"] += 1
+        try:
+            found = datetime.fromisoformat(str(row.get("found_at")).replace("Z", "+00:00"))
+            if found >= cutoff:
+                entry["new24h"] += 1
+        except (ValueError, TypeError):
+            pass
+
+    return sorted(
+        ({"query": q, **s} for q, s in stats.items()),
+        key=lambda x: -x["total"],
+    )
 
 
 def get_health() -> dict[str, Any]:

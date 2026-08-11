@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 from backend.core.database import Client
 
 from backend.core.database import get_db
+from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import evaluate_opportunity, risk_assessment
 from backend.services.valuation import evaluate_value
@@ -494,23 +495,43 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
 # Campione minimo di venduti per fidarsi del prezzo di realizzo come riferimento.
 _MIN_SOLD_REF = 5
 
+# Un annuncio che sparisce entro N giorni è quasi certamente VENDUTO; uno che
+# resta a lungo e poi sparisce è spesso scaduto/ritirato invenduto — al suo
+# prezzo (troppo alto) nessuno ha comprato. Misurato sui dati reali: chi sparisce
+# entro 4gg costa ~13% meno di chi ci mette 12+gg. Includere anche i lenti alza
+# il riferimento di rivendita di ~6% in media (fino a -40% sulle varianti
+# rumorose), ed è la causa principale del "valore equo troppo alto".
+_SALE_WINDOW_DAYS = 10
+
+
+def _days_between(found_at: Any, updated_at: Any) -> float | None:
+    start, end = _parse_ts(found_at), _parse_ts(updated_at)
+    if start is None or end is None:
+        return None
+    return (end - start).total_seconds() / 86400
+
 
 def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[float, int]]]:
-    """Prezzo di realizzo REALE per VARIANTE canonica, dai VENDUTI.
+    """Prezzo di RIVENDITA realistico per VARIANTE canonica, dai venduti.
 
     Ritorna ``{variant_key: {tier_o_"__all__": (mediana, n)}}``: sia il
     riferimento per FASCIA DI CONDIZIONE specifica (quando ci sono abbastanza
     venduti in quella fascia) sia un riferimento "__all__" che mescola le
-    fasce sane come fallback. Distinguere i due evita di applicare IL
+    fasce sane come fallback. Distinguere i due evita di applicare il
     fattore-condizione (fascia sopra/sotto la media) sopra un prezzo che è
     già la mediana della fascia — altrimenti si conta due volte lo stesso
-    aggiustamento e il valore equo dei "come nuovo" risulta sistematicamente
-    gonfiato. Vedi ``estimate_fair_value``.
+    aggiustamento. Vedi ``estimate_fair_value``.
+
+    Conta solo gli annunci spariti entro ``_SALE_WINDOW_DAYS`` (venduti davvero,
+    non scaduti invenduti); se una variante non raggiunge il campione minimo
+    nella finestra, ripiega su tutti i suoi venduti pur di avere un riferimento.
+    Scarta accessori/ricambi anche a posteriori: le righe salvate prima del
+    filtro allo scraping resterebbero altrimenti a inquinare le mediane.
     """
     try:
         rows = (
             db.table(table)
-            .select("variant_key, asking_price, condition_tier")
+            .select("variant_key, asking_price, condition_tier, title, found_at, updated_at")
             .in_("status", list(_SOLD_STATUSES))
             .limit(20000)
             .execute()
@@ -520,24 +541,32 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[floa
     except Exception:
         return {}
 
-    buckets: dict[str, dict[str, list[float]]] = {}
+    # bucket[vk][tier] = (prezzi_in_finestra, prezzi_tutti)
+    buckets: dict[str, dict[str, tuple[list[float], list[float]]]] = {}
     for row in rows:
         vk = row.get("variant_key")
         price = _to_float(row.get("asking_price"))
         tier = row.get("condition_tier") or "buono"
         if not vk or vk == "auto" or price is None or price <= 0:
             continue
-        if not is_healthy(tier):
+        if not is_healthy(tier) or _is_accessory_listing(row.get("title")):
             continue
+        days = _days_between(row.get("found_at"), row.get("updated_at"))
+        in_window = days is not None and days <= _SALE_WINDOW_DAYS
         vk_buckets = buckets.setdefault(vk, {})
-        vk_buckets.setdefault("__all__", []).append(price)
-        vk_buckets.setdefault(tier, []).append(price)
+        for key in ("__all__", tier):
+            fast, every = vk_buckets.setdefault(key, ([], []))
+            every.append(price)
+            if in_window:
+                fast.append(price)
 
     refs: dict[str, dict[str, tuple[float, int]]] = {}
     for vk, tier_buckets in buckets.items():
         vk_refs: dict[str, tuple[float, int]] = {}
-        for tier, prices in tier_buckets.items():
-            cleaned = _iqr_clean(prices)
+        for tier, (fast, every) in tier_buckets.items():
+            cleaned = _iqr_clean(fast)
+            if len(cleaned) < _MIN_SOLD_REF:
+                cleaned = _iqr_clean(every)  # copertura prima di precisione
             if len(cleaned) >= _MIN_SOLD_REF:
                 vk_refs[tier] = (round(statistics.median(cleaned), 2), len(cleaned))
         if vk_refs:

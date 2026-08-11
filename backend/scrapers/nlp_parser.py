@@ -139,33 +139,49 @@ REPAIRABLE_DEFECTS = frozenset({"schermo-rotto", "batteria-esausta", "back-rotto
 # "Cover per iPhone 13" (accessorio in vendita) vs "iPhone 13 con cover inclusa"
 # (è il telefono, l'accessorio è solo un omaggio incluso — non va escluso).
 _ACCESSORY_KEYWORDS = (
+    # accessori
     "cover", "custodia", "vetro temperato", "vetro protettivo", "vetro posteriore",
     "pellicola", "proteggi schermo", "screen protector", "caricatore",
     "caricabatterie", "cavo lightning", "cavo usb", "cavo dati", "adattatore",
     "powerbank", "auricolari", "cuffie", "airpods", "supporto auto",
     "porta cellulare", "flip cover", "custodia a libro", "retro cover",
     "guscio", "borsa porta cellulare",
+    # ricambi (pezzi singoli): stessa regola posizionale — "Display iPhone 15"
+    # è un ricambio, "iPhone 15 display rotto" è un telefono col display rotto.
+    "display", "schermo", "lcd", "oled", "touch screen", "scocca", "carcassa",
+    "telaio", "scheda madre", "fotocamera", "fotocamere", "altoparlante",
+    "connettore", "flat", "vibrazione", "antenna", "tasto accensione",
+    "vetro fotocamera", "lente fotocamera", "ricambio", "ricambi",
+)
+
+
+# Match su confini di parola: senza \b "oled" scatterebbe dentro "AMOLED"
+# (Garmin) e "cover" dentro "discover".
+_ACCESSORY_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(kw) for kw in _ACCESSORY_KEYWORDS) + r")\b",
+    re.IGNORECASE,
 )
 
 
 def _is_accessory_listing(title: str | None) -> bool:
     """True se il titolo vende un ACCESSORIO/RICAMBIO "per iPhone", non il
-    telefono stesso (cover, vetro, caricatore, batteria/vetro di ricambio...).
+    telefono stesso (cover, vetro, caricatore, display/scocca di ricambio...).
+
+    Regola posizionale: conta solo se la parola-accessorio precede "iphone".
+    "Display iPhone 15" è un ricambio; "iPhone 15 display rotto" è un telefono
+    col display rotto (che vogliamo tenere, col suo malus di condizione).
 
     Esclude questi annunci dal feed tech: altrimenti inquinano prezzi medi,
-    valore equo e Deal Score con oggetti da pochi euro che non sono telefoni.
+    valore equo e Deal Score con oggetti che non sono telefoni.
     """
     if not title:
         return False
     norm = _normalize(title)
+    match = _ACCESSORY_RE.search(norm)
+    if match is None:
+        return False
     iphone_pos = norm.find("iphone")
-    for kw in _ACCESSORY_KEYWORDS:
-        pos = norm.find(kw)
-        if pos == -1:
-            continue
-        if iphone_pos == -1 or pos < iphone_pos:
-            return True
-    return False
+    return iphone_pos == -1 or match.start() < iphone_pos
 
 
 # ----------------------------------------------------------------- colore (tech)
