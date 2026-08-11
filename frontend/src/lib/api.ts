@@ -435,6 +435,7 @@ export type TimeToSaleRecord = {
   model: string;
   color: string | null;
   storageGb: number | null;
+  conditionTier: string;
   days: number;
   price: number | null;
 };
@@ -444,6 +445,7 @@ export type TimeToSaleData = {
   models: string[];
   colors: string[];
   storages: number[];
+  conditions: string[];
   sampleSold: number;
 };
 

@@ -42,6 +42,7 @@ import {
   type SellerRankRow,
   type SortMode,
   type TimeToSaleData,
+  type TimeToSaleRecord,
   type ViewMode,
 } from "@/lib/api";
 import {
@@ -2309,6 +2310,183 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/* ------------------------- Grafico: prezzo × tempo di vendita × condizione */
+
+// Ordine ORDINALE fisso (mai ciclato): dal migliore al peggiore. Palette
+// validata con scripts/validate_palette.js sul fondo scuro #111417 —
+// banda di luminosità, chroma, separazione daltonismo e contrasto: tutti PASS.
+const COND_ORDER = ["come-nuovo", "buono", "difetti", "rotto"] as const;
+const COND_COLOR: Record<string, string> = {
+  "come-nuovo": "#11ae5b",
+  buono: "#3280dd",
+  difetti: "#c18500",
+  rotto: "#d73337",
+};
+const COND_LABEL: Record<string, string> = {
+  "come-nuovo": "Come nuovo",
+  buono: "Buono",
+  difetti: "Con difetti",
+  rotto: "Rotto",
+};
+
+function SaleScatter(props: { records: TimeToSaleRecord[] }) {
+  const [hover, setHover] = useState<{ x: number; y: number; r: TimeToSaleRecord } | null>(null);
+  const pts = useMemo(
+    () => props.records.filter((r) => r.price != null && r.price > 0),
+    [props.records],
+  );
+  if (pts.length < 5) return null;
+
+  const W = 900, H = 380;
+  const M = { top: 16, right: 18, bottom: 40, left: 62 };
+  const iw = W - M.left - M.right, ih = H - M.top - M.bottom;
+
+  const maxDays = Math.max(...pts.map((p) => p.days), 1);
+  // Il tetto Y taglia il 2% più caro: un singolo outlier schiaccerebbe tutto.
+  const sortedP = [...pts.map((p) => p.price as number)].sort((a, b) => a - b);
+  const maxPrice = sortedP[Math.floor(sortedP.length * 0.98)] || sortedP[sortedP.length - 1];
+
+  const x = (d: number) => M.left + (Math.min(d, maxDays) / maxDays) * iw;
+  const y = (p: number) => M.top + ih - (Math.min(p, maxPrice) / maxPrice) * ih;
+
+  const xTicks = Array.from({ length: 6 }, (_, i) => Math.round((maxDays / 5) * i));
+  const yTicks = Array.from({ length: 5 }, (_, i) => Math.round((maxPrice / 4) * i));
+
+  // Mediana dei giorni per fascia di prezzo: la lettura operativa ("a questo
+  // prezzo si vende in tot giorni"), che il solo insieme di punti non dà.
+  const BANDS = 5;
+  const bands = Array.from({ length: BANDS }, (_, i) => {
+    const lo = (maxPrice / BANDS) * i, hi = (maxPrice / BANDS) * (i + 1);
+    const inBand = pts.filter((p) => (p.price as number) >= lo && (p.price as number) < hi);
+    return {
+      lo,
+      hi,
+      med: inBand.length ? median(inBand.map((p) => p.days)) : null,
+      n: inBand.length,
+    };
+  });
+
+  const present = COND_ORDER.filter((c) => pts.some((p) => p.conditionTier === c));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      {/* Legenda: identità mai affidata al solo colore */}
+      <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", alignItems: "center" }}>
+        {present.map((c) => (
+          <span key={c} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            <span
+              style={{
+                width: "10px", height: "10px", borderRadius: "50%",
+                background: COND_COLOR[c], flexShrink: 0,
+              }}
+            />
+            <span style={{ fontSize: "12.5px", color: "oklch(0.78 0.01 250)" }}>
+              {COND_LABEL[c]}
+              <span style={{ color: "oklch(0.5 0.01 250)", fontFamily: MONO }}>
+                {" "}({pts.filter((p) => p.conditionTier === c).length})
+              </span>
+            </span>
+          </span>
+        ))}
+      </div>
+
+      <div style={{ position: "relative", overflowX: "auto" }}>
+        <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: "620px", display: "block" }}>
+          {/* Griglia recessiva */}
+          {yTicks.map((t) => (
+            <g key={t}>
+              <line x1={M.left} x2={W - M.right} y1={y(t)} y2={y(t)} stroke="oklch(0.28 0.01 250)" strokeWidth="1" />
+              <text x={M.left - 8} y={y(t) + 4} textAnchor="end" fontSize="11" fill="oklch(0.5 0.01 250)">
+                €{t}
+              </text>
+            </g>
+          ))}
+          {xTicks.map((t) => (
+            <text key={t} x={x(t)} y={H - 14} textAnchor="middle" fontSize="11" fill="oklch(0.5 0.01 250)">
+              {t}gg
+            </text>
+          ))}
+
+          {/* Mediana giorni per fascia di prezzo */}
+          {bands.map((b, i) =>
+            b.med != null && b.n >= 3 ? (
+              <g key={i}>
+                <line
+                  x1={x(b.med)} x2={x(b.med)} y1={y(b.hi)} y2={y(b.lo)}
+                  stroke="oklch(0.86 0.004 250)" strokeWidth="2" strokeDasharray="3 3" opacity="0.75"
+                />
+                <text
+                  x={x(b.med) + 5} y={y(b.hi) + 13} fontSize="10.5"
+                  fill="oklch(0.86 0.004 250)" fontFamily={MONO}
+                >
+                  {b.med.toFixed(0)}gg
+                </text>
+              </g>
+            ) : null,
+          )}
+
+          {/* Punti: anello del colore del fondo per separare le sovrapposizioni */}
+          {pts.map((p, i) => (
+            <circle
+              key={i}
+              cx={x(p.days)}
+              cy={y(p.price as number)}
+              r={hover?.r === p ? 6 : 3.4}
+              fill={COND_COLOR[p.conditionTier] ?? "#7a7f87"}
+              fillOpacity={hover ? (hover.r === p ? 1 : 0.35) : 0.72}
+              stroke="#111417"
+              strokeWidth="1"
+              onMouseEnter={() => setHover({ x: x(p.days), y: y(p.price as number), r: p })}
+              onMouseLeave={() => setHover(null)}
+              style={{ cursor: "pointer" }}
+            />
+          ))}
+
+          <text x={M.left + iw / 2} y={H - 1} textAnchor="middle" fontSize="11" fill="oklch(0.55 0.01 250)">
+            giorni per sparire dal mercato →
+          </text>
+        </svg>
+
+        {hover && (
+          <div
+            style={{
+              position: "absolute",
+              left: `min(${(hover.x / W) * 100}%, calc(100% - 210px))`,
+              top: `calc(${(hover.y / H) * 100}% - 8px)`,
+              transform: "translateY(-100%)",
+              background: "oklch(0.16 0.008 250)",
+              border: "1px solid oklch(0.34 0.01 250)",
+              borderRadius: "8px",
+              padding: "8px 10px",
+              pointerEvents: "none",
+              fontSize: "12px",
+              lineHeight: 1.5,
+              whiteSpace: "nowrap",
+              zIndex: 5,
+            }}
+          >
+            <div style={{ fontWeight: 700 }}>{hover.r.model}</div>
+            <div style={{ fontFamily: MONO }}>
+              {eur(hover.r.price as number)} · {hover.r.days.toFixed(0)} giorni
+            </div>
+            <div style={{ color: "oklch(0.65 0.01 250)" }}>
+              {COND_LABEL[hover.r.conditionTier] ?? hover.r.conditionTier}
+              {hover.r.storageGb ? ` · ${hover.r.storageGb}GB` : ""}
+              {hover.r.color ? ` · ${hover.r.color}` : ""}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ fontSize: "11.5px", color: "oklch(0.55 0.01 250)", lineHeight: 1.6 }}>
+        Ogni punto è un annuncio sparito da Subito: <b>a sinistra</b> ciò che è
+        andato via in fretta, <b>in alto</b> i prezzi più alti. Le linee tratteggiate sono
+        i giorni mediani per fascia di prezzo. Passa sopra un punto per il dettaglio.
+      </div>
+    </div>
+  );
+}
+
 function TimeToSaleScreen(props: { category: Category }) {
   const [data, setData] = useState<TimeToSaleData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2354,6 +2532,18 @@ function TimeToSaleScreen(props: { category: Category }) {
   const orderedGroup = useMemo(
     () => (["model", "color", "storage"] as TtsDim[]).filter((d) => groupBy.includes(d)),
     [groupBy],
+  );
+
+  // Stessi filtri della tabella, ma record grezzi: servono al grafico.
+  const filteredRecords = useMemo(
+    () =>
+      (data?.records ?? []).filter(
+        (r) =>
+          (!fModel || r.model === fModel) &&
+          (!fColor || r.color === fColor) &&
+          (!fStorage || String(r.storageGb) === fStorage),
+      ),
+    [data, fModel, fColor, fStorage],
   );
 
   const rows = useMemo(() => {
@@ -2576,6 +2766,31 @@ function TimeToSaleScreen(props: { category: Category }) {
                 {filteredTotal}
               </div>
             </div>
+          </div>
+
+          {/* Grafico: dove e quanto in fretta si vende davvero */}
+          <div
+            style={{
+              background: "oklch(0.19 0.008 250)",
+              border: "1px solid oklch(0.27 0.01 250)",
+              borderRadius: "12px",
+              padding: "18px 20px",
+              display: "flex",
+              flexDirection: "column",
+              gap: "12px",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "15px", fontWeight: 700 }}>
+                Prezzo × tempo di vendita
+              </div>
+              <div style={{ fontSize: "12.5px", color: "oklch(0.6 0.01 250)", marginTop: "3px" }}>
+                Tutti i {filteredRecords.length.toLocaleString("it-IT")} venduti del filtro
+                attivo. La condizione è il colore: è ciò che sposta il prezzo più di
+                tutto, quindi si legge invece di essere nascosta.
+              </div>
+            </div>
+            <SaleScatter records={filteredRecords} />
           </div>
 
           {/* Tabella pivot */}

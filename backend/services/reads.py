@@ -464,7 +464,7 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
     try:
         rows = (
             db.table(table)
-            .select("variant_key, asking_price, condition_tier")
+            .select("variant_key, asking_price, condition_tier, title")
             .in_("status", list(_ACTIVE_STATUSES))
             .execute()
             .data
@@ -481,6 +481,8 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
             # "auto" = catch-all di righe storiche senza target: mix inutile.
             continue
         if not is_healthy(row.get("condition_tier") or "buono"):
+            continue
+        if _is_accessory_listing(row.get("title")):
             continue
         buckets.setdefault(vk, []).append(price)
 
@@ -897,6 +899,13 @@ def list_opportunities(
         query = query.lte("asking_price", max_price)
     rows = query.execute().data or []
 
+    # Accessori e ricambi ("Cover per iPhone 13", "Display iPhone 15"): non sono
+    # telefoni e col valore equo della variante sembrerebbero affari clamorosi.
+    # Scartati anche QUI, non solo allo scraping, così il filtro vale subito su
+    # tutto lo storico già raccolto senza doverlo cancellare.
+    if not table.endswith("_auto"):
+        rows = [r for r in rows if not _is_accessory_listing(r.get("title"))]
+
     # Triage utente (ortogonale allo status): salvati / nascondi gli scartati.
     if view == "salvati":
         rows = [r for r in rows if r.get("triage") == "salvato"]
@@ -1082,7 +1091,7 @@ def get_time_to_sale(
             .select(
                 _cols(
                     table, "target_id", "color", "storage_gb", "asking_price",
-                    "found_at", "updated_at", "condition_tier",
+                    "found_at", "updated_at", "condition_tier", "title",
                 )
             )
             .in_("status", list(_SOLD_STATUSES))
@@ -1099,8 +1108,12 @@ def get_time_to_sale(
     models: set[str] = set()
     colors: set[str] = set()
     storages: set[int] = set()
+    conditions: set[str] = set()
     for row in rows:
-        if not is_healthy(row.get("condition_tier") or "buono"):
+        # La condizione NON si filtra più: è la dimensione che spiega meglio il
+        # prezzo, quindi va nel grafico come variabile (non buttata via).
+        # Restano fuori solo accessori e ricambi, che non sono telefoni.
+        if _is_accessory_listing(row.get("title")):
             continue
         model = targets.get(row.get("target_id"))
         found = _parse_ts(row.get("found_at"))
@@ -1113,16 +1126,19 @@ def get_time_to_sale(
         color = row.get("color")
         storage = row.get("storage_gb")
         price = _to_float(row.get("asking_price"))
+        tier = row.get("condition_tier") or "buono"
         records.append(
             {
                 "model": model,
                 "color": color,
                 "storageGb": int(storage) if storage else None,
+                "conditionTier": tier,
                 "days": round(days, 1),
                 "price": round(price) if price and price > 0 else None,
             }
         )
         models.add(model)
+        conditions.add(tier)
         if color:
             colors.add(color)
         if storage:
@@ -1133,6 +1149,7 @@ def get_time_to_sale(
         "models": sorted(models),
         "colors": sorted(colors),
         "storages": sorted(storages),
+        "conditions": sorted(conditions),
         "sampleSold": len(records),
     }
 
