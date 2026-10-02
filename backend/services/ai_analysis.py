@@ -174,7 +174,7 @@ def _field_writeback(
             "defects_noted": row.get("defects_noted") or [],
             "features": row.get("features") or [],
         }
-        resolved = resolve_variant("smartphone", title, meta)
+        resolved = resolve_variant("smartphone", title, meta, description=row.get("description"))
         update["variant_key"] = resolved["variant_key"]
     return update
 

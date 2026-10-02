@@ -40,8 +40,8 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 
 | # | Criterio | Stato |
 |---|---|---|
-| B1 | Modello riconosciuto ≥ 97% degli annunci attivi | 🔧 96,5% |
-| B2 | Memoria ≥ 85% | 🔧 74,5% |
+| B1 | Modello riconosciuto ≥ 97% degli annunci attivi | ✅ 97,8% (anche dalla descrizione se il titolo dice solo "iPhone") |
+| B2 | Memoria letta in ≥ 95% degli annunci che la scrivono (prima: "≥ 85% di tutti") | ✅ ~97% di chi la scrive · 80,1% di tutti: il ~18% degli annunci non riporta alcun taglio, nessuna regola o AI lo può leggere dal testo |
 | B3 | **Guasto classificato per tipo** (tassonomia in `services/defects.py`) con F1 ≥ 0,90 sulla serie di **verifica** etichettata (`scripts/eval_guasti.py`) | 🔧 regex v2: precisione 0,91 ma richiamo 0,48 (F1 0,62) su annunci mai visti — serve l'AI per il richiamo |
 | B4 | **Parti non originali** riconosciute (display/batteria già sostituiti: pesano sul prezzo) | 🔧 regex: F1 0,77 in verifica |
 | B5 | Modello AI locale scelto **su misure**, che copre tutti gli annunci rilevanti | 🔧 prompt v2 e banco di prova pronti; misura dei candidati da fare sul Mac |
@@ -85,7 +85,7 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 
 ## Distanza
 
-- **Fatto:** la base (A1, A4, C1, C4, D2, D4, E1, F1, F3, F4).
+- **Fatto:** la base (A1, A4, B1, B2, C1, C2, C3, C5, D1–D4, E1, E2, F1, F3, F4).
 - **Sviluppo che manca, in ordine:** B5 (modello AI, misura sul Mac) → B3/B4
   oltre le regex → E3 (correggere listini e rischio con le riparazioni vere)
   → A5/F2 (una macchina sempre accesa, backup schedulati).

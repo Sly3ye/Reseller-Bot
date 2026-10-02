@@ -51,6 +51,29 @@ def test_nlp_tech():
     check("batteria_100", r["battery_pct"], 100)
 
 
+def test_nlp_storage():
+    print("NLP memoria (forme reali):")
+    s = lambda t, desc=None: nlp.parse_listing(t, desc)["storage_gb"]  # noqa: E731
+    check("128g", s("Iphone 15 pro 128g"), 128)
+    check("256 g", s("iPhone 15 pro 256 g"), 256)
+    check("512Gg", s("Iphone 17 pro 512Gg"), 512)
+    check("128. Gb.", s("Iphone. 14. Plus. Black. 128. Gb. 330€"), 128)
+    check("1 T", s("iPhone 13 pro max", "Vendo da 1 T Con scatola"), 1024)
+    check("2TB", s("iPhone 17 Pro Max 2TB"), 2048)
+    check("1000 giga", s("IPHONE 16 promax 1000 giga nero"), 1024)
+    check("16gb vecchio", s("iPhone 3G nero 16gb"), 16)
+    check("GB 128", s("iPhone 16", "Vendo Iphone 16 – GB 128 ad euro 550"), 128)
+    check("256 MB = GB", s("I phone 13", "Vedo iPhone 13 bianco 256 MB"), 256)
+    check("memoria 256", s("iPhone 13 Pro Max", "iPhone 13 Pro Max, 256 memoria."), 256)
+    check("nudo nel titolo", s("iPhone 12 pro 128"), 128)
+    check("titolo prima della descrizione", s("iPhone 14 Pro 512 gb", "disponibili anche 1TB"), 512)
+    check("prezzo nel titolo ≠ memoria", s("Iphone 11 128€"), None)
+    check("prezzo € prima", s("iPhone 11 € 256"), None)
+    check("nudo dopo il modello in descrizione", s("Iphone", "iphone 14 128 in ottime condizioni"), 128)
+    check("batteria% ≠ memoria", s("iPhone 13", "batteria 87%"), None)
+    check("16 nudo non basta", s("iPhone 7 16"), None)
+
+
 def test_nlp_guasti_v2():
     print("NLP guasti v2 (negazioni, parti non originali):")
     d = lambda t, desc="": nlp.parse_listing(t, desc)["defects_noted"]  # noqa: E731
@@ -141,6 +164,7 @@ def test_scoring():
 
 def main() -> None:
     test_nlp_tech()
+    test_nlp_storage()
     test_nlp_guasti_v2()
     test_nlp_auto()
     test_scoring()

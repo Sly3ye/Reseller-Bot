@@ -127,7 +127,8 @@ def _opportunity_payload(
     # Variante canonica (scrematura BI): bucket pulito per (modello,memoria) tech
     # / (modello,generazione) auto + fascia di condizione.
     variant = resolve_variant(
-        category, listing.title, meta, query=query, strict_filters=strict_filters
+        category, listing.title, meta, query=query, strict_filters=strict_filters,
+        description=listing.description,
     )
     payload: dict[str, Any] = {
         "id": str(uuid.uuid4()),
@@ -525,11 +526,13 @@ async def persist_opportunities(
         for listing in truly_new:
             meta = listing.metadata or {}
             variant = resolve_variant(
-                category, listing.title, meta, query=query, strict_filters=strict_filters
+                category, listing.title, meta, query=query, strict_filters=strict_filters,
+                description=listing.description,
             )
             candidates.append({
                 "listing": listing, "seller_id": meta.get("seller_id"),
                 "variant_key": variant["variant_key"], "title": listing.title,
+                "description": listing.description,
                 "price": listing.price_amount,
             })
         revived = await asyncio.to_thread(find_revivable, db, table, category, candidates)

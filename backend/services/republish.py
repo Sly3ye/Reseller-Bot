@@ -30,7 +30,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from backend.services.variants import iphone_model_key
+from backend.services.variants import iphone_model_key, model_text
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +89,16 @@ def match_pairs(
     """
     by_identity: dict[tuple, list[dict[str, Any]]] = {}
     for old in olds:
-        key = identity(category, old.get("seller_id"), old.get("variant_key"), old.get("title"))
+        key = identity(category, old.get("seller_id"), old.get("variant_key"),
+                       model_text(old.get("title"), old.get("description")))
         if key:
             by_identity.setdefault(key, []).append(old)
 
     claimed: set[Any] = set()
     pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for new in news:
-        key = identity(category, new.get("seller_id"), new.get("variant_key"), new.get("title"))
+        key = identity(category, new.get("seller_id"), new.get("variant_key"),
+                       model_text(new.get("title"), new.get("description")))
         if not key:
             continue
         best = None
@@ -131,7 +133,7 @@ def find_revivable(
     try:
         rows = (
             db.table(table)
-            .select("id, seller_id, variant_key, title, asking_price, updated_at")
+            .select("id, seller_id, variant_key, title, description, asking_price, updated_at")
             .in_("seller_id", sellers)
             .in_("status", list(SOLD_STATUSES))
             .gte("updated_at", cutoff)

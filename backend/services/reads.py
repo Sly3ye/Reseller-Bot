@@ -30,7 +30,7 @@ from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import evaluate_opportunity, risk_assessment
 from backend.services.survival import removal_kind, survival_summary
 from backend.services.valuation import evaluate_value
-from backend.services.variants import AUTO_ONLY_DEFECTS, iphone_model_key, is_healthy
+from backend.services.variants import AUTO_ONLY_DEFECTS, iphone_model_key, is_healthy, model_text
 
 logger = logging.getLogger(__name__)
 
@@ -897,7 +897,8 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     shaped.update(
         evaluate_opportunity(
             category=ctx["target_cat"],
-            title=shaped["title"],
+            # Il modello (ricambi, fascia) anche dalla descrizione se il titolo tace.
+            title=model_text(shaped["title"], row.get("description")),
             asking=shaped["askingPrice"],
             market_avg=valuation["fairValue"] or market_avg,
             margin_pct=score_margin,

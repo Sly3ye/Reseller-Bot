@@ -35,7 +35,7 @@ from backend.core.database import get_db, has_column
 from backend.scrapers.base import ScrapedListing
 from backend.scrapers.subito import ScraperBlockedError, SubitoScraper
 from backend.services.republish import merge_into_old
-from backend.services.variants import iphone_model_key, mentions_iphone, normalize_iphone
+from backend.services.variants import iphone_model_key, mentions_iphone, model_text, normalize_iphone
 from backend.tasks import (
     FIRST_SCAN_LOOKBACK,
     SINCE_MARGIN,
@@ -119,7 +119,7 @@ async def persist_by_target(
     for listing in listings:
         if not is_relevant(listing, category):
             continue
-        target = match_target(listing.title, index)
+        target = match_target(model_text(listing.title, listing.description), index)
         tid = target["id"] if target else None
         groups.setdefault(tid, (target, []))[1].append(listing)
 

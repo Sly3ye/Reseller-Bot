@@ -212,6 +212,38 @@ def iphone_model_key(text: str | None) -> str | None:
     return f"iphone-{num}{suffix_slug}"
 
 
+_IPHONE_WORD_RE = re.compile(r"iphone", re.IGNORECASE)
+
+
+def model_text(title: str | None, description: str | None = None) -> str:
+    """Testo da cui leggere il MODELLO di un annuncio: il titolo, oppure, se il
+    titolo dice solo "iPhone" ("Iphone", "Telefono iPhone"), il modello scritto
+    nella descrizione ("Vendo iPhone 12 Pro 128GB...") come etichetta canonica
+    ("iPhone 12 Pro").
+
+    La descrizione vale solo se nomina UN modello: "passaggio al 16, vendo il
+    mio iPhone 13" o i lotti restano senza modello (meglio nessuno che uno
+    sbagliato). Gli accessori ("Cover per iPhone") restano sul titolo.
+    """
+    title = title or ""
+    if iphone_model_key(title) or not description or not mentions_iphone(title):
+        return title
+    from backend.scrapers.nlp_parser import _is_accessory_listing  # noqa: PLC0415 (import circolare)
+
+    if _is_accessory_listing(title):
+        return title
+    text = normalize_iphone(description)
+    models = {}
+    for m in _IPHONE_WORD_RE.finditer(text):
+        model = _iphone_model(text[m.start(): m.start() + 40])
+        if model:
+            models[f"iphone-{model[0]}{model[1]}"] = model
+    if len(models) != 1:
+        return title
+    num, _, label = next(iter(models.values()))
+    return f"iPhone {num}{label}" if num else f"iPhone {label}"
+
+
 def _iphone_variant(title: str, storage_gb: int | None) -> tuple[str, str] | None:
     model = _iphone_model(title)
     if model is None:
@@ -249,10 +281,13 @@ def resolve_variant(
     *,
     query: str | None = None,
     strict_filters: dict[str, Any] | None = None,
+    description: str | None = None,
 ) -> dict[str, Any]:
     """Assegna la variante canonica e la condition tier a un annuncio.
 
     Chiavi ritornate: ``variant_key``, ``variant_label``, ``condition_tier``.
+    Con la ``description`` il modello si legge anche da lì quando il titolo
+    non lo dice (vedi ``model_text``).
     """
     meta = metadata or {}
     tier = condition_tier(category, meta.get("defects_noted"), meta.get("features"))
@@ -262,7 +297,7 @@ def resolve_variant(
         return {"variant_key": key, "variant_label": label, "condition_tier": tier}
 
     # tech
-    resolved = _iphone_variant(title or "", meta.get("storage_gb"))
+    resolved = _iphone_variant(model_text(title, description), meta.get("storage_gb"))
     if resolved is None:
         # Non è un iPhone riconoscibile: ripiega sul target (o sul titolo).
         base = _slug(query or title or "altro")

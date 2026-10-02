@@ -235,9 +235,42 @@ _URGENCY_SYNONYMS: dict[str, tuple[str, ...]] = {
 
 # ------------------------------------------------- estrazione storage/batteria
 
-# "128GB", "128 gb", "256 giga", "1TB", "1 tb"
-_STORAGE_RE = re.compile(r"\b(64|128|256|512)\s*(?:gb|giga)\b", re.IGNORECASE)
-_STORAGE_TB_RE = re.compile(r"\b1\s*(?:tb|tera)\b", re.IGNORECASE)
+# Memoria, in ordine di affidabilità (vince la prima regola che trova qualcosa,
+# cercando prima nel titolo e poi nella descrizione):
+# 1. con unità, anche scritta male: "128GB", "128 gb", "256 g", "64g",
+#    "512Gg", "128. Gb.", "256 giga", "1TB", "1 T", "2 tera";
+# 2. con parola chiave: "memoria 128", "capacità: 256", "128 di memoria";
+# 3. numero nudo nel SOLO titolo ("iPhone 12 Pro 128"), mai se è un prezzo
+#    ("128€", "€ 256", "256 euro") o una percentuale. 16/32 nudi no: troppo
+#    ambigui (età, quantità).
+_GB_VALUES = r"(16|32|64|128|256|512)"
+_STORAGE_RE = re.compile(
+    _GB_VALUES + r"\s*[.,]?\s*(?:g\s*\.?\s*b\b|gig\w*|gbyte\w*|gg?\b)"
+    # "256 MB": refuso per GB (nessun iPhone ha 64–512 MB di memoria)
+    r"|\b(64|128|256|512)\s*mb\b"
+    # unità prima: "GB 128", "gb:256"
+    r"|\bg\s*b\s*[:.=]?\s*(16|32|64|128|256|512)\b(?!\s*[%€])",
+    re.IGNORECASE,
+)
+_STORAGE_TB_RE = re.compile(r"\b([12])\s*[.,]?\s*(?:tb\b|t\s*\.?\s*b\b|tera\w*|t\b)", re.IGNORECASE)
+_STORAGE_1000_RE = re.compile(r"\b1000\s*(?:gb|g\b|gig\w*)", re.IGNORECASE)
+# Numero nudo subito dopo il modello, anche in descrizione: "iphone 14 128 in
+# ottime", "iPhone 15 pro max 256, sempre...". Il prezzo resta escluso.
+_STORAGE_AFTER_MODEL_RE = re.compile(
+    r"iphone\s*(?:\d{1,2}|x[rs]?|se)\s*(?:pro\s*max|promax|pro|plus|mini|max)?\s*[,\-–:]?\s*"
+    r"(64|128|256|512)\b(?![.,]\d)(?!\s*(?:€|\$|%|eur|euro|e\b|,-|\.-))",
+    re.IGNORECASE,
+)
+_STORAGE_KEYWORD_RE = re.compile(
+    r"(?:memoria|capacit[aà]|storage|archiviazione|spazio|rom)\W{0,3}"
+    r"(?:interna\W{0,3})?(?:(?:di|da)\W{1,3})?" + _GB_VALUES + r"\b(?!\s*[%€])"
+    r"|\b" + _GB_VALUES + r"\s+(?:di\s+)?(?:memoria|spazio)\b",
+    re.IGNORECASE,
+)
+_STORAGE_BARE_RE = re.compile(
+    r"(?<![€$\d.,])(?<!€\s)\b(64|128|256|512)\b(?![.,]\d)(?!\s*(?:€|\$|%|eur|euro|e\b|,-|\.-))",
+    re.IGNORECASE,
+)
 
 # "batteria 87%", "batteria al 91 %", "salute batteria: 88%", "87% batteria",
 # "battery health 90%". Range plausibile 50–100.
@@ -249,11 +282,36 @@ _BATTERY_PRE_RE = re.compile(
 )
 
 
-def _extract_storage_gb(text: str) -> int | None:
-    if _STORAGE_TB_RE.search(text):
-        return 1024
-    match = _STORAGE_RE.search(text)
-    return int(match.group(1)) if match else None
+def _storage_with_unit(text: str) -> int | None:
+    """Prima memoria con unità nel testo (GB o TB, vince la più a sinistra)."""
+    hits = []
+    for m in _STORAGE_RE.finditer(text):
+        # "\b" a sinistra a mano: "iPhone12 128GB" va, "2128GB" no.
+        if m.start() == 0 or not text[m.start() - 1].isdigit():
+            hits.append((m.start(), int(next(g for g in m.groups() if g))))
+            break
+    if m := _STORAGE_TB_RE.search(text):
+        hits.append((m.start(), 1024 * int(m.group(1))))
+    if m := _STORAGE_1000_RE.search(text):
+        hits.append((m.start(), 1024))
+    return min(hits)[1] if hits else None
+
+
+def _extract_storage_gb(title: str | None, description: str | None = None) -> int | None:
+    parts = [p for p in (title, description) if p]
+    for text in parts:
+        if (gb := _storage_with_unit(text)) is not None:
+            return gb
+    for text in parts:
+        if m := _STORAGE_KEYWORD_RE.search(text):
+            return int(m.group(1) or m.group(2))
+    if title and (m := _STORAGE_BARE_RE.search(title)):
+        return int(m.group(1))
+    from backend.services.variants import normalize_iphone  # noqa: PLC0415 (evita import circolari)
+
+    if description and (m := _STORAGE_AFTER_MODEL_RE.search(normalize_iphone(description))):
+        return int(m.group(1))
+    return None
 
 
 def _extract_battery_pct(text: str) -> int | None:
@@ -536,7 +594,7 @@ def parse_listing(
     return {
         "km": _extract_km(raw),
         "year": _extract_year(raw),
-        "storage_gb": _extract_storage_gb(raw),
+        "storage_gb": _extract_storage_gb(title, description),
         "battery_pct": battery_pct,
         "color": _extract_color(norm),
         "features": features,

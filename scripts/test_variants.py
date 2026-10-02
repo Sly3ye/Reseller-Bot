@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))  # model_text importa nlp_parser (senza DB)
 spec = importlib.util.spec_from_file_location(
     "variants", ROOT / "backend/services/variants.py"
 )
@@ -75,6 +76,16 @@ ck("'5c 8 gb' non e' un 8", v.iphone_model_key("Apple iphone 5c 8 gb blu"), "iph
 ck("primo modello vince", tech("iPhone XR come iPhone 11", 64)["variant_key"], "iphone-xr-64")
 ck("17 base ≠ Air", tech("iPhone 17 White 256GB", 256)["variant_key"], "iphone-17-256")
 ck("storage n/d", tech("iPhone 14 Pro")["variant_key"], "iphone-14-pro-na")
+
+print("TECH — modello dalla descrizione se il titolo tace:")
+ck("titolo solo iphone", v.model_text("Iphone", "Vendo iphone 12 pro 256gb"), "iPhone 12 Pro")
+ck("titolo con modello vince", v.model_text("iPhone 13", "come il mio vecchio iPhone 11"), "iPhone 13")
+ck("due modelli = nessuno", v.model_text("Iphone", "passaggio ad iPhone 17, vendo iPhone 13"), "Iphone")
+ck("stesso modello due volte", v.model_text("iPhone", "iPhone XR nero. Vendo iphone xr"), "iPhone XR")
+ck("accessorio resta sul titolo", v.model_text("Cover per iPhone", "per iPhone 15 Pro"), "Cover per iPhone")
+ck("variante dalla descrizione",
+   v.resolve_variant("smartphone", "Iphone", {"storage_gb": 64}, description="Vendo iPhone 11 64gb")["variant_key"],
+   "iphone-11-64")
 
 print("TECH — label & condizione:")
 ck("label Pro Max", tech("iPhone 13 Pro Max 256GB", 256)["variant_label"], "iPhone 13 Pro Max 256GB")
