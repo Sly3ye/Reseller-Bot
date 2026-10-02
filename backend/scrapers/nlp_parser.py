@@ -146,6 +146,8 @@ _ACCESSORY_KEYWORDS = (
     "powerbank", "auricolari", "cuffie", "airpods", "supporto auto",
     "porta cellulare", "flip cover", "custodia a libro", "retro cover",
     "guscio", "borsa porta cellulare",
+    # memorie esterne "per iPhone" (SSD/chiavette): non sono telefoni
+    "ssd", "flashpod", "chiavetta", "hard disk", "memoria esterna",
     # ricambi (pezzi singoli): stessa regola posizionale — "Display iPhone 15"
     # è un ricambio, "iPhone 15 display rotto" è un telefono col display rotto.
     "display", "schermo", "lcd", "oled", "touch screen", "scocca", "carcassa",
@@ -271,15 +273,203 @@ def _normalize(text: str) -> str:
     return re.sub(r"\s+", " ", stripped)
 
 
+# Negazione nelle parole immediatamente prima ("nessun graffio", "senza crepe",
+# "non presenta segni", "no blocco iCloud"). Si guarda solo dentro la stessa
+# frase: un punto o un a-capo chiude il contesto.
+_NEGATION_RE = re.compile(
+    r"\b(?:senza|nessun[oa]?|neanche|nemmeno|neppure|zero|privo|priva|esente|"
+    r"non\s+(?:ha|ho|presenta|ci\s+sono|c\s?e|ha\s+mai)|mai|no)\b([^.!?\n]{0,25})$"
+)
+# Dopo questi la negazione non vale più: "nessun difetto, unico problema lo
+# schermo crepato", "senza graffi ma con la scocca rotta".
+_NEGATION_STOP_RE = re.compile(r"\b(?:ma|pero|unico|unica|tranne|salvo|eccetto|solo|solamente)\b")
+
+
+def _negated(haystack: str, start: int) -> bool:
+    window = haystack[max(0, start - 40):start]
+    cut = max(window.rfind(c) for c in ".!?\n")
+    if cut >= 0:
+        window = window[cut + 1:]
+    match = _NEGATION_RE.search(window)
+    return bool(match) and not _NEGATION_STOP_RE.search(match.group(1))
+
+
+# Dentro il tratto "parte … stato": una negazione ("display senza crepe"), un
+# contrasto ("schermo perfetto, ma non funziona il Face ID") o un accessorio
+# ("pellicola rotta") fanno cadere il match.
+_SPAN_REJECT_RE = re.compile(
+    r"\b(?:senza|nessun\w*|neanche|nemmeno|zero|privo|priva|non presenta|non ha|mai|"
+    r"ma|pero|pellicol\w*|cover|custodia|vetro temperato|vetrino protett\w*)\b"
+)
+
+
 def _match_dictionary(
     haystack: str, synonyms: dict[str, tuple[str, ...]]
 ) -> list[str]:
-    """Ritorna le chiavi canoniche i cui sinonimi compaiono nel testo normalizzato."""
+    """Chiavi canoniche con almeno un sinonimo presente e NON negato
+    ("nessun graffio" non è un graffio)."""
     found: list[str] = []
     for canonical, variants in synonyms.items():
-        if any(variant in haystack for variant in variants):
+        hit = False
+        for variant in variants:
+            start = haystack.find(variant)
+            while start != -1 and not hit:
+                if not _negated(haystack, start):
+                    hit = True
+                start = haystack.find(variant, start + 1)
+            if hit:
+                break
+        if hit:
             found.append(canonical)
     return found
+
+
+# --------------------------------------------- guasti tech v2 (tassonomia B3)
+#
+# Pattern con contesto (parte + stato) invece di frasi fisse: gli annunci reali
+# scrivono "display presenta lesioni", "lo schermo è un po' crepato", "FACE ID
+# NON FUNZIONATE". Ogni match passa dal controllo negazione, salvo quelli dove
+# la negazione È il guasto ("senza scheda madre"). Codici = defects_noted
+# storici + nuovi (vedi services/defects.py per la tassonomia).
+_BREAK = r"[^.!?\n]"
+_TECH_PATTERNS: dict[str, tuple[tuple[str, bool], ...]] = {
+    # (regex, rispetta_negazione)
+    "schermo-rotto": (
+        (rf"\b(?:schermo|schemo|scermo|display|lcd|touch(?:screen)?|vetro anteriore|vetrino anteriore)"
+         rf"{_BREAK}{{0,30}}"
+         r"(?:rott|crepat|crepe|crepa\b|incrinat|danneggiat|lesion|non (?:\w+ )?funzion|righe|riga\b|linee|"
+         r"striscia|strisce|pixel|macchi|da sostituire|da cambiare|alzat)", True),
+        (rf"\b(?:rott|crepat|incrinat|lesion|alzat|strisci|righ|riga|linee|macchi)\w*{_BREAK}{{0,15}}"
+         r"\b(?:schermo|display|vetro anteriore)", True),
+        (r"\blesion\w* (?:del|sul|sullo|nel) (?:vetro|schermo|display)\b(?! posterior)", True),
+        (r"\bvetro (?:rotto|crepato|incrinato)\b(?! dietro| posterior)", True),
+        (r"\bnon funziona\w* (?:lo |il |la )?(?:schermo|display|touch)", True),
+        (r"\b(?:manca lo schermo|senza schermo|linee verdi|riga verde)\b", False),
+    ),
+    "back-rotto": (
+        (rf"\b(?:vetro posteriore|retro|scocca|back ?cover|parte posteriore|dietro){_BREAK}{{0,25}}"
+         r"(?:rott|crepat|crepa\b|crepe|lesion|incrinat|da sostituire)", True),
+        (rf"\b(?:rott|crepat|lesion)\w*{_BREAK}{{0,25}}\b(?:dietro|retro\b|vetro posteriore|"
+         r"parte posteriore|scocca)", True),
+    ),
+    "batteria-esausta": (
+        (rf"\bbatteria{_BREAK}{{0,30}}(?:da cambiare|da sostituire|da cambre|esausta|degradata|"
+         r"\bko\b|scarsa|dura poco|gonfi|rigonfi|assistenza|da vedere|consigliabile sostituir)", True),
+        (rf"\b(?:rigonfiamento|gonfia){_BREAK}{{0,12}}batteria", True),
+        (r"\b(?:cambiare|cambre|sostituire) (?:la )?batteria\b", True),
+        (r"\bda (?:vedere|cambiare|cambre|sostituire) (?:la )?batteria\b", True),
+    ),
+    "fotocamera-rotta": (
+        (rf"\b(?:fotocamer\w*|camera\b|lente|lenti|vetrino){_BREAK}{{0,30}}"
+         r"(?:non (?:\w+ )?funzion|rott|crepa|crepat|da riparare|difett|da sostituire)", True),
+        (rf"\b(?:crepa|crepat|rott)\w*{_BREAK}{{0,30}}\bfotocamer", True),
+        (r"\bno fotocamera\b", False),
+    ),
+    "face-id-rotto": (
+        (rf"\bface ?id{_BREAK}{{0,20}}(?:non funzion|rott|problema|non disponibile|\bko\b|non va)", True),
+        (r"\b(?:problema (?:con|al|del) (?:il )?face ?id|non funziona\w* (?:il |piu )?face ?id)", True),
+        (r"\b(?:no|senza) face ?id\b", False),
+    ),
+    "audio-rotto": (
+        (rf"\b(?:microfon\w*|altoparlant\w*|speaker|capsula|cassa|audio){_BREAK}{{0,30}}"
+         r"(?:non (?:\w+ )?funzion|rott|basso|non si sente|difett|gracchi)", True),
+        (r"\bsi sente (?:\w+ ){0,2}(?:basso|male)\b", True),
+        (r"\bnon funziona\w* (?:il |la |i |le )?(?:microfon|altoparlant|cassa|capsula|speaker)", True),
+    ),
+    "ricarica-rotta": (
+        (rf"\b(?:porta|connettore|attacco){_BREAK}{{0,20}}(?:ricarica|caricatore|lightning)"
+         rf"{_BREAK}{{0,25}}(?:rott|allentat|non funzion|difett)", True),
+        (rf"\b(?:caricatore|ricarica){_BREAK}{{0,12}}allentat", True),
+        (r"\bnon (?:si )?carica\b", True),
+    ),
+    "tasti-rotti": (
+        (rf"\b(?:tasto|tasti|tastino|home){_BREAK}{{0,25}}(?:rott|non funzion|danneggiat|saltat|difett)", True),
+        (rf"\b(?:saltat|rott)\w*{_BREAK}{{0,10}}\btastin", True),
+    ),
+    "scheda-madre": (
+        (r"\b(?:scheda madre|scheda logica|logic ?board)\b", False),
+    ),
+    "acqua": (
+        (r"\b(?:caduto|caduta|finito|immerso)\w* (?:in|nell|nel|nella) ?(?:acqua|mare|piscina|lavatrice|wc)\b", True),
+        (r"\b(?:ossidat\w*|ossidazione|danni da liquid\w*|contatto con (?:l )?acqua|bagnato)\b", True),
+    ),
+    "non-si-accende": (
+        (r"\bnon si accende\b|\bnon da segni di vita\b|\bnon funziona piu\b", True),
+        (rf"\b(?:iphone|telefono|cellulare|dispositivo|vende|vendo|venduto){_BREAK}{{0,25}}"
+         r"(?<!sim )\bnon funzionante\b", True),
+    ),
+    "icloud-bloccato": (
+        (r"\b(?:icloud bloccato|blocco (?:icloud|attivazione)|account icloud attivo|id apple bloccato|"
+         r"imei bloccato|blacklist|bloccato con (?:password|codice)|non ricordo (?:la )?password|"
+         r"codice dimenticato)\b", True),
+    ),
+    "altro-guasto": (
+        (rf"\b(?:flash|nfc|apple pay|vibrazione|sensore){_BREAK}{{0,25}}(?:non funzion|non e attiv|rott|difett|sostituzione)", True),
+        (r"\bnon funziona\w* (?:\w+ )?(?:il |la )?(?:flash|nfc|vibrazione)\b", True),
+        (r"\bsostituzione (?:del )?sensore\b", True),
+    ),
+    # Venduto dichiaratamente per ricambi (non è un guasto ma un segnale forte).
+    "per-ricambi": (
+        (r"\b(?:per (?:i )?(?:pezzi )?(?:di )?ricambi\w*|come ricambi\w*|per pezzi|pezzi di ricambio|"
+         r"solo ricambi|parti di ricambio)\b", True),
+    ),
+    # Segni estetici (difetto lieve): "graffi" storico + usura/ammaccature.
+    "graffi": (
+        (r"\b(?:graff\w*|segni (?:di|d) ?(?:usura|utilizzo)|segno\b|segni\b|ammacc\w*|sticchiatur\w*|"
+         r"strisci\w*|botta|botte)\b", True),
+    ),
+}
+_TECH_PATTERNS_RE = {
+    code: tuple((re.compile(rx), neg) for rx, neg in patterns)
+    for code, patterns in _TECH_PATTERNS.items()
+}
+
+# Accessorio subito prima del pezzo: il guasto è della pellicola, non del telefono.
+_ACCESSORY_BEFORE_RE = re.compile(
+    r"\b(?:pellicol\w*|vetro temperato|vetrino protett\w*|cover|custodia)\b[^.!?\n]{0,15}$"
+)
+
+# Parti NON originali dichiarate: pesano sul prezzo di rivendita.
+_NON_ORIGINAL_PATTERNS = {
+    "Schermo-Non-Originale": (
+        re.compile(rf"\b(?:schermo|scermo|display|oled){_BREAK}{{0,35}}"
+                   r"(?:non original\w*|compatibil\w*|non riconosciut\w*|aftermarket|non autentic\w*)"),
+        re.compile(rf"\b(?:non original\w*|compatibil\w*){_BREAK}{{0,15}}\b(?:schermo|display)"),
+    ),
+    "Batteria-Non-Originale": (
+        re.compile(rf"\bbatteri\w*{_BREAK}{{0,50}}(?:non original\w*|compatibil\w*|non autentic\w*)"),
+        re.compile(r"\bparte sconosciuta\b"),
+    ),
+}
+
+
+def _tech_defects_v2(norm: str, battery_pct: int | None) -> list[str]:
+    found: list[str] = []
+    for code, patterns in _TECH_PATTERNS_RE.items():
+        for regex, respects_negation in patterns:
+            if any(
+                not (respects_negation and (
+                    _negated(norm, m.start())
+                    or _SPAN_REJECT_RE.search(m.group(0))
+                    # "la pellicola sullo schermo è rotta": l'accessorio sta prima.
+                    or _ACCESSORY_BEFORE_RE.search(norm[max(0, m.start() - 25):m.start()])
+                ))
+                for m in regex.finditer(norm)
+            ):
+                found.append(code)
+                break
+    # Salute batteria sotto il 70%: da sostituire anche se l'annuncio non lo dice.
+    if battery_pct is not None and battery_pct < 70 and "batteria-esausta" not in found:
+        found.append("batteria-esausta")
+    return found
+
+
+def _non_original_parts(norm: str) -> list[str]:
+    return [
+        feature
+        for feature, patterns in _NON_ORIGINAL_PATTERNS.items()
+        if any(p.search(norm) for p in patterns)
+    ]
 
 
 def _extract_km(text: str) -> int | None:
@@ -321,25 +511,33 @@ def parse_listing(
     dichiara "iCloud bloccato", un telefono non è "grandinato").
     """
     raw = " ".join(part for part in (title, description) if part)
-    norm = _normalize(raw)
+    # Apostrofi e punteggiatura interna come spazi: "com'è" / "c'è" → parole.
+    norm = _normalize(raw).replace("'", " ").replace("’", " ")
+    battery_pct = _extract_battery_pct(raw)
 
-    defects = _match_dictionary(norm, _DEFECT_SYNONYMS) + _match_dictionary(
-        norm, _TECH_DEFECT_SYNONYMS
-    )
+    # Difetti auto dal dizionario (negazione-aware); "graffi" esce dal
+    # dizionario: lo copre il riconoscimento v2 con le negazioni.
+    auto_synonyms = {k: v for k, v in _DEFECT_SYNONYMS.items() if k != "graffi"}
+    defects = _match_dictionary(norm, auto_synonyms)
+    for code in _tech_defects_v2(norm, battery_pct):
+        if code not in defects:
+            defects.append(code)
     features = _match_dictionary(norm, _FEATURE_SYNONYMS) + _match_dictionary(
         norm, _TECH_FEATURE_SYNONYMS
     )
+    features += [f for f in _non_original_parts(norm) if f not in features]
     # "Batteria-Cambiata" nel corredo smentisce "batteria-esausta" letta altrove
-    # (es. "batteria appena sostituita" contiene... nulla di negativo, ma testi
-    # tipo "batteria da cambiare? No, appena sostituita" esistono).
-    if "Batteria-Cambiata" in features and "batteria-esausta" in defects:
+    # (testi tipo "batteria da cambiare? No, appena sostituita" esistono), salvo
+    # che la salute misurata sia comunque bassa.
+    if ("Batteria-Cambiata" in features and "batteria-esausta" in defects
+            and not (battery_pct is not None and battery_pct < 70)):
         defects.remove("batteria-esausta")
 
     return {
         "km": _extract_km(raw),
         "year": _extract_year(raw),
         "storage_gb": _extract_storage_gb(raw),
-        "battery_pct": _extract_battery_pct(raw),
+        "battery_pct": battery_pct,
         "color": _extract_color(norm),
         "features": features,
         "defects_noted": defects,

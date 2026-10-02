@@ -42,9 +42,9 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 |---|---|---|
 | B1 | Modello riconosciuto ≥ 97% degli annunci attivi | 🔧 96,5% |
 | B2 | Memoria ≥ 85% | 🔧 74,5% |
-| B3 | **Guasto classificato per tipo** (schermo, batteria, scocca, fotocamera, Face ID, scheda madre, acqua/non si accende, iCloud) con accuratezza ≥ 90% misurata su un campione etichettato | ◻️ oggi regex: "rotto" è un calderone, negazioni sbagliate |
-| B4 | **Parti non originali** riconosciute (display/batteria già sostituiti: pesano sul prezzo) | ◻️ |
-| B5 | Modello AI locale scelto **su misure**, che copre tutti gli annunci rilevanti | ◻️ oggi llama3 8B, 299 annunci analizzati |
+| B3 | **Guasto classificato per tipo** (tassonomia in `services/defects.py`) con F1 ≥ 0,90 sulla serie di **verifica** etichettata (`scripts/eval_guasti.py`) | 🔧 regex v2: precisione 0,91 ma richiamo 0,48 (F1 0,62) su annunci mai visti — serve l'AI per il richiamo |
+| B4 | **Parti non originali** riconosciute (display/batteria già sostituiti: pesano sul prezzo) | 🔧 regex: F1 0,77 in verifica |
+| B5 | Modello AI locale scelto **su misure**, che copre tutti gli annunci rilevanti | 🔧 prompt v2 e banco di prova pronti; misura dei candidati da fare sul Mac |
 
 ### C. Metriche per il business
 
@@ -95,6 +95,19 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 
 Stima onesta: con B3–C5 fatti, il programma è **usabile per decidere** anche
 prima che C4 maturi; è **v1** quando anche C4/C6 hanno dati e A5 è risolto.
+
+## Come si misura il riconoscimento dei guasti
+
+Due serie etichettate a mano in `scripts/data/`:
+- **sviluppo** (145 annunci): usata per scrivere le regex → i suoi numeri sono
+  ottimisti per costruzione (F1 0,98);
+- **verifica** (99 annunci, campionati per fascia di prezzo): **mai** usata per
+  correggere le regole → è il numero onesto. Se le si usa per correggere,
+  perde valore: in quel caso si etichetta una serie nuova.
+
+`python scripts/eval_guasti.py --set verifica [--models a,b,c]` misura regex e
+modelli AI con le stesse metriche. Dopo ogni miglioramento del riconoscimento:
+`scripts/reparse_nlp.py --apply` lo rende retroattivo sull'archivio.
 
 ## Dopo la v1 (idee, non bloccanti)
 

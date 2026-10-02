@@ -28,10 +28,14 @@ from typing import Any
 # --------------------------------------------------------------- condition
 
 # Difetti che rendono l'oggetto "rotto" (fuori dal mercato del funzionante).
+# I tre "a rischio" (scheda madre, acqua, non si accende) sono rotti anche loro.
 _TECH_BROKEN = frozenset(
     {"schermo-rotto", "icloud-bloccato", "per-ricambi", "da-riparare",
-     "face-id-rotto", "back-rotto"}
+     "face-id-rotto", "back-rotto", "scheda-madre", "acqua", "non-si-accende"}
 )
+# Solo estetici: un telefono con qualche graffio è il normale mercato dell'usato
+# e deve restare nel pool dei sani che fa il prezzo (prima finiva in "difetti").
+_TECH_COSMETIC = frozenset({"graffi"})
 _AUTO_BROKEN = frozenset({"incidentata", "fuso"})
 
 # Tier considerate "sane": entrano nel calcolo della media di mercato.
@@ -49,9 +53,9 @@ def condition_tier(category: str, defects: list[str] | None,
     # tech
     if d & _TECH_BROKEN:
         return "rotto"
-    if d:
-        return "difetti"
-    if "Pari-al-Nuovo" in (features or []):
+    if d - _TECH_COSMETIC:
+        return "difetti"  # guasto funzionale riparabile (batteria, fotocamera, audio...)
+    if "Pari-al-Nuovo" in (features or []) and not d:
         return "come-nuovo"
     return "buono"
 

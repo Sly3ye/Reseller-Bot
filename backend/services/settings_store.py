@@ -38,7 +38,7 @@ def _defaults() -> dict[str, Any]:
         # manodopera per tipo di intervento (services/parts.py).
         "repair_source": "aftermarket",
         "apple_return_credit": True,
-        "repair_labor_eur": {"schermo": 0, "batteria": 0, "scocca": 0},
+        "repair_labor_eur": {"schermo": 0, "batteria": 0, "scocca": 0, "fotocamera": 0},
         "telegram_chat_tech": settings.telegram_chat_tech,
         "telegram_chat_auto": settings.telegram_chat_auto,
         "telegram_chat_ops": settings.telegram_chat_ops,

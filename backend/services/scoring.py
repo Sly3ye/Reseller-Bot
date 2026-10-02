@@ -53,7 +53,7 @@ _REPAIR_LABEL = {
 # Difetti tech con sostituzione STANDARD → margine netto ricalcolabile.
 # Ricambi con prezzo a listino (services/parts.py): lo schermo, la batteria e
 # la scocca posteriore (solo aftermarket: Apple non la vende self-service).
-REPAIRABLE_TECH_DEFECTS = ("schermo-rotto", "batteria-esausta", "back-rotto")
+REPAIRABLE_TECH_DEFECTS = ("schermo-rotto", "batteria-esausta", "back-rotto", "fotocamera-rotta")
 
 # ------------------------------------------------ penalità difetti (in €)
 

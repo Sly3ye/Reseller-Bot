@@ -29,14 +29,18 @@ DEFECT_TO_PART = {
     "schermo-rotto": "schermo",
     "batteria-esausta": "batteria",
     "back-rotto": "scocca",
+    "fotocamera-rotta": "fotocamera",   # solo listino Apple (per ora)
 }
-PART_LABEL = {"schermo": "Schermo", "batteria": "Batteria", "scocca": "Scocca posteriore"}
+PART_LABEL = {
+    "schermo": "Schermo", "batteria": "Batteria", "scocca": "Scocca posteriore",
+    "fotocamera": "Fotocamera posteriore",
+}
 
 # Impostazioni (sovrascritte da settings_store.apply → configure()).
 CONFIG: dict[str, Any] = {
     "repair_source": "aftermarket",          # "aftermarket" | "apple"
     "apple_return_credit": True,             # rispedisci la parte vecchia ad Apple
-    "repair_labor_eur": {"schermo": 0, "batteria": 0, "scocca": 0},
+    "repair_labor_eur": {"schermo": 0, "batteria": 0, "scocca": 0, "fotocamera": 0},
 }
 
 

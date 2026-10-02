@@ -51,6 +51,26 @@ def test_nlp_tech():
     check("batteria_100", r["battery_pct"], 100)
 
 
+def test_nlp_guasti_v2():
+    print("NLP guasti v2 (negazioni, parti non originali):")
+    d = lambda t, desc="": nlp.parse_listing(t, desc)["defects_noted"]  # noqa: E731
+    check("nessun graffio ≠ graffi", d("iPhone 13", "perfetto, nessun graffio"), [])
+    check("nessun blocco iCloud ≠ bloccato", d("iPhone 15", "Nessun blocco iCloud, funzionante"), [])
+    check("graffi veri", d("iPhone 13", "qualche piccolo graffio sul retro"), ["graffi"])
+    check("display presenta lesioni", "schermo-rotto" in d("iPhone 12", "il display presenta lesioni"), True)
+    check("ordine inverso", "schermo-rotto" in d("iPhone 11", "Non funziona lo schermo"), True)
+    check("contrasto 'ma'", d("iPhone X", "Lo schermo è perfetto, ma non funziona il Face ID"), ["face-id-rotto"])
+    check("pellicola rotta ≠ schermo", d("iPhone 13", "la pellicola sullo schermo è rotta"), [])
+    check("senza scheda madre = guasto", "scheda-madre" in d("iPhone 14 Pro", "senza scheda madre, per ricambi"), True)
+    check("caduto in mare", "acqua" in d("iPhone 15 Pro", "caduto in mare, non funzionante"), True)
+    check("'unico problema' chiude la negazione",
+          "schermo-rotto" in d("iPhone 11", "nessun difetto unico problema schermo un po crepato"), True)
+    f = nlp.parse_listing("iPhone 13", "display compatibile, batteria non originale")["features"]
+    check("parti non originali", {x for x in f if x.endswith("Non-Originale")},
+          {"Schermo-Non-Originale", "Batteria-Non-Originale"})
+    check("batteria sotto 70%", "batteria-esausta" in d("iPhone 12", "batteria 66%"), True)
+
+
 def test_nlp_auto():
     print("NLP auto:")
     r = nlp.parse_listing("BMW 320d 2018 150.000 km", "M Sport, automatico, incidentata")
@@ -98,6 +118,7 @@ def test_scoring():
 
 def main() -> None:
     test_nlp_tech()
+    test_nlp_guasti_v2()
     test_nlp_auto()
     test_scoring()
     print(f"\n=== {_passed} PASS / {_failed} FAIL ===")
