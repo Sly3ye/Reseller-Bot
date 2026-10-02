@@ -25,8 +25,14 @@ DB principale, **senza perdere né sovrascrivere** nulla.
 
 ## Passi
 ```bash
-# 0. Aggiorna il codice (per avere lo script)
+# 0. Aggiorna il codice E applica le migrazioni PRIMA del merge.
+#    Lo script copia solo le colonne presenti in ENTRAMBI i DB: se il Mac non
+#    ha le migrazioni 18–22 (published_at, raw_image_urls, estimate/repair...)
+#    quei campi del PC si perdono in silenzio. Il backend le applica da solo
+#    all'avvio.
 git pull
+docker compose up -d --build
+docker compose exec -T db psql -U postgres -d reseller -tc "select max(version) from schema_migrations"   # → 22_target_fk_set_null
 
 # 1. BACKUP del principale (sempre, prima di scrivere)
 #    Se il principale gira in Docker come l'altro PC:
@@ -58,7 +64,21 @@ docker compose exec -T db dropdb -U postgres reseller_pc
 #    annuncio, quindi non collidono con quelli già presenti sul Mac.
 docker compose exec -T backend sh -c "mkdir -p /data/media && tar xzf - -C /data/media" \
   < media_pc_AAAA-MM-GG.tar.gz
+
+# 7. Riconoscimento aggiornato anche sulle righe già presenti sul Mac (memoria,
+#    modello dalla descrizione, guasti v2): il merge non le tocca.
+docker compose exec -T backend python scripts/backfill_model_storage.py --apply
+docker compose exec -T backend python scripts/reparse_nlp.py --apply
 ```
+
+> **Passaggio del 2026-10-02 (PC → Mac).** L'inventario sul PC non ha fatto
+> in tempo a finire: nel dump nessun annuncio è marcato venduto (giusto: si
+> marca solo con un giro completo). Il primo inventario completo girerà sul
+> Mac, subito, grazie al recupero automatico (l'ultimo ha più di 26h). Le foto
+> dell'archivio ancora da scaricare restano in coda (`raw_image_urls`): sul Mac
+> il job `photo_backfill` continua da solo, finché Subito le tiene online.
+> Sul Mac poi: password del DB non di default (RACCOLTA-SU-QUESTO-PC.md,
+> sezione Sicurezza).
 > Sostituisci `PWD` con `POSTGRES_PASSWORD` e `reseller_pc_AAAA-MM-GG.dump` col
 > nome reale del file scaricato da Drive. Se il Postgres principale **non** è in
 > Docker, salta i `docker compose exec` e usa `pg_dump/pg_restore/psql` diretti

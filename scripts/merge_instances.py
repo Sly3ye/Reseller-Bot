@@ -3,30 +3,30 @@
 Contesto: il DB principale (con settimane di storico) vive su una macchina; una
 seconda istanza gira altrove e accumula dati in parallelo. Le due condividono lo
 stesso schema ma NON gli stessi UUID: ogni istanza genera i propri. Questo script
-porta nel TARGET (principale) solo ciò che gli MANCA, senza toccare ciò che ha già.
+porta nel TARGET (principale) solo ciÃ² che gli MANCA, senza toccare ciÃ² che ha giÃ .
 
 Cosa fa, in ordine:
-  1. TARGET_MODELS — rimappa i target per NOME ``(category, query)``, non per UUID.
+  1. TARGET_MODELS â€” rimappa i target per NOME ``(category, query)``, non per UUID.
      I target presenti in SOURCE ma non nel TARGET vengono inseriti (mantenendo il
-     loro UUID) così gli annunci collegati restano validi.
-  2. OPPORTUNITÀ (_tech e _auto) — inserisce solo gli annunci NUOVI, dedup su
-     ``listing_url`` (ON CONFLICT DO NOTHING: gli annunci già nel TARGET restano
+     loro UUID) cosÃ¬ gli annunci collegati restano validi.
+  2. OPPORTUNITÃ€ (_tech e _auto) â€” inserisce solo gli annunci NUOVI, dedup su
+     ``listing_url`` (ON CONFLICT DO NOTHING: gli annunci giÃ  nel TARGET restano
      quelli del principale). ``target_id`` viene rimappato.
-  3. PRICE_HISTORY — porta lo storico prezzi dei soli annunci effettivamente
+  3. PRICE_HISTORY â€” porta lo storico prezzi dei soli annunci effettivamente
      inseriti (evita orfani).
 
 Cosa NON tocca (di proposito):
-  - Annunci già presenti nel TARGET (stesso ``listing_url``): non sovrascritti.
-  - ``market_trends``: aggregato RICALCOLABILE → NON unito. Dopo il merge esegui
+  - Annunci giÃ  presenti nel TARGET (stesso ``listing_url``): non sovrascritti.
+  - ``market_trends``: aggregato RICALCOLABILE â†’ NON unito. Dopo il merge esegui
     il batch notturno sul principale per rigenerarlo.
   - ``sent_alerts`` (dedup Telegram) e ``deals`` (pipeline): stato locale, ignorati.
 
-Proprietà: idempotente (rilanciarlo non duplica nulla) e atomico (una sola
+ProprietÃ : idempotente (rilanciarlo non duplica nulla) e atomico (una sola
 transazione sul TARGET: o va tutto, o niente).
 
 ------------------------------------------------------------------------------
 USO (sul principale, dopo aver ripristinato il dump del secondo PC in un DB
-temporaneo — es. ``reseller_pc``):
+temporaneo â€” es. ``reseller_pc``):
 
   # 1) SEMPRE un backup del principale prima di scrivere:
   pg_dump "$TARGET_DATABASE_URL" -Fc -f backup_principale_$(date +%F).dump
@@ -68,7 +68,7 @@ def _connect(url: str, name: str) -> psycopg.Connection:
 
 
 def _columns(conn: psycopg.Connection, table: str) -> dict[str, str]:
-    """Nome colonna → data_type, dallo schema informativo (per intersezione e jsonb)."""
+    """Nome colonna â†’ data_type, dallo schema informativo (per intersezione e jsonb)."""
     rows = conn.execute(
         """
         select column_name, data_type
@@ -90,9 +90,9 @@ def _wrap(value: object, is_json: bool) -> object:
 def _remap_targets(
     src: psycopg.Connection, tgt: psycopg.Connection, tgt_cur: psycopg.Cursor, dry: bool
 ) -> tuple[dict[str, str], int]:
-    """Costruisce src_target_id → tgt_target_id per NOME (category, query).
+    """Costruisce src_target_id â†’ tgt_target_id per NOME (category, query).
 
-    I target di SOURCE assenti nel TARGET vengono inseriti (stesso UUID) così le
+    I target di SOURCE assenti nel TARGET vengono inseriti (stesso UUID) cosÃ¬ le
     FK degli annunci restano valide. Ritorna (mappa, n_target_inseriti)."""
     src_targets = src.execute(
         "select id, category, query, strict_filters, is_active from target_models"
@@ -109,7 +109,7 @@ def _remap_targets(
         if key in tgt_by_key:
             mapping[t["id"]] = tgt_by_key[key]
             continue
-        # Target sconosciuto al principale: portalo (stesso UUID → nessuna collisione).
+        # Target sconosciuto al principale: portalo (stesso UUID â†’ nessuna collisione).
         mapping[t["id"]] = t["id"]
         inserted += 1
         if not dry:
@@ -153,6 +153,15 @@ def _merge_opportunities(
         f"on conflict (listing_url) do nothing"
     )
 
+    # In anteprima: quanti URL mancano DAVVERO nel target (l'insert vero li
+    # deduplica con on conflict; prima l'anteprima contava tutto come nuovo).
+    existing_urls: set[str] = set()
+    if dry:
+        existing_urls = {
+            r["listing_url"]
+            for r in tgt.execute(f"select listing_url from {table}").fetchall()  # noqa: S608
+        }
+
     src_ids: list[str] = []
     inserted = 0
     for row in rows:
@@ -164,7 +173,9 @@ def _merge_opportunities(
                 continue
             row["target_id"] = mapped
         src_ids.append(row["id"])
-        if not dry:
+        if dry:
+            inserted += row.get("listing_url") not in existing_urls
+        else:
             params = [_wrap(row.get(c), c in json_cols) for c in cols]
             tgt_cur.execute(insert_sql, params)
             inserted += tgt_cur.rowcount or 0
@@ -242,8 +253,8 @@ def main() -> None:
         for table in OPP_TABLES:
             cand, ins, valid = _merge_opportunities(src, tgt, tgt_cur, table, target_map, dry)
             all_valid_ids |= valid
-            shown = ins if not dry else cand
-            print(f"{table}: {cand} candidati → {shown} {'inseriti' if not dry else 'nuovi (stima)'}")
+            shown = ins
+            print(f"{table}: {cand} candidati â†’ {shown} {'inseriti' if not dry else 'nuovi (stima)'}")
             grand_new += shown
 
         hist = _merge_price_history(src, tgt_cur, all_valid_ids, dry)
@@ -251,7 +262,7 @@ def main() -> None:
 
         if dry:
             tgt.rollback()
-            print("\nAnteprima completata: NIENTE è stato scritto. Rilancia con --yes per applicare.")
+            print("\nAnteprima completata: NIENTE Ã¨ stato scritto. Rilancia con --yes per applicare.")
         else:
             tgt.commit()
             print(f"\nMerge COMPLETATO: {grand_new} annunci nuovi + {hist} righe di storico + "
