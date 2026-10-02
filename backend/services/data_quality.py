@@ -31,6 +31,7 @@ def _pct(part: Any, total: Any) -> float | None:
 def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
     from backend.core.database import _get_pool, get_db, has_column  # noqa: PLC0415
     from backend.services.backup_status import get_backup_status  # noqa: PLC0415
+    from backend.services.photo_backfill import queue_size as photo_queue_size  # noqa: PLC0415
     from backend.services.variants import iphone_model_key  # noqa: PLC0415
 
     table = TABLES["automobile" if category in ("automobile", "auto") else "smartphone"]
@@ -89,16 +90,19 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
     else:
         with_model = sum(r["n"] for r in variants if r["variant_key"])
 
-    inventory = None
-    try:
-        rows = (
-            get_db().table("app_settings").select("value")
-            .eq("key", f"inventory_last:{'smartphone' if tech else 'automobile'}")
-            .limit(1).execute().data
-        )
-        inventory = rows[0]["value"] if rows else None
-    except Exception:
-        inventory = None
+    def _state(key: str) -> dict[str, Any] | None:
+        try:
+            rows = (
+                get_db().table("app_settings").select("value")
+                .eq("key", f"{key}:{'smartphone' if tech else 'automobile'}")
+                .limit(1).execute().data
+            )
+            return rows[0]["value"] if rows else None
+        except Exception:
+            return None
+
+    inventory = _state("inventory_last")
+    inventory_result = _state("inventory_result")
 
     fields = {
         "memoria": _pct(agg["storage"], active) if tech else None,
@@ -119,8 +123,13 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
             "keptLastInventory": (inventory or {}).get("kept"),
             "inventoryAt": (inventory or {}).get("at"),
             "inventoryComplete": (inventory or {}).get("complete"),
-            "seenPct": _pct((inventory or {}).get("seen"), (inventory or {}).get("subitoTotal")),
+            "readLastInventory": (inventory or {}).get("read"),
+            # Copertura = annunci della ricerca letti / dichiarati da Subito.
+            # (Prima: iPhone tenuti / dichiarati, falsato da cover e Samsung.)
+            "seenPct": _pct((inventory or {}).get("read"), (inventory or {}).get("subitoTotal")),
         },
+        # Esito dell'ultimo inventario, anche se interrotto o incompleto.
+        "inventoryResult": inventory_result,
         "fieldsPct": {k: v for k, v in fields.items() if v is not None},
         "last24h": {
             "runs": runs["runs"], "down": runs["down"], "requests": runs["requests"],
@@ -128,4 +137,6 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
         },
         "removed7d": removed_7d["n"],
         "backup": get_backup_status(),
+        # Annunci con galleria nota ma foto ancora da scaricare (photo_backfill).
+        "photoQueue": photo_queue_size() if tech else None,
     }

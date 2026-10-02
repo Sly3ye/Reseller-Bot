@@ -9,7 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from backend.services.republish import match_pairs, merge_into_old  # noqa: E402
+from backend.services.republish import match_pairs, merge_into_old, shop_identities  # noqa: E402
+from backend.scrapers.subito import ScrapedListing  # noqa: E402
+from backend.tasks import republish_match  # noqa: E402
 
 PASS = FAIL = 0
 
@@ -46,6 +48,24 @@ ck("sceglie il prezzo più vicino",
 ck("auto: basta venditore+variante",
    len(match_pairs("automobile", [ad("n", vk="bmw-123d", title="BMW")],
                    [ad("o", vk="bmw-123d", title="BMW")], always)), 1)
+
+print("negozi (piu' pezzi della stessa variante online)")
+shop = shop_identities("smartphone", [ad("a1"), ad("a2")], 2)
+ck("due pezzi online = negozio", len(shop), 1)
+ck("negozio: nessun abbinamento", match_pairs("smartphone", [ad("n")], [ad("o")], always, shop), [])
+ck("un pezzo solo: privato", shop_identities("smartphone", [ad("a1")], 2), set())
+
+print("pHash: stessa foto non basta")
+def lst(seller):
+    return ScrapedListing(source="subito", title="iPhone 13", url="u-new", price=None,
+                          price_amount=400, location=None, description=None, image_urls=[],
+                          metadata={"seller_id": seller})
+rows = [{"id": "r1", "listing_url": "u1", "seller_id": "altro", "status": "nuovo"},
+        {"id": "r2", "listing_url": "u2", "seller_id": "s1", "status": "venduto_rimosso"}]
+ck("venditore diverso ignorato, stesso venditore preso", republish_match(lst("s1"), rows, set())["id"], "r2")
+ck("solo venditori diversi: nessuno", republish_match(lst("s9"), rows[:1], set()), None)
+ck("venditore ignoto: solo record spariti",
+   republish_match(lst(None), [rows[0], {**rows[1], "seller_id": None}], set())["id"], "r2")
 
 print("merge_into_old (regola temporale)")
 now = datetime.now(timezone.utc)

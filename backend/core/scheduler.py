@@ -7,14 +7,18 @@ from apscheduler.triggers.interval import IntervalTrigger
 from backend.core.config import settings
 from backend.services.ai_analysis import enrich_missing
 from backend.services.backup_status import check_backup
+from backend.services.photo_backfill import fill_missing_photos
 from backend.services.repair_feedback import refresh as refresh_repair_feedback
 from backend.services.garbage_collector import run_garbage_collector
-from backend.services.sweep import reconcile_inventory, run_sweep
+from backend.services.sweep import inventory_watchdog, reconcile_inventory, run_sweep
 from backend.tasks import run_nightly_batch_all_products, run_sniper_all_products
 
 logger = logging.getLogger(__name__)
 
-# Local timezone so "03:00" means 3 AM in Italy, not UTC.
+# Local timezone so "03:00" means 3 AM in Italy, not UTC. Va passato a OGNI
+# CronTrigger: in APScheduler 3 un trigger senza timezone usa quello del
+# container (UTC), non quello dello scheduler (bug fino al 2026-10-02: i job
+# notturni giravano 2 ore dopo).
 SCHEDULER_TIMEZONE = "Europe/Rome"
 
 
@@ -46,7 +50,9 @@ def create_scheduler() -> AsyncIOScheduler:
 
     scheduler.add_job(
         run_nightly_batch_all_products,
-        trigger=CronTrigger(hour=3, minute=0),
+        # Di norma parte a fine inventario (services/sweep.py); qui solo il
+        # ripiego se l'inventario non è partito affatto.
+        trigger=CronTrigger(hour=6, minute=0, timezone=SCHEDULER_TIMEZONE),
         id="nightly_batch",
         name="Motore Notturno (market trends)",
         replace_existing=True,
@@ -57,16 +63,26 @@ def create_scheduler() -> AsyncIOScheduler:
     # che calcola le medie tech dal DB appena riconciliato.
     scheduler.add_job(
         reconcile_inventory,
-        trigger=CronTrigger(hour=1, minute=30),
+        trigger=CronTrigger(hour=1, minute=30, timezone=SCHEDULER_TIMEZONE),
         kwargs={"category": "smartphone"},
         id="inventory_tech",
         name="Inventario Tech (stock completo, prezzi, rimossi → time-to-sale)",
         replace_existing=True,
     )
 
+    # PC spento all'1:30 → l'inventario si recupera appena possibile.
+    scheduler.add_job(
+        inventory_watchdog,
+        trigger=IntervalTrigger(minutes=30),
+        kwargs={"category": "smartphone"},
+        id="inventory_watchdog",
+        name="Recupero inventario (se l'ultimo ha più di 26h)",
+        replace_existing=True,
+    )
+
     scheduler.add_job(
         run_garbage_collector,
-        trigger=CronTrigger(hour=4, minute=30),
+        trigger=CronTrigger(hour=4, minute=30, timezone=SCHEDULER_TIMEZONE),
         kwargs={"category": "automobile"},
         id="garbage_collector",
         name="Garbage Collector Auto (annunci rimossi → time-to-sale)",
@@ -97,9 +113,19 @@ def create_scheduler() -> AsyncIOScheduler:
     # controllo, a metà mattina così un PC spento di notte ha tempo di farlo.
     scheduler.add_job(
         check_backup,
-        trigger=CronTrigger(hour=10, minute=0),
+        trigger=CronTrigger(hour=10, minute=0, timezone=SCHEDULER_TIMEZONE),
         id="backup_check",
         name="Controllo backup (allarme se fallito o più vecchio di 36h)",
+        replace_existing=True,
+    )
+
+    # Foto dell'archivio: le righe salvate senza foto (inventario, deep sweep)
+    # le recuperano a lotti dalla CDN immagini, che non pesa sul budget hades.
+    scheduler.add_job(
+        fill_missing_photos,
+        trigger=IntervalTrigger(minutes=2),
+        id="photo_backfill",
+        name="Foto dell'archivio (download a lotti dalla CDN)",
         replace_existing=True,
     )
 
@@ -107,7 +133,7 @@ def create_scheduler() -> AsyncIOScheduler:
     # registrata; qui di notte, per sicurezza.
     scheduler.add_job(
         refresh_repair_feedback,
-        trigger=CronTrigger(hour=2, minute=50),
+        trigger=CronTrigger(hour=2, minute=50, timezone=SCHEDULER_TIMEZONE),
         id="repair_feedback",
         name="Correzioni ricambi dalle tue riparazioni",
         replace_existing=True,

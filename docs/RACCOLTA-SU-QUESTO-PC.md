@@ -49,6 +49,22 @@ auto ogni ~30. Da qui in poi il DB si riempie.
   Il pannello **Automations** mostra salute scraper e copertura; **Tempo di
   vendita** e **Market Intelligence** matureranno con i dati.
 
+## Sicurezza: password del DB
+Le porte di DB (5432) e API (8000) ascoltano solo su `127.0.0.1`: dalla rete
+non si raggiungono. La password del DB va comunque cambiata da quella di
+default (`postgres`), in due passi, **con lo stesso valore**:
+
+```powershell
+# 1. Cambia la password nel DB (la chiede due volte, non resta nella cronologia)
+docker compose exec db psql -U postgres -d reseller -c "\password postgres"
+# 2. Scrivi lo stesso valore in .env alla riga POSTGRES_PASSWORD=..., poi
+docker compose up -d backend backup
+```
+
+`POSTGRES_PASSWORD` nel `.env` vale solo per creare il DB la prima volta:
+per questo serve il passo 1. Il `.env` è git-ignorato: la password non va
+mai in un commit né in chat.
+
 ## Backup automatici
 Il servizio `backup` del compose (parte con `docker compose up -d`) ogni notte
 alle 5:00, o appena il PC si riaccende se l'ultimo ha più di 26 ore:

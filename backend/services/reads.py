@@ -28,7 +28,7 @@ from backend.core.database import get_db, has_column
 from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import evaluate_opportunity, risk_assessment
-from backend.services.survival import removal_kind, survival_summary
+from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summary
 from backend.services.valuation import evaluate_value
 from backend.services.variants import AUTO_ONLY_DEFECTS, iphone_model_key, is_healthy, model_text
 
@@ -63,6 +63,13 @@ def _born(row: dict[str, Any]) -> datetime | None:
     backfill found_at arriva giorni dopo e sottostimerebbe età e tempo di
     vendita."""
     return _parse_ts(row.get("published_at") or row.get("found_at"))
+
+
+def _entry_days(row: dict[str, Any], born: datetime) -> float:
+    """Età dell'annuncio quando l'abbiamo visto la prima volta: l'entrata
+    ritardata del Kaplan–Meier (vedi survival.kaplan_meier)."""
+    found = _parse_ts(row.get("found_at"))
+    return max(0.0, (found - born).total_seconds() / 86400) if found else 0.0
 
 # Giorni di permanenza in stock assunti quando i venduti non bastano ancora a
 # misurarli davvero (serve al costo di magazzino nel tetto d'acquisto). Un mese
@@ -566,6 +573,9 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[floa
             .select(_cols(table, "variant_key", "asking_price", "condition_tier", "title",
                           "found_at", "updated_at"))
             .in_("status", list(_SOLD_STATUSES))
+            # I più recenti: oltre il tetto restano fuori i venduti vecchi, non
+            # un sottoinsieme qualsiasi.
+            .order("updated_at", desc=True)
             .limit(20000)
             .execute()
             .data
@@ -1212,7 +1222,7 @@ def _compute_sold_stats(
     now = datetime.now(timezone.utc)
     # Gli ATTIVI entrano come "censurati" (non ancora venduti dopo N giorni) e
     # danno la mediana di mercato per riconoscere i ritirati.
-    observations: dict[str, list[tuple[float, bool]]] = {}
+    observations: dict[str, list[tuple[float, bool, float]]] = {}
     active_prices: dict[str, list[float]] = {}
     for row in active_rows:
         if not usable(row):
@@ -1221,7 +1231,9 @@ def _compute_sold_stats(
         born = _born(row)
         if not model or not born:
             continue
-        observations.setdefault(model, []).append((max(0.0, (now - born).total_seconds() / 86400), False))
+        observations.setdefault(model, []).append(
+            (max(0.0, (now - born).total_seconds() / 86400), False, _entry_days(row, born))
+        )
         price = _to_float(row.get("asking_price"))
         if price and price > 0:
             active_prices.setdefault(model, []).append(price)
@@ -1242,7 +1254,7 @@ def _compute_sold_stats(
         if not model or price is None or price <= 0 or not found or not removed:
             continue
         days = (removed - found).total_seconds() / 86400
-        if not (0 <= days <= 400):
+        if not (0 <= days <= EXPIRY_DAYS + 30):
             continue
         # Non ogni sparizione è una vendita: scaduti e ritirati restano
         # "censurati" (fino a quel giorno non venduti) e fuori dai prezzi.
@@ -1250,7 +1262,7 @@ def _compute_sold_stats(
             days, row.get("original_price") is not None, price, market_median.get(model)
         )
         kinds.setdefault(model, Counter())[kind] += 1
-        observations.setdefault(model, []).append((days, kind == "venduto"))
+        observations.setdefault(model, []).append((days, kind == "venduto", _entry_days(row, found)))
         if kind != "venduto":
             continue
         by_model.setdefault(model, []).append((price, days))
@@ -1361,7 +1373,7 @@ def get_time_to_sale(
         if not model or not found or not removed:
             continue
         days = (removed - found).total_seconds() / 86400
-        if not (0 <= days <= 400):
+        if not (0 <= days <= EXPIRY_DAYS + 30):
             continue
         price = _to_float(row.get("asking_price"))
         # Solo le sparizioni che sembrano VENDITE: scaduti e ritirati non dicono

@@ -43,9 +43,19 @@ s = survival_summary(fast_sold + still_online)
 ck("sintesi: eventi/censurati", (s["events"], s["censored"]), (3, 7))
 ck("nessuna osservazione", survival_summary([])["medianDays"], None)
 
+print("entrata ritardata (stock trovato gia' vecchio)")
+# 10 annunci nuovi: 5 venduti al giorno 10. 10 annunci trovati gia' a 100
+# giorni di eta' e ancora online a 120: non devono "allungare" il giorno 10.
+new_ones = [(10, True)] * 5 + [(30, False)] * 5
+old_stock = [(120, False, 100)] * 10
+ck("senza entrata: il vecchio stock diluisce", round(km_sold_by(kaplan_meier(new_ones + [(120, False)] * 10), 10), 2), 0.25)
+ck("con entrata: solo chi era a rischio al giorno 10", round(km_sold_by(kaplan_meier(new_ones + old_stock), 10), 2), 0.5)
+ck("entrata oltre l'uscita viene limitata", kaplan_meier([(5, True, 9)]), [(5.0, 0.0)])
+
 print("removal_kind")
 ck("sparito giovane → venduto", removal_kind(5, False, 400, 380), "venduto")
-ck("oltre 11 mesi → scaduto", removal_kind(340, True, 300, 380), "scaduto")
+ck("oltre 2 anni → scaduto", removal_kind(740, True, 300, 380), "scaduto")
+ck("14 mesi, ha ribassato → venduto (Subito non scade a 1 anno)", removal_kind(420, True, 300, 380), "venduto")
 ck("4 mesi, mai ribassato, +20% sul mercato → ritirato", removal_kind(120, False, 460, 380), "ritirato")
 ck("4 mesi ma ha ribassato → venduto", removal_kind(120, True, 460, 380), "venduto")
 ck("4 mesi, prezzo in linea → venduto", removal_kind(120, False, 390, 380), "venduto")

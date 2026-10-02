@@ -94,6 +94,7 @@ def get_existing_opportunities(
     if not urls:
         return {}
     with_published = has_column(table, "published_at", client)
+    can_raw = has_column(table, "raw_image_urls", client)
     cols = "id, listing_url, asking_price, image_urls"
     rows = (
         client.table(table)
@@ -110,6 +111,7 @@ def get_existing_opportunities(
             "has_images": bool(row.get("image_urls")),
             # False se la colonna manca: allora non si tenta il riempimento.
             "missing_published": with_published and not row.get("published_at"),
+            "can_raw": can_raw,
         }
     return result
 
@@ -146,6 +148,9 @@ def _opportunity_payload(
         "published_at": meta.get("published_at"),
         # Comuni a entrambe le categorie (NLP + venditore + pHash + variante).
         "image_hash": meta.get("image_hash"),
+        # URL originali della galleria (migrazione 21): se le foto non si
+        # scaricano subito, le recupera dopo services/photo_backfill.py.
+        "raw_image_urls": meta.get("raw_images") or None,
         "features": meta.get("features"),
         "seller_id": meta.get("seller_id"),
         "seller_type": meta.get("seller_type"),
@@ -207,7 +212,11 @@ def insert_opportunities(
     # riproviamo (copre gli schemi non ancora migrati a 09/10).
     for _ in range(8):
         try:
-            inserted = client.table(table).insert(payloads).execute()
+            # on conflict do nothing: se nel frattempo un altro job (inventario
+            # vs sweep) ha inserito lo stesso URL, non salta tutto il lotto.
+            inserted = client.table(table).upsert(
+                payloads, on_conflict="listing_url", ignore_duplicates=True
+            ).execute()
             return inserted.data or []
         except Exception as exc:
             column = _missing_column(exc)
@@ -222,7 +231,9 @@ def insert_opportunities(
             for payload in payloads:
                 payload.pop(column, None)
     # Ultimo tentativo, lasciando propagare un eventuale errore residuo.
-    return client.table(table).insert(payloads).execute().data or []
+    return client.table(table).upsert(
+        payloads, on_conflict="listing_url", ignore_duplicates=True
+    ).execute().data or []
 
 
 def _missing_column(exc: Exception) -> str | None:
@@ -269,6 +280,10 @@ def apply_price_updates(
             image_hash = (listing.metadata or {}).get("image_hash")
             if image_hash:
                 patch["image_hash"] = image_hash
+        elif not row.get("has_images") and row.get("can_raw") and (listing.metadata or {}).get("raw_images"):
+            # Senza foto e non scaricate in questo giro (inventario): si
+            # aggiornano le URL della galleria per il backfill delle foto.
+            patch["raw_image_urls"] = listing.metadata["raw_images"]
         # Righe salvate prima della migrazione 19: la data di pubblicazione
         # arriva la prima volta che l'annuncio viene rivisto.
         published = (listing.metadata or {}).get("published_at")
@@ -340,10 +355,11 @@ ACTIVE_STATUSES = ("nuovo", "visto")
 
 def find_republished(
     client: Client, table: str, new_listings: list[ScrapedListing]
-) -> dict[str, dict[str, Any]]:
-    """Mappa image_hash → {id, listing_url} per gli hash già presenti in `table`.
+) -> dict[str, list[dict[str, Any]]]:
+    """Mappa image_hash → righe già in `table` con quella prima foto.
 
-    Un pHash già a DB sotto un altro listing_url = stesso annuncio ripubblicato.
+    Il match vero lo decide ``republish_match``: la sola foto uguale non basta
+    (foto stock condivise tra negozi diversi).
     """
     hashes = list(
         {
@@ -357,7 +373,7 @@ def find_republished(
     try:
         rows = (
             client.table(table)
-            .select("id, listing_url, image_hash")
+            .select("id, listing_url, image_hash, seller_id, status")
             .in_("image_hash", hashes)
             .execute()
         )
@@ -370,12 +386,32 @@ def find_republished(
             table,
         )
         return {}
-    result: dict[str, dict[str, Any]] = {}
+    result: dict[str, list[dict[str, Any]]] = {}
     for row in rows.data or []:
-        h = row.get("image_hash")
-        if h and h not in result:
-            result[h] = {"id": row["id"], "listing_url": row["listing_url"]}
+        if h := row.get("image_hash"):
+            result.setdefault(h, []).append(row)
     return result
+
+
+def republish_match(
+    listing: ScrapedListing, rows: list[dict[str, Any]], claimed: set[str]
+) -> dict[str, Any] | None:
+    """La riga di cui ``listing`` è la ripubblicazione, o None.
+
+    Stessa prima foto E stesso venditore. Se uno dei due venditori è ignoto,
+    solo un record già sparito (un annuncio ancora attivo con la stessa foto
+    è più probabilmente un altro pezzo con foto di catalogo). Prima la regola
+    era la sola foto: due negozi con la stessa foto stock si fondevano."""
+    seller = (listing.metadata or {}).get("seller_id")
+    for row in rows:
+        if row["id"] in claimed or row.get("listing_url") == listing.url:
+            continue
+        if seller and row.get("seller_id"):
+            if str(row["seller_id"]) == str(seller):
+                return row
+        elif row.get("status") not in ACTIVE_STATUSES:
+            return row
+    return None
 
 
 def apply_republish_updates(
@@ -511,8 +547,11 @@ async def persist_opportunities(
     claimed_ids: set[str] = set()
     for listing in new_listings:
         image_hash = (listing.metadata or {}).get("image_hash")
-        match = republished_map.get(image_hash) if image_hash else None
-        if match and match["id"] not in claimed_ids:
+        match = (
+            republish_match(listing, republished_map.get(image_hash, []), claimed_ids)
+            if image_hash else None
+        )
+        if match:
             claimed_ids.add(match["id"])
             republished.append((match["id"], listing))
         else:
@@ -930,7 +969,10 @@ def _parse_ts(value: Any) -> datetime | None:
 FIRST_SCAN_LOOKBACK = timedelta(hours=24)
 # Margine sul ricongiungimento: copre gli annunci pubblicati mentre la
 # scansione precedente era in corso e piccole differenze di orologio.
-SINCE_MARGIN = timedelta(minutes=10)
+# 2 ore e non 10 minuti: un annuncio può entrare nell'indice di ricerca molto
+# dopo la sua data di pubblicazione (moderazione) e finire DIETRO il segnalibro.
+# Costa ~2 pagine in più a giro.
+SINCE_MARGIN = timedelta(hours=2)
 
 
 async def finish_run(
@@ -964,6 +1006,9 @@ async def finish_run(
             drops = drops_by_cat.get(cat, [])
             try:
                 items = await asyncio.to_thread(enrich_for_alerts, cat, new_rows, db)
+                # Mai un alert su una valutazione con meno di 6 campioni
+                # (mediana di 3 prezzi chiesti = rumore, non un affare).
+                items = [it for it in items if it.get("valuationConfidence") != "bassa"]
                 deals = [
                     it
                     for it in items

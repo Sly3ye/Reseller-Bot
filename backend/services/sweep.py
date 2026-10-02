@@ -296,18 +296,21 @@ async def walk_inventory(
 
     grand: dict[str, Any] = {
         "pages": 0, "kept": 0, "new": 0, "updated": 0, "unmatched": 0,
-        "price_drops": 0, "complete": all(c <= BAND_LIMIT for _, _, c in bands),
+        "price_drops": 0, "read": 0, "short_bands": [],
+        "complete": all(c <= BAND_LIMIT for _, _, c in bands),
     }
     seen_all: set[str] = set()
     for band_lo, band_hi, count in bands:
         progress(f"\nFascia {band_lo}–{band_hi or '∞'} €: {count} annunci "
                  f"(per riprendere da qui: --from {band_lo})")
         seen: set[str] = set()
+        band_read = 0
         for start in range(0, min(count, SubitoScraper.MAX_DEPTH), SubitoScraper.PAGE_SIZE):
             payload = await scraper._fetch_page(
                 query, SubitoScraper.PAGE_SIZE, start, band_lo, band_hi
             )
             ads = payload.get("ads") or []
+            band_read += len(ads)
             if not ads:
                 break
             listings = scraper.select_ads(
@@ -322,6 +325,14 @@ async def walk_inventory(
             progress(f"  start={start:<5} {len(ads):>3} grezzi → {totals['kept']:>3} iPhone, "
                      f"+{totals['new']} nuovi, {totals['updated']} già noti")
         seen_all |= seen
+        grand["read"] += band_read
+        # Una fascia letta per meno del 95% di quanto dichiarato (pagina vuota a
+        # metà, risposte troncate) rende l'inventario NON completo: gli annunci
+        # non letti passerebbero per venduti. Il 5% copre ciò che si vende o si
+        # sposta di fascia durante le ore del giro.
+        if band_read < 0.95 * min(count, SubitoScraper.MAX_DEPTH):
+            grand["short_bands"].append(f"{band_lo}-{band_hi or ''}: {band_read}/{count}")
+            grand["complete"] = False
     progress(f"\nFatto: { {k: v for k, v in grand.items()} }")
     # Fotografia della copertura per il cruscotto qualità: quanti annunci
     # dichiara Subito, quanti ne abbiamo visti, quanti erano iPhone veri.
@@ -330,9 +341,12 @@ async def walk_inventory(
             _save_state, get_db(), f"inventory_last:{category}",
             {
                 "at": datetime.now(timezone.utc).isoformat(),
-                "subitoTotal": total_ads, "seen": len(seen_all), "kept": grand["kept"],
-                "pages": grand["pages"], "complete": grand["complete"],
-                "fromPrice": lo,
+                # read/subitoTotal = quanto della ricerca abbiamo letto (la
+                # copertura vera); seen/kept = gli iPhone tenuti (il resto della
+                # ricerca "iphone" sono cover, Samsung, accessori).
+                "subitoTotal": total_ads, "read": grand["read"], "seen": len(seen_all),
+                "kept": grand["kept"], "pages": grand["pages"], "complete": grand["complete"],
+                "shortBands": grand["short_bands"], "fromPrice": lo,
             },
         )
     except Exception:
@@ -370,15 +384,90 @@ async def reconcile_inventory(category: str = "smartphone") -> dict[str, Any]:
     Con il vecchio GC il tech costava una richiesta per annuncio attivo
     (decine di migliaia a notte); così ~540 + i candidati.
     """
+    if _INVENTORY_LOCK.locked():
+        logger.info("Inventario %s già in corso: salto", category)
+        return {"mode": "reconcile", "category": category, "skipped": True}
+    async with _INVENTORY_LOCK:
+        try:
+            result = await _reconcile(category)
+        except Exception as exc:  # noqa: BLE001 (un inventario non deve morire in silenzio)
+            logger.exception("Inventario %s fallito", category)
+            result = {"mode": "reconcile", "category": category, "aborted": True,
+                      "error": f"{type(exc).__name__}: {exc}"[:300]}
+        await _record_inventory(category, result)
+    # Motore Notturno A VALLE dell'inventario: medie e trend sul DB appena
+    # riconciliato (prima girava a orario fisso, magari a inventario in corso).
+    try:
+        from backend.tasks import run_nightly_batch_all_products  # noqa: PLC0415
+
+        await run_nightly_batch_all_products()
+    except Exception:
+        logger.exception("Motore Notturno dopo l'inventario fallito")
+    return result
+
+
+_INVENTORY_LOCK = asyncio.Lock()
+# Oltre quest'età l'ultimo inventario si rifà appena possibile (PC spento
+# all'ora programmata: senza, i venduti di quella notte non si vedono mai).
+INVENTORY_MAX_AGE_H = 26
+
+
+async def _record_inventory(category: str, result: dict[str, Any]) -> None:
+    """Esito di OGNI inventario (anche abortito) in app_settings, più un
+    allarme se non è servito a riconciliare."""
+    from backend.services.notifications import notify_system_alert  # noqa: PLC0415
+
+    keys = ("aborted", "error", "complete", "read", "kept", "candidates",
+            "checked", "removed", "republished_merged", "capped", "short_bands")
+    outcome = {"at": datetime.now(timezone.utc).isoformat(),
+               **{k: result[k] for k in keys if k in result}}
+    try:
+        await asyncio.to_thread(_save_state, get_db(), f"inventory_result:{category}", outcome)
+    except Exception:
+        logger.exception("Salvataggio esito inventario fallito")
+    problem = None
+    if result.get("aborted"):
+        problem = f"interrotto ({result.get('error') or 'blocco Subito'}): nessun venduto marcato"
+    elif result.get("complete") is False:
+        bands = ", ".join(result.get("short_bands") or []) or "fascia oltre il tetto"
+        problem = f"incompleto ({bands}): nessun venduto marcato"
+    elif result.get("capped"):
+        problem = f"{result['capped']} candidati oltre il tetto di verifica: inventario sospetto"
+    if problem:
+        try:
+            await notify_system_alert(f"🟠 <b>Inventario {category}</b> {problem}")
+        except Exception:
+            logger.exception("Alert inventario fallito")
+
+
+async def inventory_watchdog(category: str = "smartphone") -> dict[str, Any] | None:
+    """Rifà l'inventario se l'ultimo completato è più vecchio di
+    INVENTORY_MAX_AGE_H ore (PC spento all'ora programmata)."""
+    try:
+        rows = await asyncio.to_thread(
+            lambda: get_db().table("app_settings").select("value")
+            .eq("key", f"inventory_last:{category}").limit(1).execute().data
+        )
+        at = datetime.fromisoformat(str((rows[0]["value"] or {}).get("at"))) if rows else None
+    except Exception:
+        at = None
+    if at and (datetime.now(timezone.utc) - at).total_seconds() < INVENTORY_MAX_AGE_H * 3600:
+        return None
+    logger.info("Inventario %s: l'ultimo è del %s, lo recupero ora", category, at)
+    return await reconcile_inventory(category)
+
+
+async def _reconcile(category: str) -> dict[str, Any]:
     from backend.services.garbage_collector import TABLES, verify_and_mark  # noqa: PLC0415
 
     try:
         grand, seen = await walk_inventory(category, progress=logger.info)
     except ScraperBlockedError as exc:
         logger.warning("Inventario %s interrotto (%s): nessun annuncio marcato", category, exc)
-        return {"mode": "reconcile", "category": category, "aborted": True}
+        return {"mode": "reconcile", "category": category, "aborted": True, "error": str(exc)[:200]}
     if not grand["complete"]:
-        logger.warning("Inventario %s incompleto (fascia oltre il tetto): niente rimozioni", category)
+        logger.warning("Inventario %s incompleto (%s): niente rimozioni",
+                       category, grand.get("short_bands") or "fascia oltre il tetto")
         return {"mode": "reconcile", "category": category, **grand, "removed": 0}
 
     db = get_db()
@@ -422,14 +511,17 @@ async def reconcile_inventory(category: str = "smartphone") -> dict[str, Any]:
         "Inventario %s: %d attivi su Subito, %d attivi nel DB, %d candidati rimossi",
         category, len(seen), len(rows), len(candidates),
     )
+    capped = 0
     if len(candidates) > MAX_VERIFY_PER_NIGHT:
         logger.warning(
             "Candidati %d oltre il tetto %d: inventario sospetto, verifico solo i primi",
             len(candidates), MAX_VERIFY_PER_NIGHT,
         )
+        capped = len(candidates) - MAX_VERIFY_PER_NIGHT
         candidates = candidates[:MAX_VERIFY_PER_NIGHT]
     result = await verify_and_mark(db, table, candidates)
     logger.info("Inventario %s: %d verificati, %d marcati rimossi",
                 category, result["checked"], result["removed"])
     return {"mode": "reconcile", "category": category, **grand,
-            "republished_merged": len(merged), "candidates": len(candidates), **result}
+            "republished_merged": len(merged), "candidates": len(candidates),
+            "capped": capped, **result}

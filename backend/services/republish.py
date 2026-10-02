@@ -22,6 +22,10 @@ Due momenti:
 
 La condizione temporale protegge i negozi con più pezzi dello stesso modello:
 un secondo iPhone 13 128GB già online da settimane non è una ripubblicazione.
+In più (dal 2026-10-02) un venditore con DUE pezzi della stessa variante online
+insieme è un negozio: per lui niente abbinamento (un privato non ha due iPhone
+13 128GB identici in vendita), altrimenti ogni pezzo nuovo cancellava la
+vendita del precedente.
 """
 
 from __future__ import annotations
@@ -65,6 +69,17 @@ def identity(category: str, seller_id: Any, variant_key: Any, title: Any) -> tup
     return (str(seller_id), str(variant_key))
 
 
+def shop_identities(category: str, active: list[dict[str, Any]], min_pieces: int) -> set[tuple]:
+    """Identità (venditore, variante) con almeno ``min_pieces`` righe attive."""
+    counts: dict[tuple, int] = {}
+    for row in active:
+        key = identity(category, row.get("seller_id"), row.get("variant_key"),
+                       model_text(row.get("title"), row.get("description")))
+        if key:
+            counts[key] = counts.get(key, 0) + 1
+    return {k for k, n in counts.items() if n >= min_pieces}
+
+
 def _close_price(a: Any, b: Any) -> bool:
     try:
         a, b = float(a), float(b)
@@ -80,13 +95,16 @@ def match_pairs(
     news: list[dict[str, Any]],
     olds: list[dict[str, Any]],
     time_ok: Any,
+    shops: set[tuple] | None = None,
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     """Abbina ogni nuovo al vecchio più vicino di prezzo con la stessa identità.
 
     ``news``/``olds``: dict con seller_id, variant_key, title, price. Ogni
     vecchio si usa una volta sola. ``time_ok(new, old)`` applica la regola
-    temporale del momento (a) o (b). Funzione pura → testabile senza DB.
+    temporale del momento (a) o (b). ``shops``: identità (venditore,
+    variante) con più pezzi online insieme, mai abbinate. Funzione pura.
     """
+    shops = shops or set()
     by_identity: dict[tuple, list[dict[str, Any]]] = {}
     for old in olds:
         key = identity(category, old.get("seller_id"), old.get("variant_key"),
@@ -99,7 +117,7 @@ def match_pairs(
     for new in news:
         key = identity(category, new.get("seller_id"), new.get("variant_key"),
                        model_text(new.get("title"), new.get("description")))
-        if not key:
+        if not key or key in shops:
             continue
         best = None
         for old in by_identity.get(key, []):
@@ -145,7 +163,23 @@ def find_revivable(
         logger.exception("Ripubblicazioni (a): lettura dei record spariti fallita")
         return []
     olds = [{**r, "price": r.get("asking_price")} for r in rows]
-    return match_pairs(category, candidates, olds, lambda new, old: True)
+    # Il candidato non è ancora in DB: se il venditore ha GIÀ un pezzo della
+    # stessa variante online, col candidato sono due → negozio.
+    try:
+        active = (
+            db.table(table)
+            .select("seller_id, variant_key, title, description")
+            .in_("seller_id", sellers)
+            .in_("status", ["nuovo", "visto"])
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        logger.exception("Ripubblicazioni (a): lettura degli attivi fallita")
+        return []
+    shops = shop_identities(category, active, min_pieces=1)
+    return match_pairs(category, candidates, olds, lambda new, old: True, shops)
 
 
 # -------------------------------------------------------------- (b) merge
@@ -173,7 +207,8 @@ def merge_into_old(
 
     news = [{**r, "price": r.get("asking_price")} for r in active]
     olds = [{**r, "price": r.get("asking_price")} for r in missing]
-    pairs = match_pairs(category, news, olds, time_ok)
+    # Due o più pezzi della stessa variante ancora online = negozio.
+    pairs = match_pairs(category, news, olds, time_ok, shop_identities(category, active, 2))
 
     merged: list[str] = []
     now = datetime.now(timezone.utc).isoformat()

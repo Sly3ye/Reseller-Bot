@@ -21,11 +21,11 @@ services:
       # Eseguito automaticamente SOLO al primo avvio (volume vuoto).
       - ./database/selfhosted/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      # Per consultare i dati dal Mac con psql/TablePlus/DBeaver e per gli
-      # script dump/restore. Sul VPS in produzione valuta di rimuoverla o
-      # restringerla nel firewall: il backend nel container ci arriva già
-      # in interno (host "db"), non serve esporla pubblicamente.
-      - "5432:5432"
+      # Solo da questa macchina (psql/TablePlus/DBeaver, script dump/restore).
+      # Prima era "5432:5432" = aperta a tutta la rete, con password di
+      # default: chiunque in LAN poteva leggere o cancellare i dati. Il
+      # backend ci arriva in interno (host "db"), non gli serve la porta.
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d reseller"]
       interval: 10s
@@ -51,7 +51,9 @@ services:
       # Esito dell'ultimo backup (servizio `backup`), per cruscotto e allarme.
       - ./backups:/backups:ro
     ports:
-      - "8000:8000"
+      # Solo da questa macchina: l'API non ha login. Per usarla da un altro
+      # dispositivo serve prima un'autenticazione (o una VPN/tunnel).
+      - "127.0.0.1:8000:8000"
     # Per raggiungere Ollama (AI locale) in esecuzione sull'HOST via
     # host.docker.internal, anche su Linux/VPS (su Docker Desktop è già presente).
     extra_hosts:

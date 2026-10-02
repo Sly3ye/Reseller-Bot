@@ -29,6 +29,7 @@ from curl_cffi.requests.exceptions import CurlError
 
 from backend.core.config import settings
 from backend.core.database import get_db
+from backend.scrapers.subito import ScraperBlockedError, pacer
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,6 @@ PAGE_SIZE = 1000          # righe per query
 # scattare il blocco Akamai anche per lo Sniper: poche richieste parallele,
 # con una pausa irregolare dopo ognuna.
 CHECK_CONCURRENCY = 2
-CHECK_PAUSE_S = (0.5, 1.5)
 BLOCK_STATUS = (403, 429)
 MAX_CONSECUTIVE_BLOCKS = 5  # oltre: il GC si ferma e riprova la notte dopo
 UPDATE_CHUNK = 200        # id per UPDATE batch
@@ -158,8 +158,19 @@ async def verify_and_mark(db, table: str, rows: list[dict]) -> dict[str, int]:
             async with semaphore:
                 if state["aborted"]:
                     return
+                # Stesso IP di hades e stesso Akamai: le verifiche passano dal
+                # pacer GLOBALE (prima andavano per conto loro, 2 in parallelo,
+                # e un 403 qui non fermava gli altri job).
+                try:
+                    await pacer.wait_turn()
+                except ScraperBlockedError:
+                    state["aborted"] = True
+                    return
                 outcome = await is_removed(client, row["listing_url"])
-                await asyncio.sleep(random.uniform(*CHECK_PAUSE_S))
+                if outcome is None:
+                    pacer.on_block(403)
+                else:
+                    pacer.on_success()
             if outcome is None:
                 state["consecutive_blocks"] += 1
                 if state["consecutive_blocks"] >= MAX_CONSECUTIVE_BLOCKS:

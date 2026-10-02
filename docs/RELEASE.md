@@ -1,6 +1,7 @@
 # Versione release (v1.0) — definizione e distanza
 
-> Bozza del 2026-10-02. Serve da **punto di riferimento**: cosa deve fare il
+> Bozza del 2026-10-02, rivalutata lo stesso giorno dopo un audit completo
+> della gestione dati (sezione G). Serve da **punto di riferimento**: cosa deve fare il
 > programma per essere "pronto" per il business, e quanto manca. Si rivaluta
 > spesso (a ogni giro di sviluppo) e può crescere: le idee nuove vanno in
 > fondo, nella sezione *Dopo la v1*, a meno che non blocchino il business.
@@ -31,9 +32,9 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | # | Criterio | Stato |
 |---|---|---|
 | A1 | Nessun servizio a pagamento; ritmo sotto la soglia di blocco, stop automatico sui 403 | ✅ |
-| A2 | Copertura ≥ 95% degli iPhone che Subito dichiara (misurata dall'inventario notturno) | 🔧 primo inventario stanotte |
+| A2 | Copertura ≥ 95% della ricerca che Subito dichiara (annunci letti / dichiarati, dall'inventario) | 🔧 primo inventario completo in corso; prima la misura divideva gli iPhone tenuti per tutti i risultati (cover e Samsung inclusi) |
 | A3 | Zero annunci persi tra un giro e l'altro (`gaps` = 0 per 14 giorni di fila) | 🔧 da osservare |
-| A4 | Venduti/rimossi rilevati ogni notte (inventario + verifica) | ✅ codice · 🔧 primi dati stanotte |
+| A4 | Venduti/rimossi rilevati ogni notte (inventario + verifica) | ✅ codice: esito sempre registrato, allarme se interrotto/incompleto, recupero automatico se il PC era spento all'1:30 · 🔧 primi dati con l'inventario di oggi |
 | A5 | Gira da solo 30 giorni senza interventi, su UNA macchina sempre accesa | ◻️ oggi PC + Mac separati |
 
 ### B. Qualità del dato — sapere cosa c'è nell'annuncio
@@ -81,21 +82,63 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | F1 | Migrazioni automatiche all'avvio | ✅ |
 | F2 | Backup automatico del DB (e delle foto) con verifica di ripristino | ✅ servizio `backup`: dump notturno ripristinato in un DB di prova, foto in copia speculare, esito nel cruscotto e allarme |
 | F3 | Allarmi di sistema (blocco, giro down) | ✅ |
-| F4 | Cruscotto qualità del dato | ✅ |
+| F4 | Cruscotto qualità del dato | ✅ (+ esito inventario, coda foto, backup) |
+| F5 | Sicurezza minima: DB e API raggiungibili solo dalla macchina, password DB non di default | ✅ porte su 127.0.0.1 · ◻️ password DB ancora quella di default: va cambiata (comando in [RACCOLTA-SU-QUESTO-PC.md](RACCOLTA-SU-QUESTO-PC.md)) |
+| F6 | Foto di tutti gli annunci (anche archivio) | ✅ backfill dalla CDN immagini, a lotti, sicuro sui blocchi · 🔧 ~45k annunci in coda, ~13 h |
+
+### G. Affidabilità del dato (audit 2026-10-02)
+
+Senza questi, le metriche C4/C5 e gli alert possono essere *precisi ma
+sbagliati*. Corretti oggi:
+
+| # | Problema trovato | Stato |
+|---|---|---|
+| G1 | Ripubblicazioni: un negozio che vende un pezzo e ne carica uno uguale "cancellava" la vendita; il pHash fondeva annunci di venditori diversi con la stessa foto di catalogo | ✅ serve lo stesso venditore; chi ha 2 pezzi uguali online insieme è un negozio e non si abbina |
+| G2 | Kaplan–Meier senza entrata ritardata: lo stock trovato già vecchio (backfill) avrebbe allungato i tempi di vendita per mesi | ✅ troncamento a sinistra (entrata = età quando l'abbiamo visto) |
+| G3 | "Scaduto dopo un anno": falso, 1.528 iPhone di privati online da 12–21 mesi | ✅ soglia a 2 anni; sotto decidono le regole sul ritirato |
+| G4 | Inventario: pagina vuota a metà fascia = "completo"; errori diversi dal blocco senza traccia; job notturni in UTC (2h dopo il previsto); Motore Notturno a orario fisso anche con inventario in corso | ✅ completezza per annunci letti, esito e allarme sempre, fuso Europe/Rome, Motore Notturno a valle dell'inventario |
+| G5 | Annunci in moderazione dietro il segnalibro dello sweep (margine 10 min) | ✅ margine 2 h · 🔧 da misurare: nuovi recenti trovati solo dall'inventario |
+| G6 | Verifiche delle pagine annuncio fuori dal pacer anti-blocco | ✅ passano dal pacer globale |
+| G7 | Corsa sweep/inventario sull'insert (salta l'intero lotto) | ✅ `on conflict do nothing` |
+| G8 | Alert su valori equi da 3 prezzi chiesti | ✅ niente alert con confidenza bassa (< 6 campioni) |
+| G9 | Matrice: volume contato solo sugli attivi (i rotti migliori spariscono in fretta e non contavano) | ✅ conta tutti i nati nella finestra |
+| G10 | Cancellare un target cancellava lo storico dei suoi annunci (cascade) | ✅ migrazione 22: `on delete set null` |
+
+Ancora da fare per la v1:
+
+| # | Criterio | Stato |
+|---|---|---|
+| G11 | **"Venduto" validato**: un campione di sparizioni controllato a mano (pagina rimossa vs ancora online vs scaduta) per misurare la precisione di `is_removed` e di venduto/ritirato prima di fidarsi di C4 | ◻️ dopo i primi inventari |
+| G12 | **Ripubblicazioni validate** su un campione etichettato (precisione/richiamo di pHash e venditore+variante), come per i guasti | ◻️ |
+| G13 | **Latenza annuncio → alert** misurata (p50/p95): nel business dei rotti vince chi arriva primo | ◻️ |
+| G14 | **Prezzo di realizzo ≠ prezzo chiesto**: fattore di trattativa dalle proprie compravendite, applicato a rivendita e tetto | ◻️ si attiva con la pipeline (come E3) |
+| G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | 🔧 la confidenza c'è sul valore equo, non nella matrice |
+| G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ◻️ superata da A5 (una sola macchina) |
 
 ## Distanza
 
-- **Fatto:** la base (A1, A4, B1, B2, C1, C2, C3, C5, D1–D4, E1, E2, F1–F4).
-- **Sviluppo che manca, in ordine:** B5 (modello AI, misura sul Mac) → B3/B4
-  oltre le regex → A5 (una macchina sempre accesa).
+- **Fatto:** la base (A1, A4, B1, B2, C1, C2, C3, C5, D1–D4, E1, E2, F1–F4, F6) e
+  l'affidabilità del dato G1–G10.
+- **Sviluppo che manca, in ordine:**
+  1. **A5 — una macchina sempre accesa.** È il collo di bottiglia: senza
+     inventari ogni notte C4/C6/G11 non maturano mai. Deciso questo, i dati
+     del PC si uniscono una volta e poi c'è un solo DB.
+  2. **G11 + G12** — validare venduto e ripubblicazioni su campioni a mano
+     (mezza giornata di etichettatura, dopo una settimana di inventari).
+  3. **B5 → B3/B4** — modello AI misurato sul Mac, poi guasti oltre le regex.
+  4. **G13, G15** — latenza degli alert e incertezza visibile.
 - **Dati che solo tu puoi dare:** riparazioni registrate in pipeline (E3 si
   attiva da 3 riparazioni per ricambio).
 - **Tempo che nessuno sviluppo accorcia:** venduti e tempi di vendita (C4, C6)
   diventano affidabili solo con **4–6 settimane** di inventari notturni.
   Conviene quindi spostare presto la raccolta su una macchina sempre accesa (A5).
 
-Stima onesta: con B3–C5 fatti, il programma è **usabile per decidere** anche
-prima che C4 maturi; è **v1** quando anche C4/C6 hanno dati e A5 è risolto.
+Stima onesta: il programma è **usabile per decidere** oggi sui rotti con
+guasto chiaro (schermo, batteria, scocca), con la matrice e il tetto
+d'acquisto. È **v1** quando: A5 è risolto, ci sono 4–6 settimane di
+inventari (C4/C6), venduto e ripubblicazioni sono validati (G11/G12) e il
+modello AI copre il richiamo dei guasti (B3/B5). Il lavoro di sviluppo che
+resta è poco; il tempo che resta è soprattutto **raccolta continua**.
 
 ## Come si misura il riconoscimento dei guasti
 

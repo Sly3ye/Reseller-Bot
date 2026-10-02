@@ -755,12 +755,29 @@ export type DataQuality = {
     keptLastInventory: number | null;
     inventoryAt: string | null;
     inventoryComplete: boolean | null;
+    readLastInventory?: number | null;
+    /** Annunci della ricerca letti / dichiarati da Subito. */
     seenPct: number | null;
   };
+  /** Esito dell'ultimo inventario (anche interrotto o incompleto). */
+  inventoryResult?: {
+    at: string;
+    aborted?: boolean;
+    error?: string;
+    complete?: boolean;
+    candidates?: number;
+    checked?: number;
+    removed?: number;
+    republished_merged?: number;
+    capped?: number;
+    short_bands?: string[];
+  } | null;
   /** % di annunci attivi con il campo estratto. */
   fieldsPct: Record<string, number>;
   last24h: { runs: number; down: number; requests: number; gaps: number; new: number };
   removed7d: number;
+  /** Annunci con foto ancora da scaricare (backfill dalla CDN). */
+  photoQueue?: number | null;
   /** Esito del servizio `backup` (dump verificato + copia delle foto). */
   backup?: {
     state: "ok" | "fallito" | "vecchio" | "assente";

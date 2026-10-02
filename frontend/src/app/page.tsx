@@ -1012,7 +1012,7 @@ function ErrorBanner({ message }: { message: string }) {
 
 /* ---------------------------------------------------------------- SNIPER */
 
-const GRID_COLUMNS = "56px 60px 2.1fr 1fr 1fr 1.1fr 84px 104px";
+const GRID_COLUMNS = "56px 60px minmax(0, 2.1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.1fr) 84px 104px";
 
 function SniperScreen(props: {
   total: number;
@@ -1636,7 +1636,14 @@ function SniperRow(props: {
           >
             {item.title ?? "—"}
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "3px", minWidth: 0 }}>
+          {/* I badge vanno a capo: su schermi stretti (o con molti badge) prima
+              sforavano nella colonna del prezzo. */}
+          <div
+            style={{
+              display: "flex", alignItems: "center", gap: "6px", rowGap: "4px",
+              flexWrap: "wrap", marginTop: "3px", minWidth: 0,
+            }}
+          >
             <div
               style={{
                 fontSize: "11px",
@@ -1775,6 +1782,7 @@ function SniperRow(props: {
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 minWidth: 0,
+                flex: "1 1 120px",
               }}
             >
               {[
@@ -5071,8 +5079,9 @@ function DataQualityPanel() {
           {q.activeListings.toLocaleString("it-IT")} annunci attivi in archivio
           {cov.subitoTotal != null && cov.seenLastInventory != null ? (
             <>
-              {" "}· ultimo inventario: <b>{cov.seenLastInventory.toLocaleString("it-IT")}</b> visti su{" "}
-              {cov.subitoTotal.toLocaleString("it-IT")} dichiarati da Subito ({cov.seenPct}%)
+              {" "}· ultimo inventario: letti <b>{(cov.readLastInventory ?? cov.seenLastInventory).toLocaleString("it-IT")}</b> su{" "}
+              {cov.subitoTotal.toLocaleString("it-IT")} dichiarati da Subito ({cov.seenPct}%),{" "}
+              {cov.seenLastInventory.toLocaleString("it-IT")} iPhone
               {cov.inventoryComplete === false ? " · inventario incompleto" : ""}
               {cov.inventoryAt ? ` · ${relativeTime(cov.inventoryAt)}` : ""}
             </>
@@ -5106,6 +5115,25 @@ function DataQualityPanel() {
           {q.last24h.down} giri down
         </span>
         <span>{q.removed7d.toLocaleString("it-IT")} spariti in 7 giorni</span>
+        {q.inventoryResult && (
+          <span
+            style={{
+              color: q.inventoryResult.aborted || q.inventoryResult.complete === false
+                ? "oklch(0.68 0.17 25)" : undefined,
+            }}
+            title={q.inventoryResult.error ?? q.inventoryResult.short_bands?.join(", ") ?? undefined}
+          >
+            inventario {relativeTime(q.inventoryResult.at)}:{" "}
+            {q.inventoryResult.aborted
+              ? "interrotto"
+              : q.inventoryResult.complete === false
+                ? "incompleto"
+                : `${q.inventoryResult.removed ?? 0} spariti su ${q.inventoryResult.candidates ?? 0} candidati`}
+          </span>
+        )}
+        {!!q.photoQueue && (
+          <span>{q.photoQueue.toLocaleString("it-IT")} annunci con foto in download</span>
+        )}
       </div>
       {q.backup && <BackupLine b={q.backup} head={head} />}
     </div>

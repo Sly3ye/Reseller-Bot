@@ -83,8 +83,10 @@ def _load_rows() -> list[dict[str, Any]]:
     rows = _select_all(
         lambda: db.table(table)
         .select(_cols(table, "id", "title", "variant_key", "target_id", "asking_price",
-                      "condition_tier", "defects_noted", "features", "found_at"))
-        .in_("status", ["nuovo", "visto"])
+                      "condition_tier", "defects_noted", "features", "found_at", "status"))
+        # Anche i rotti già spariti: sono le occasioni che qualcuno ha preso
+        # davvero. Prezzi e mediane restano sugli attivi (vedi "active").
+        .in_("status", ["nuovo", "visto", "venduto_rimosso", "scaduto"])
     )
     out = []
     for r in rows:
@@ -102,6 +104,7 @@ def _load_rows() -> list[dict[str, Any]]:
             "functional": defects - {"graffi"},
             "features": set(r.get("features") or []),
             "born": _born(r),
+            "active": r.get("status") in ("nuovo", "visto"),
         })
     return out
 
@@ -142,9 +145,18 @@ def get_repair_matrix(force: bool = False) -> dict[str, Any]:
     if hit and not force and time.monotonic() - hit[0] < _CACHE_TTL_S:
         return hit[1]
 
-    rows = _load_rows()
+    all_rows = _load_rows()
+    rows = [r for r in all_rows if r["active"]]
     ratios = _non_original_ratios(rows)
     cutoff = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS)
+    # Volume: annunci NATI nella finestra con quel solo guasto, in qualunque
+    # stato (i rotti buoni spariscono in fretta: contarli solo da attivi
+    # sottostimava proprio le occasioni migliori).
+    born_recent: dict[tuple[str, str], int] = {}
+    for r in all_rows:
+        if len(r["functional"]) == 1 and r["born"] and r["born"] >= cutoff:
+            key = (r["model"], next(iter(r["functional"])))
+            born_recent[key] = born_recent.get(key, 0) + 1
 
     healthy_orig: dict[str, list[float]] = {}
     groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
@@ -168,7 +180,7 @@ def get_repair_matrix(force: bool = False) -> dict[str, Any]:
         buy_prices = [i["price"] for i in items]
         buy = statistics.median(buy_prices)
         buy_good = _p25(buy_prices)
-        weekly = round(sum(1 for i in items if i["born"] and i["born"] >= cutoff) / (WINDOW_DAYS / 7), 1)
+        weekly = round(born_recent.get((model, code), 0) / (WINDOW_DAYS / 7), 1)
 
         cell: dict[str, Any] = {
             "model": model,

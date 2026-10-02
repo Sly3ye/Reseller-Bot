@@ -20,9 +20,11 @@ from __future__ import annotations
 
 from typing import Iterable
 
-# Subito toglie gli annunci dopo 365 giorni: una sparizione oltre questa età
-# è una scadenza, non una vendita.
-EXPIRY_DAYS = 330
+# Si pensava che Subito togliesse gli annunci dopo un anno: falso. Il
+# 2026-10-02 c'erano 1.528 iPhone di privati online da 12–21 mesi. Una
+# sparizione si dà per "scaduta" solo oltre i due anni; sotto decidono le
+# regole sul ritirato (età, nessun ribasso, prezzo sopra mercato).
+EXPIRY_DAYS = 730
 # Ritirato probabile: online a lungo, mai ribassato, ancora sopra mercato.
 WITHDRAW_MIN_DAYS = 90
 WITHDRAW_OVER_MARKET = 1.10
@@ -37,7 +39,7 @@ def removal_kind(
     """Natura probabile di una sparizione: "venduto", "scaduto" o "ritirato".
 
     È un'euristica dichiarata (Subito non dice perché un annuncio sparisce):
-    - oltre ~11 mesi di età → scaduto (lo ha tolto Subito);
+    - oltre 2 anni di età → scaduto;
     - online da ≥90 giorni, mai ribassato e ancora ≥10% sopra la mediana del
       mercato → ritirato (chi vende davvero di solito ribassa prima);
     - altrimenti → venduto.
@@ -55,30 +57,36 @@ def removal_kind(
     return "venduto"
 
 
-def kaplan_meier(observations: Iterable[tuple[float, bool]]) -> list[tuple[float, float]]:
+def kaplan_meier(observations: Iterable[tuple[float, ...]]) -> list[tuple[float, float]]:
     """Curva di sopravvivenza: [(giorno, S)] con S = quota ancora invenduta.
 
-    ``observations``: (giorni online, venduto?). Censurati = venduto False.
-    A parità di giorno gli eventi si contano prima dei censurati (convenzione
-    standard)."""
-    obs = sorted(observations, key=lambda o: (o[0], not o[1]))
-    at_risk = len(obs)
+    ``observations``: (giorni online, venduto?) oppure (giorni online,
+    venduto?, giorno di entrata). Censurati = venduto False.
+
+    **Entrata ritardata** (troncamento a sinistra): un annuncio pubblicato 40
+    giorni prima che lo vedessimo entra nell'insieme a rischio solo dal giorno
+    40. Senza, lo stock trovato già vecchio (backfill, inventario) conterebbe
+    solo i "sopravvissuti" e allungherebbe i tempi di vendita per mesi.
+    Insieme a rischio al giorno t: entrata ≤ t ≤ uscita. A parità di giorno
+    gli eventi si contano prima dei censurati (convenzione standard)."""
+    from bisect import bisect_left, bisect_right  # noqa: PLC0415
+
+    obs = [(float(o[0]), bool(o[1]), float(o[2]) if len(o) > 2 else 0.0) for o in observations]
+    obs = [(t, ev, min(max(0.0, entry), t)) for t, ev, entry in obs]
+    entries = sorted(entry for _, _, entry in obs)
+    exits = sorted(t for t, _, _ in obs)
+    events_at: dict[float, int] = {}
+    for t, ev, _ in obs:
+        if ev:
+            events_at[t] = events_at.get(t, 0) + 1
     survival = 1.0
     curve: list[tuple[float, float]] = []
-    i = 0
-    while i < len(obs):
-        t = obs[i][0]
-        events = censored = 0
-        while i < len(obs) and obs[i][0] == t:
-            if obs[i][1]:
-                events += 1
-            else:
-                censored += 1
-            i += 1
-        if events and at_risk:
-            survival *= 1 - events / at_risk
-            curve.append((t, survival))
-        at_risk -= events + censored
+    for t in sorted(events_at):
+        at_risk = bisect_right(entries, t) - bisect_left(exits, t)
+        if at_risk <= 0:
+            continue
+        survival *= 1 - min(events_at[t], at_risk) / at_risk
+        curve.append((t, survival))
     return curve
 
 
@@ -101,11 +109,11 @@ def km_sold_by(curve: list[tuple[float, float]], day: float) -> float:
     return 1 - survival
 
 
-def survival_summary(observations: list[tuple[float, bool]]) -> dict[str, float | int | None]:
+def survival_summary(observations: list[tuple[float, ...]]) -> dict[str, float | int | None]:
     """Sintesi per la UI. ``medianDays`` None = metà degli annunci non si è
     ancora venduta nella finestra osservata (dato onesto, non un buco)."""
     curve = kaplan_meier(observations)
-    events = sum(1 for _, sold in observations if sold)
+    events = sum(1 for o in observations if o[1])
     return {
         "medianDays": round(km_median(curve), 1) if km_median(curve) is not None else None,
         "sold7dPct": round(km_sold_by(curve, 7) * 100, 1),
