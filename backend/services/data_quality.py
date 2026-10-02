@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 TABLES = {"smartphone": "live_opportunities_tech", "automobile": "live_opportunities_auto"}
 
 
+def _round(value: Any) -> float | None:
+    return round(float(value), 1) if value is not None else None
+
+
 def _pct(part: Any, total: Any) -> float | None:
     return round(part / total * 100, 1) if total else None
 
@@ -72,6 +76,36 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
             where category = %s and ran_at >= now() - interval '24 hours'
             """,
             ("automobile" if not tech else "smartphone",),
+        ).fetchone()
+        # Latenza (G13): quanto arriviamo dopo la pubblicazione, sugli annunci
+        # pubblicati nelle ultime 24h. "tardivi" = scoperti oltre 2h dopo:
+        # di solito li ha recuperati l'inventario, non lo sweep (moderazione,
+        # PC spento, buchi). E dalla scoperta all'alert Telegram.
+        latency = conn.execute(
+            f"""
+            with d as (
+              select extract(epoch from found_at - published_at) / 60 as m
+              from public.{table}
+              where published_at >= now() - interval '24 hours' and found_at >= published_at
+            )
+            select count(*) as n,
+                   percentile_cont(0.5) within group (order by m) as p50,
+                   percentile_cont(0.95) within group (order by m) as p95,
+                   count(*) filter (where m > 120) as late
+            from d
+            """
+        ).fetchone() if published != "null" else None
+        alert_latency = conn.execute(
+            f"""
+            select count(*) as n,
+                   percentile_cont(0.5) within group (order by m) as p50,
+                   percentile_cont(0.95) within group (order by m) as p95
+            from (
+              select extract(epoch from a.sent_at - t.found_at) / 60 as m
+              from public.sent_alerts a join public.{table} t on t.id = a.listing_id
+              where a.sent_at >= now() - interval '7 days'
+            ) x
+            """
         ).fetchone()
         removed_7d = conn.execute(
             f"select count(*) as n from public.{table} "
@@ -136,6 +170,15 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
             "gaps": runs["gaps"], "new": runs["new_count"],
         },
         "removed7d": removed_7d["n"],
+        "latency": {
+            "published24h": (latency or {}).get("n"),
+            "discoveryP50Min": _round((latency or {}).get("p50")),
+            "discoveryP95Min": _round((latency or {}).get("p95")),
+            "lateOver2h": (latency or {}).get("late"),
+            "alerts7d": alert_latency["n"],
+            "alertP50Min": _round(alert_latency["p50"]),
+            "alertP95Min": _round(alert_latency["p95"]),
+        },
         "backup": get_backup_status(),
         # Annunci con galleria nota ma foto ancora da scaricare (photo_backfill).
         "photoQueue": photo_queue_size() if tech else None,

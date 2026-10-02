@@ -776,6 +776,16 @@ export type DataQuality = {
   fieldsPct: Record<string, number>;
   last24h: { runs: number; down: number; requests: number; gaps: number; new: number };
   removed7d: number;
+  /** Ritardi: pubblicazione → scoperta (ultime 24h) e scoperta → alert (7 giorni). */
+  latency?: {
+    published24h: number | null;
+    discoveryP50Min: number | null;
+    discoveryP95Min: number | null;
+    lateOver2h: number | null;
+    alerts7d: number;
+    alertP50Min: number | null;
+    alertP95Min: number | null;
+  };
   /** Annunci con foto ancora da scaricare (backfill dalla CDN). */
   photoQueue?: number | null;
   /** Esito del servizio `backup` (dump verificato + copia delle foto). */

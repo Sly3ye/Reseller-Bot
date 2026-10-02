@@ -205,15 +205,22 @@ def get_repair_matrix(force: bool = False) -> dict[str, Any]:
             ratio_key = PROXY_RATIO.get(part, part)
             ratio = 1.0 if ratio_key is None else (ratios.get(ratio_key) or {}).get("ratio", DEFAULT_RATIO)
             scen = {}
+            # Listino corretto dalle tue riparazioni (E3), come nella scheda.
+            from backend.services.repair_feedback import part_correction  # noqa: PLC0415
+
+            def corrected(price: float, source: str) -> float:
+                corr = part_correction(part, source)
+                return price * corr["ratio"] if corr else price
+
             if quote["aftermarket"]:
-                cost = quote["aftermarket"]["price"] + labor
+                cost = corrected(quote["aftermarket"]["price"], "aftermarket") + labor
                 resale = healthy * ratio
                 scen["aftermarket"] = {
                     "partCost": round(cost, 2), "grade": quote["aftermarket"]["grade"],
                     "resale": round(resale), "resaleRatio": ratio,
                 }
             if quote["apple"]:
-                cost = quote["apple"]["net"] + labor
+                cost = corrected(quote["apple"]["net"], "apple") + labor
                 scen["apple"] = {"partCost": round(cost, 2), "resale": round(healthy), "resaleRatio": 1.0}
             for s in scen.values():
                 s["margin"] = round(s["resale"] - buy - s["partCost"])

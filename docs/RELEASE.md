@@ -108,11 +108,11 @@ Ancora da fare per la v1:
 
 | # | Criterio | Stato |
 |---|---|---|
-| G11 | **"Venduto" validato**: un campione di sparizioni controllato a mano (pagina rimossa vs ancora online vs scaduta) per misurare la precisione di `is_removed` e di venduto/ritirato prima di fidarsi di C4 | ◻️ dopo i primi inventari |
+| G11 | **"Venduto" validato**: un campione di sparizioni controllato a mano (pagina rimossa vs ancora online vs scaduta) per misurare la precisione di `is_removed` prima di fidarsi di C4 | 🔧 `scripts/sample_removals.py` pronto (55 URL da aprire, ~20 min) · da fare dopo un inventario completo. Venduto vs ritirato resta un'euristica: Subito non lo dice |
 | G12 | **Ripubblicazioni validate** su un campione etichettato (precisione/richiamo di pHash e venditore+variante), come per i guasti | ◻️ |
-| G13 | **Latenza annuncio → alert** misurata (p50/p95): nel business dei rotti vince chi arriva primo | ◻️ |
+| G13 | **Latenza annuncio → alert** misurata (p50/p95): nel business dei rotti vince chi arriva primo | ✅ misura nel cruscotto (scoperta, tardivi oltre 2h, alert) · 🔧 significativa dopo un giorno di raccolta continua; alert solo con Telegram configurato |
 | G14 | **Prezzo di realizzo ≠ prezzo chiesto**: fattore di trattativa dalle proprie compravendite, applicato a rivendita e tetto | ◻️ si attiva con la pipeline (come E3) |
-| G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | 🔧 la confidenza c'è sul valore equo, non nella matrice |
+| G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | 🔧 campione e celle fragili nella matrice, confidenza sul valore equo; manca la matrice per memoria |
 | G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ◻️ superata da A5 (una sola macchina) |
 
 ## Distanza

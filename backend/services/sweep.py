@@ -270,6 +270,29 @@ async def price_bands(
             + await price_bands(scraper, query, mid + 1, hi, top))
 
 
+# Un giro di un'ora non deve morire per qualche secondo di rete giù (reset
+# TLS di hades visti il 2026-10-02): dopo i retry brevi dello scraper, attese
+# lunghe e si riprende dalla stessa pagina. Un 403/429 invece ferma subito.
+PATIENT_WAITS_S = (60, 180, 600)
+
+
+async def _fetch_patiently(
+    scraper: SubitoScraper, query: str, start: int, lo: int, hi: int | None
+) -> dict[str, Any]:
+    from curl_cffi.requests.exceptions import CurlError  # noqa: PLC0415
+
+    for wait in (*PATIENT_WAITS_S, None):
+        try:
+            return await scraper._fetch_page(query, SubitoScraper.PAGE_SIZE, start, lo, hi)
+        except CurlError as exc:
+            if wait is None:
+                raise
+            logger.warning("Inventario: rete giù (%s), riprovo tra %ds dalla stessa pagina",
+                           str(exc)[:80], wait)
+            await asyncio.sleep(wait)
+    raise RuntimeError("non raggiungibile")
+
+
 async def walk_inventory(
     category: str = "smartphone",
     min_price: int | None = None,
@@ -306,9 +329,7 @@ async def walk_inventory(
         seen: set[str] = set()
         band_read = 0
         for start in range(0, min(count, SubitoScraper.MAX_DEPTH), SubitoScraper.PAGE_SIZE):
-            payload = await scraper._fetch_page(
-                query, SubitoScraper.PAGE_SIZE, start, band_lo, band_hi
-            )
+            payload = await _fetch_patiently(scraper, query, start, band_lo, band_hi)
             ads = payload.get("ads") or []
             band_read += len(ads)
             if not ads:

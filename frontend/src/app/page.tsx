@@ -5135,6 +5135,26 @@ function DataQualityPanel() {
           <span>{q.photoQueue.toLocaleString("it-IT")} annunci con foto in download</span>
         )}
       </div>
+      {q.latency && q.latency.published24h ? (
+        <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
+          <span style={head}>Ritardo</span>
+          <span title="Dalla pubblicazione su Subito a quando l'abbiamo visto (annunci delle ultime 24h)">
+            scoperta: mediana {q.latency.discoveryP50Min} min · 95% entro {q.latency.discoveryP95Min} min
+          </span>
+          <span
+            style={{ color: q.latency.lateOver2h ? "oklch(0.78 0.14 80)" : undefined }}
+            title="Scoperti oltre 2 ore dopo la pubblicazione: li ha recuperati l'inventario, non lo sweep"
+          >
+            {q.latency.lateOver2h} su {q.latency.published24h} scoperti dopo 2h
+          </span>
+          <span>
+            alert:{" "}
+            {q.latency.alerts7d
+              ? `mediana ${q.latency.alertP50Min} min · 95% entro ${q.latency.alertP95Min} min`
+              : "nessun alert inviato in 7 giorni"}
+          </span>
+        </div>
+      ) : null}
       {q.backup && <BackupLine b={q.backup} head={head} />}
     </div>
   );
