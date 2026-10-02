@@ -418,15 +418,33 @@ async def reconcile_inventory(category: str = "smartphone") -> dict[str, Any]:
         await _record_inventory(category, result)
     # Motore Notturno A VALLE dell'inventario: medie e trend sul DB appena
     # riconciliato (prima girava a orario fisso, magari a inventario in corso).
-    try:
-        from backend.tasks import run_nightly_batch_all_products  # noqa: PLC0415
-
-        await run_nightly_batch_all_products()
-    except Exception:
-        logger.exception("Motore Notturno dopo l'inventario fallito")
+    # Non dopo un inventario interrotto: il recupero lo ritenta ogni 30 min.
+    if not result.get("aborted"):
+        await run_nightly_once()
     return result
 
 
+async def run_nightly_once() -> dict[str, Any] | None:
+    """Motore Notturno al massimo una volta al giorno (ora italiana): parte a
+    fine inventario, il job delle 06:00 è solo il ripiego. Per le auto fa
+    scraping: due giri al giorno sarebbero richieste sprecate."""
+    from zoneinfo import ZoneInfo  # noqa: PLC0415
+
+    from backend.tasks import run_nightly_batch_all_products  # noqa: PLC0415
+
+    today = datetime.now(ZoneInfo("Europe/Rome")).date()
+    if _NIGHTLY_DONE.get("day") == today:
+        logger.info("Motore Notturno già eseguito oggi: salto")
+        return None
+    _NIGHTLY_DONE["day"] = today
+    try:
+        return await run_nightly_batch_all_products()
+    except Exception:
+        logger.exception("Motore Notturno fallito")
+        return None
+
+
+_NIGHTLY_DONE: dict[str, Any] = {}
 _INVENTORY_LOCK = asyncio.Lock()
 # Oltre quest'età l'ultimo inventario si rifà appena possibile (PC spento
 # all'ora programmata: senza, i venduti di quella notte non si vedono mai).

@@ -10,8 +10,8 @@ from backend.services.backup_status import check_backup
 from backend.services.photo_backfill import fill_missing_photos
 from backend.services.repair_feedback import refresh as refresh_repair_feedback
 from backend.services.garbage_collector import run_garbage_collector
-from backend.services.sweep import inventory_watchdog, reconcile_inventory, run_sweep
-from backend.tasks import run_nightly_batch_all_products, run_sniper_all_products
+from backend.services.sweep import inventory_watchdog, reconcile_inventory, run_nightly_once, run_sweep
+from backend.tasks import run_sniper_all_products
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ def create_scheduler() -> AsyncIOScheduler:
     )
 
     scheduler.add_job(
-        run_nightly_batch_all_products,
+        run_nightly_once,
         # Di norma parte a fine inventario (services/sweep.py); qui solo il
         # ripiego se l'inventario non è partito affatto.
         trigger=CronTrigger(hour=6, minute=0, timezone=SCHEDULER_TIMEZONE),
