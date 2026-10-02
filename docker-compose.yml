@@ -48,12 +48,35 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
     volumes:
       - media:/data/media
+      # Esito dell'ultimo backup (servizio `backup`), per cruscotto e allarme.
+      - ./backups:/backups:ro
     ports:
       - "8000:8000"
     # Per raggiungere Ollama (AI locale) in esecuzione sull'HOST via
     # host.docker.internal, anche su Linux/VPS (su Docker Desktop è già presente).
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # Backup notturno di DB + foto con ripristino di prova (F2): vedi
+  # scripts/backup_loop.sh. File in ./backups (db/ e media/); l'esito in
+  # ./backups/last_backup.json lo mostra il cruscotto Qualità del dato.
+  # Un giro subito:  docker compose run --rm -e BACKUP_NOW=1 backup
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      TZ: Europe/Rome
+      BACKUP_HOUR: ${BACKUP_HOUR:-5}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+      - media:/media:ro
+      - ./scripts/backup_loop.sh:/backup_loop.sh:ro
+    entrypoint: ["sh", "/backup_loop.sh"]
 
 volumes:
   pgdata:

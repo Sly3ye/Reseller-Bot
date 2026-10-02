@@ -49,6 +49,19 @@ auto ogni ~30. Da qui in poi il DB si riempie.
   Il pannello **Automations** mostra salute scraper e copertura; **Tempo di
   vendita** e **Market Intelligence** matureranno con i dati.
 
+## Backup automatici
+Il servizio `backup` del compose (parte con `docker compose up -d`) ogni notte
+alle 5:00, o appena il PC si riaccende se l'ultimo ha più di 26 ore:
+- dump in `backups/db/` (14 giorni), **verificato** ripristinandolo in un DB
+  di prova;
+- copia speculare delle foto in `backups/media/` (solo le nuove);
+- esito nel cruscotto **Qualità del dato** e allarme Telegram (chat ops) alle
+  10:00 se è fallito o più vecchio di 36 ore.
+
+Un giro subito: `docker compose run --rm -e BACKUP_NOW=1 backup`.
+Sono una protezione per **questa** macchina (disco che si rompe, volume
+cancellato): non sostituiscono il passaggio dei dati al Mac qui sotto.
+
 ## Quando hai finito di lavorare qui
 1. **Dump del DB** del PC (formato custom, compresso). In `backups/`, che è
    git-ignorata: un dump non va mai committato.

@@ -30,6 +30,7 @@ def _pct(part: Any, total: Any) -> float | None:
 
 def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
     from backend.core.database import _get_pool, get_db, has_column  # noqa: PLC0415
+    from backend.services.backup_status import get_backup_status  # noqa: PLC0415
     from backend.services.variants import iphone_model_key  # noqa: PLC0415
 
     table = TABLES["automobile" if category in ("automobile", "auto") else "smartphone"]
@@ -126,4 +127,5 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
             "gaps": runs["gaps"], "new": runs["new_count"],
         },
         "removed7d": removed_7d["n"],
+        "backup": get_backup_status(),
     }

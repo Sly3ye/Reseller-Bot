@@ -79,16 +79,16 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | # | Criterio | Stato |
 |---|---|---|
 | F1 | Migrazioni automatiche all'avvio | ✅ |
-| F2 | Backup automatico del DB (e delle foto) con verifica di ripristino | 🔧 script presenti, non schedulati |
+| F2 | Backup automatico del DB (e delle foto) con verifica di ripristino | ✅ servizio `backup`: dump notturno ripristinato in un DB di prova, foto in copia speculare, esito nel cruscotto e allarme |
 | F3 | Allarmi di sistema (blocco, giro down) | ✅ |
 | F4 | Cruscotto qualità del dato | ✅ |
 
 ## Distanza
 
-- **Fatto:** la base (A1, A4, B1, B2, C1, C2, C3, C5, D1–D4, E1, E2, F1, F3, F4).
+- **Fatto:** la base (A1, A4, B1, B2, C1, C2, C3, C5, D1–D4, E1, E2, F1–F4).
 - **Sviluppo che manca, in ordine:** B5 (modello AI, misura sul Mac) → B3/B4
   oltre le regex → E3 (correggere listini e rischio con le riparazioni vere)
-  → A5/F2 (una macchina sempre accesa, backup schedulati).
+  → A5 (una macchina sempre accesa).
 - **Tempo che nessuno sviluppo accorcia:** venduti e tempi di vendita (C4, C6)
   diventano affidabili solo con **4–6 settimane** di inventari notturni.
   Conviene quindi spostare presto la raccolta su una macchina sempre accesa (A5).

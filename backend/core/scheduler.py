@@ -6,6 +6,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from backend.core.config import settings
 from backend.services.ai_analysis import enrich_missing
+from backend.services.backup_status import check_backup
 from backend.services.garbage_collector import run_garbage_collector
 from backend.services.sweep import reconcile_inventory, run_sweep
 from backend.tasks import run_nightly_batch_all_products, run_sniper_all_products
@@ -88,6 +89,16 @@ def create_scheduler() -> AsyncIOScheduler:
         kwargs={"category": "automobile"},
         id="sniper_auto_live",
         name=f"Cecchino Auto (automobile, {settings.sniper_auto_interval_min} min)",
+        replace_existing=True,
+    )
+
+    # Backup (F2): lo fa il servizio `backup` del compose; qui solo il
+    # controllo, a metà mattina così un PC spento di notte ha tempo di farlo.
+    scheduler.add_job(
+        check_backup,
+        trigger=CronTrigger(hour=10, minute=0),
+        id="backup_check",
+        name="Controllo backup (allarme se fallito o più vecchio di 36h)",
         replace_existing=True,
     )
 

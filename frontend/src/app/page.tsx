@@ -5093,6 +5093,37 @@ function DataQualityPanel() {
         </span>
         <span>{q.removed7d.toLocaleString("it-IT")} spariti in 7 giorni</span>
       </div>
+      {q.backup && <BackupLine b={q.backup} head={head} />}
+    </div>
+  );
+}
+
+const BACKUP_STATE: Record<string, { label: string; color: string }> = {
+  ok: { label: "ok", color: "var(--accent)" },
+  vecchio: { label: "in ritardo", color: "oklch(0.78 0.14 80)" },
+  fallito: { label: "fallito", color: "oklch(0.68 0.17 25)" },
+  assente: { label: "mai eseguito", color: "oklch(0.68 0.17 25)" },
+};
+
+function BackupLine(props: { b: NonNullable<DataQuality["backup"]>; head: CSSProperties }) {
+  const { b, head } = props;
+  const st = BACKUP_STATE[b.state] ?? BACKUP_STATE.assente;
+  return (
+    <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
+      <span style={head}>Backup</span>
+      <span style={{ color: st.color, fontWeight: 700 }}>{st.label}</span>
+      {b.at && <span>ultimo giro {relativeTime(b.at)}</span>}
+      {b.restoredListings != null && (
+        <span>ripristino di prova: {b.restoredListings.toLocaleString("it-IT")} annunci</span>
+      )}
+      {b.sizeKb != null && b.sizeKb > 0 && <span>dump {(b.sizeKb / 1024).toFixed(1)} MB</span>}
+      {b.media && b.media.files >= 0 && (
+        <span>foto {b.media.mirrored.toLocaleString("it-IT")}/{b.media.files.toLocaleString("it-IT")}</span>
+      )}
+      {b.error && <span style={{ color: "oklch(0.68 0.17 25)" }}>{b.error}</span>}
+      {b.state === "assente" && (
+        <span style={{ color: "oklch(0.6 0.01 250)" }}>avvia il servizio: docker compose up -d backup</span>
+      )}
     </div>
   );
 }

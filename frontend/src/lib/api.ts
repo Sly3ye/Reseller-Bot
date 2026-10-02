@@ -741,6 +741,17 @@ export type DataQuality = {
   fieldsPct: Record<string, number>;
   last24h: { runs: number; down: number; requests: number; gaps: number; new: number };
   removed7d: number;
+  /** Esito del servizio `backup` (dump verificato + copia delle foto). */
+  backup?: {
+    state: "ok" | "fallito" | "vecchio" | "assente";
+    at?: string | null;
+    error?: string | null;
+    sizeKb?: number | null;
+    lastOkAgeHours?: number | null;
+    restoredListings?: number | null;
+    media?: { files: number; mirrored: number } | null;
+    retentionDays?: number | null;
+  };
 };
 
 export async function fetchDataQuality(
