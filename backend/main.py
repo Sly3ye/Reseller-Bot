@@ -17,6 +17,7 @@ from backend.api.settings import router as settings_router
 from backend.core.config import settings
 from backend.core.migrations import apply_pending
 from backend.core.scheduler import create_scheduler
+from backend.services import repair_feedback
 
 # Log applicativi visibili in `docker compose logs backend` (giri di raccolta,
 # blocchi, buchi, migrazioni). Senza, si vedevano solo le righe di uvicorn.
@@ -51,6 +52,8 @@ async def lifespan(app: FastAPI):
             logger.info("Migrazioni applicate all'avvio: %s", applied)
     except Exception:
         logger.exception("Migration runner fallito: schema forse non aggiornato")
+    # Correzioni dalle tue riparazioni (E3) pronte prima della prima stima.
+    await asyncio.to_thread(repair_feedback.refresh)
     scheduler = create_scheduler()
     scheduler.start()
     app.state.scheduler = scheduler

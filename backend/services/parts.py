@@ -103,6 +103,12 @@ def part_quote(model_key: str | None, part: str) -> dict[str, Any]:
             chosen, used = after["price"], "aftermarket"
             break
     labor = float(CONFIG["repair_labor_eur"].get(part, 0) or 0)
+    # Le tue riparazioni correggono il listino (E3): da MIN_SAMPLES in su vale
+    # il rapporto mediano reale/stimato per questa parte e fonte.
+    from backend.services.repair_feedback import part_correction  # noqa: PLC0415
+
+    correction = part_correction(part, used) if chosen is not None else None
+    part_cost = round(chosen * correction["ratio"], 2) if correction else chosen
     return {
         "part": part,
         "label": PART_LABEL.get(part, part),
@@ -110,5 +116,10 @@ def part_quote(model_key: str | None, part: str) -> dict[str, Any]:
         "aftermarket": after,
         "source": used,
         "labor": labor,
-        "cost": round(chosen + labor, 2) if chosen is not None else None,
+        "listCost": chosen,
+        "partCost": part_cost,
+        "correction": (
+            {"ratio": correction["ratio"], "n": correction["n"]} if correction else None
+        ),
+        "cost": round(part_cost + labor, 2) if part_cost is not None else None,
     }

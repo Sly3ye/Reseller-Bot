@@ -62,7 +62,21 @@ export type RepairQuote = {
   /** Colonna usata nei conti: "aftermarket" | "apple" | "apple-fascia" (ripiego). */
   source: string | null;
   labor: number;
+  /** Ricambio da listino, e ricambio corretto dalle tue riparazioni (E3). */
+  listCost?: number | null;
+  partCost?: number | null;
+  correction?: { ratio: number; n: number } | null;
   cost: number;
+};
+
+/** Esito delle TUE riparazioni con un guasto dell'annuncio (E3). */
+export type RepairTrackRecord = {
+  guasto: string;
+  n: number;
+  successPct: number | null;
+  riuscita: number;
+  parziale: number;
+  fallita: number;
 };
 
 export type RepairInfo = {
@@ -141,6 +155,7 @@ export type ApiOpportunity = {
   valuationConfidence: "alta" | "media" | "bassa" | null;
   roiPerDayPct: number | null;
   maxBid: number | null;
+  repairTrackRecord?: RepairTrackRecord | null;
   // Costo di magazzino: deprezzamento maturato mentre resta invenduto,
   // già scontato dal maxBid.
   carryCost: {
@@ -354,6 +369,11 @@ export type DealsSummary = {
   repairSuccessPct?: number | null;
   repairCostBiasEur?: number | null;
   avgRepairMinutes?: number | null;
+  repairFeedback?: {
+    minSamples: number;
+    parts: { part: string; source: string; n: number; ratio: number; applied: boolean }[];
+    guasti: Record<string, { n: number; successPct: number | null; reliable: boolean }>;
+  };
 };
 
 export type SortMode = "score" | "recent" | "margin" | "roi";

@@ -8,6 +8,8 @@ paragone per la qualità delle stime del bot.
 
 from __future__ import annotations
 
+import asyncio
+
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -15,6 +17,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from backend.core.database import get_db
+from backend.services import repair_feedback
 
 
 def _parse_ts(value: Any) -> datetime | None:
@@ -346,6 +349,13 @@ async def deals_summary() -> dict:
         ),
         "repairCostBiasEur": round(sum(cost_err) / len(cost_err), 2) if cost_err else None,
         "avgRepairMinutes": round(sum(minutes) / len(minutes)) if minutes else None,
+        # Cosa stanno correggendo le tue riparazioni (E3): rapporto reale/listino
+        # per ricambio e riuscita per guasto. "applied" = già usato nei conti.
+        "repairFeedback": {
+            "minSamples": repair_feedback.MIN_SAMPLES,
+            "parts": list(repair_feedback.STATE["parts"].values()),
+            "guasti": repair_feedback.STATE["guasti"],
+        },
     }
 
 
@@ -380,6 +390,8 @@ async def update_deal(deal_id: str, payload: DealUpdate) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if not updated.data:
         raise HTTPException(status_code=404, detail="Deal non trovato.")
+    if "repair" in patch or "estimate" in patch:
+        await asyncio.to_thread(repair_feedback.refresh)
     return _shape_deal(updated.data[0])
 
 

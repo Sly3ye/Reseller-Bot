@@ -72,7 +72,7 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 |---|---|---|
 | E1 | Pipeline P&L con stima vs reale | ✅ |
 | E2 | Per ogni riparazione: pezzo usato, costo reale, tempo, esito (riuscita/fallita), prezzo di vendita | ✅ pipeline: stima all'aggancio + riparazione reale |
-| E3 | I dati reali correggono costi (C1), rivendita (C3) e il tasso di fallimento dei "non si accende" | ◻️ |
+| E3 | I dati reali correggono costi (C1), rivendita (C3) e il tasso di fallimento dei "non si accende" | ✅ codice: ricambi corretti dal rapporto reale/listino da 3 riparazioni, riuscita per guasto nella scheda · 🔧 servono riparazioni registrate; la rivendita del riparato resta misurata sul mercato (C3) |
 
 ### F. Operatività
 
@@ -87,8 +87,9 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 
 - **Fatto:** la base (A1, A4, B1, B2, C1, C2, C3, C5, D1–D4, E1, E2, F1–F4).
 - **Sviluppo che manca, in ordine:** B5 (modello AI, misura sul Mac) → B3/B4
-  oltre le regex → E3 (correggere listini e rischio con le riparazioni vere)
-  → A5 (una macchina sempre accesa).
+  oltre le regex → A5 (una macchina sempre accesa).
+- **Dati che solo tu puoi dare:** riparazioni registrate in pipeline (E3 si
+  attiva da 3 riparazioni per ricambio).
 - **Tempo che nessuno sviluppo accorcia:** venduti e tempi di vendita (C4, C6)
   diventano affidabili solo con **4–6 settimane** di inventari notturni.
   Conviene quindi spostare presto la raccolta su una macchina sempre accesa (A5).

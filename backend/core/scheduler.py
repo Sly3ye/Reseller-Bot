@@ -7,6 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from backend.core.config import settings
 from backend.services.ai_analysis import enrich_missing
 from backend.services.backup_status import check_backup
+from backend.services.repair_feedback import refresh as refresh_repair_feedback
 from backend.services.garbage_collector import run_garbage_collector
 from backend.services.sweep import reconcile_inventory, run_sweep
 from backend.tasks import run_nightly_batch_all_products, run_sniper_all_products
@@ -99,6 +100,16 @@ def create_scheduler() -> AsyncIOScheduler:
         trigger=CronTrigger(hour=10, minute=0),
         id="backup_check",
         name="Controllo backup (allarme se fallito o più vecchio di 36h)",
+        replace_existing=True,
+    )
+
+    # Correzioni dalle riparazioni (E3): si ricalcolano anche a ogni riparazione
+    # registrata; qui di notte, per sicurezza.
+    scheduler.add_job(
+        refresh_repair_feedback,
+        trigger=CronTrigger(hour=2, minute=50),
+        id="repair_feedback",
+        name="Correzioni ricambi dalle tue riparazioni",
         replace_existing=True,
     )
 

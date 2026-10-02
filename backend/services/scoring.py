@@ -134,9 +134,19 @@ def repair_costs(
             fallback = APPLE_PART_EUR[_model_tier(title)].get(defect)
             if fallback is None:
                 continue  # niente listino per questo ricambio: nessuna cifra inventata
-            quote = {**quote, "cost": float(fallback), "source": "apple-fascia"}
+            quote = {**quote, "cost": float(fallback), "partCost": float(fallback),
+                     "source": "apple-fascia"}
         items.append({"defect": defect, **quote})
     return items
+
+
+def _track_record(category: str, defects: list[str]) -> dict[str, Any] | None:
+    if category == "automobile" or not defects:
+        return None
+    from backend.services.defects import from_nlp  # noqa: PLC0415
+    from backend.services.repair_feedback import guasto_success  # noqa: PLC0415
+
+    return guasto_success(from_nlp(defects, [])["guasti"])
 
 
 # Ricambio aftermarket → quale sconto di mercato si applica alla rivendita.
@@ -429,6 +439,10 @@ def evaluate_opportunity(
             if repairs
             else None
         ),
+        # Quante delle TUE riparazioni con questo guasto sono riuscite (E3):
+        # il guasto meno riuscito fra quelli dell'annuncio, solo con abbastanza
+        # casi. Conta soprattutto per i "non si accende" (nessun ricambio noto).
+        "repairTrackRecord": _track_record(category, defects),
         "defectPenaltyEur": penalty_total or None,
         "defectPenaltyBreakdown": penalty_breakdown or None,
         "suggestedOffer": suggested_offer(

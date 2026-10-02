@@ -281,6 +281,7 @@ export default function FlipRadar() {
                 marginEur: item.repair.netMarginEur,
                 repairItems: item.repair.items.map((r) => ({
                   part: r.part, source: r.source, cost: r.cost,
+                  partCost: r.partCost ?? null,
                 })),
                 resaleAfterRepair: item.repair.resaleAfterRepair ?? null,
                 maxBid: item.maxBid,
@@ -2212,7 +2213,10 @@ function NegotiationAssistant(props: {
             ? `Apple ${eur(r.apple.net)}${r.apple.credit ? ` (${eur(r.apple.price)} − ${eur(r.apple.credit)} reso)` : ""}`
             : null;
           const used = r.source === "aftermarket" ? "aftermarket" : "Apple";
-          return `${r.label}: ${[after, apple].filter(Boolean).join(" · ")} → nei conti ${used}${
+          const corr = r.correction
+            ? ` (corretto ×${r.correction.ratio} dalle tue ${r.correction.n} riparazioni: ${eur(r.partCost ?? 0)})`
+            : "";
+          return `${r.label}: ${[after, apple].filter(Boolean).join(" · ")} → nei conti ${used}${corr}${
             r.labor ? ` + ${eur(r.labor)} manodopera` : ""
           }`;
         })
@@ -2224,6 +2228,15 @@ function NegotiationAssistant(props: {
               : "")
           : ""),
       color: "oklch(0.80 0.13 75)",
+    });
+  }
+  if (item.repairTrackRecord) {
+    const tr = item.repairTrackRecord;
+    stats.push({
+      label: `Tue riparazioni · ${tr.guasto}`,
+      value: tr.successPct != null ? `${tr.successPct}% riuscite` : "—",
+      hint: `${tr.riuscita} riuscite, ${tr.parziale} parziali, ${tr.fallita} fallite su ${tr.n}`,
+      color: (tr.successPct ?? 0) >= 80 ? "oklch(0.75 0.15 150)" : "oklch(0.78 0.14 80)",
     });
   }
   if (props.category === "automobile" && item.expectedPrice !== null) {
@@ -3340,6 +3353,7 @@ function PipelineScreen(props: {
               {summary.avgRepairMinutes != null ? `${summary.avgRepairMinutes} min` : "—"}
             </div>
           </div>
+          {summary.repairFeedback && <RepairFeedbackLine fb={summary.repairFeedback} />}
         </div>
       )}
 
@@ -5124,6 +5138,29 @@ function BackupLine(props: { b: NonNullable<DataQuality["backup"]>; head: CSSPro
       {b.state === "assente" && (
         <span style={{ color: "oklch(0.6 0.01 250)" }}>avvia il servizio: docker compose up -d backup</span>
       )}
+    </div>
+  );
+}
+
+/** Cosa stanno correggendo le riparazioni registrate (E3). */
+function RepairFeedbackLine(props: { fb: NonNullable<DealsSummary["repairFeedback"]> }) {
+  const { fb } = props;
+  const guasti = Object.entries(fb.guasti).filter(([g]) => g !== "sconosciuto");
+  if (!fb.parts.length && !guasti.length) return null;
+  return (
+    <div style={{ flexBasis: "100%", fontSize: "12px", color: "oklch(0.65 0.01 250)", lineHeight: 1.7 }}>
+      {fb.parts.map((p) => (
+        <span key={`${p.part}:${p.source}`} style={{ marginRight: "16px" }}>
+          {p.part} {p.source}: reale ×{p.ratio} del listino su {p.n}{" "}
+          {p.applied ? <b style={{ color: "var(--accent)" }}>· applicato</b> : `· si applica da ${fb.minSamples}`}
+        </span>
+      ))}
+      {guasti.map(([g, v]) => (
+        <span key={g} style={{ marginRight: "16px" }}>
+          {g}: {v.successPct ?? "—"}% riuscite su {v.n}
+          {v.reliable ? "" : ` (pochi casi)`}
+        </span>
+      ))}
     </div>
   );
 }
