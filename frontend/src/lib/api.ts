@@ -478,6 +478,10 @@ export type RepairCell = {
   scenarios: { aftermarket?: RepairScenario; apple?: RepairScenario };
   best: (RepairScenario & { source: "aftermarket" | "apple" }) | null;
   weeklyPotentialEur: number | null;
+  /** Sconto rotto/sano per taglio di memoria e media pesata sul mix dei rotti. */
+  byStorage?: { storage: number; listings: number; healthySamples: number;
+    buyMedian: number; healthyMedian: number; discountEur: number }[];
+  discountSameStorageEur?: number | null;
 };
 
 export type RepairMatrix = {

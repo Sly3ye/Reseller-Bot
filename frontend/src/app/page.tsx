@@ -2762,6 +2762,19 @@ function RepairMatrixScreen(props: { onOpenCell: (cell: RepairCell) => void }) {
                 <div style={{ fontFamily: MONO }}>
                   <span style={{ color: tone(b?.margin) }}>{money(b?.margin, true)}</span>
                   <span style={{ color: tone(b?.marginAtGoodBuy) }}> · {money(b?.marginAtGoodBuy, true)}</span>
+                  {c.discountSameStorageEur != null && c.discountEur - c.discountSameStorageEur >= 10 && (
+                    <div
+                      style={{ fontSize: "10.5px", color: "oklch(0.78 0.14 80)" }}
+                      title={
+                        "Sconto rotto/sano a parità di memoria (i rotti hanno spesso meno GB dei sani):\n" +
+                        (c.byStorage ?? [])
+                          .map((s) => `${s.storage >= 1024 ? "1TB" : `${s.storage}GB`}: rotto ${eur(s.buyMedian)} vs sano ${eur(s.healthyMedian)} (−${eur(s.discountEur)}, ${s.listings} rotti)`)
+                          .join("\n")
+                      }
+                    >
+                      ⚖️ −{eur(c.discountEur - c.discountSameStorageEur)} a pari memoria
+                    </div>
+                  )}
                 </div>
                 <div style={{ fontFamily: MONO, fontWeight: 700, color: tone(c.weeklyPotentialEur) }}>
                   {c.weeklyPotentialEur != null ? eur(c.weeklyPotentialEur) : `−${eur(c.discountEur)}`}
