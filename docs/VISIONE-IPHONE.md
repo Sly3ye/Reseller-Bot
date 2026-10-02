@@ -1,5 +1,12 @@
 # Visione & Definizione di "fatto" — verticale iPhone
 
+> ⚠️ **Rivalutazione 2026-10-02.** Il business principale è comprare iPhone
+> **rotti da riparare** e rivenderli: le schermate qui sotto coprono bene il
+> mercato del *sano*, ma non ancora guasti per tipo, costi di riparazione reali e
+> prezzo del riparato. Il riferimento aggiornato (criteri e distanza) è
+> **[RELEASE.md](RELEASE.md)**; questo documento resta come inventario delle
+> funzioni esistenti.
+
 Documento vivo: fissa **schermate, analitiche e funzionalità** che vogliamo per
 il verticale iPhone. Quando (quasi) tutto qui è ✅, l'iPhone è "chiuso" e si
 passa alle **auto** (più modelli/denominazioni/parametri → più complesse).

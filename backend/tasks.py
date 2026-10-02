@@ -1,19 +1,20 @@
 import asyncio
 import logging
-import random
 import re
 import statistics
 import uuid
 from collections import Counter
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from backend.core.database import Client
 
-from backend.core.database import get_db
+from backend.core.database import get_db, has_column
 from backend.scrapers import ScrapedListing, SubitoScraper
+from backend.scrapers.subito import ScraperBlockedError, pacer
 from backend.services.health import record_run
+from backend.services.republish import find_revivable
 from backend.core.config import settings
 from backend.services.notifications import notify_deals, notify_system_alert
 from backend.services.variants import resolve_variant
@@ -89,12 +90,14 @@ def opportunities_table(category: str) -> str:
 def get_existing_opportunities(
     client: Client, table: str, urls: list[str]
 ) -> dict[str, dict[str, Any]]:
-    """Map listing_url → {id, asking_price} per le righe già presenti in `table`."""
+    """Map listing_url → {id, asking_price, ...} per le righe già in `table`."""
     if not urls:
         return {}
+    with_published = has_column(table, "published_at", client)
+    cols = "id, listing_url, asking_price, image_urls"
     rows = (
         client.table(table)
-        .select("id, listing_url, asking_price, image_urls")
+        .select(cols + (", published_at" if with_published else ""))
         .in_("listing_url", urls)
         .execute()
     )
@@ -105,6 +108,8 @@ def get_existing_opportunities(
             "id": row["id"],
             "asking_price": float(price) if price is not None else None,
             "has_images": bool(row.get("image_urls")),
+            # False se la colonna manca: allora non si tenta il riempimento.
+            "missing_published": with_published and not row.get("published_at"),
         }
     return result
 
@@ -137,6 +142,7 @@ def _opportunity_payload(
         "status": "nuovo",
         "found_at": now,
         "updated_at": now,
+        "published_at": meta.get("published_at"),
         # Comuni a entrambe le categorie (NLP + venditore + pHash + variante).
         "image_hash": meta.get("image_hash"),
         "features": meta.get("features"),
@@ -173,6 +179,8 @@ def _opportunity_payload(
 # Colonne introdotte dalle migrazioni 09/10: se lo schema live non le ha ancora,
 # l'insert le rimuove e riprova (lo sniper non si blocca in attesa della migrazione).
 _MISSING_COL_RE = re.compile(r"'([\w]+)' column")
+# Postgres self-hosted (psycopg): 'column "x" of relation "t" does not exist'.
+_MISSING_COL_PG_RE = re.compile(r'column "(\w+)" of relation "\w+" does not exist')
 
 
 def insert_opportunities(
@@ -217,7 +225,11 @@ def insert_opportunities(
 
 
 def _missing_column(exc: Exception) -> str | None:
-    """Estrae il nome della colonna mancante da un errore PostgREST PGRST204."""
+    """Estrae il nome della colonna mancante da un errore PostgREST PGRST204
+    o dal suo equivalente psycopg (UndefinedColumn)."""
+    pg_match = _MISSING_COL_PG_RE.search(str(exc))
+    if pg_match:
+        return pg_match.group(1)
     if "PGRST204" not in str(exc) and "schema cache" not in str(exc):
         return None
     match = _MISSING_COL_RE.search(str(exc))
@@ -230,8 +242,9 @@ def apply_price_updates(
     existing: dict[str, dict[str, Any]],
     listings: list[ScrapedListing],
 ) -> dict[str, int]:
-    """Annunci già presenti: aggiorna updated_at; su CALO di prezzo salva lo
-    storico in price_history e sposta il vecchio prezzo in original_price."""
+    """Annunci già presenti: aggiorna updated_at; ogni variazione di prezzo
+    (calo o rialzo) va in price_history; sui CALI il vecchio prezzo passa in
+    original_price e parte l'evento per gli alert."""
     now = datetime.now(timezone.utc).isoformat()
     updated = 0
     price_drops = 0
@@ -255,6 +268,24 @@ def apply_price_updates(
             image_hash = (listing.metadata or {}).get("image_hash")
             if image_hash:
                 patch["image_hash"] = image_hash
+        # Righe salvate prima della migrazione 19: la data di pubblicazione
+        # arriva la prima volta che l'annuncio viene rivisto.
+        published = (listing.metadata or {}).get("published_at")
+        if row.get("missing_published") and published:
+            patch["published_at"] = published
+        if new_price is not None and old_price is not None and new_price > old_price:
+            # Rialzo: si registra anche quello (prima andava perso, e il prezzo
+            # in DB restava quello vecchio più basso). Niente alert né
+            # original_price: quelli raccontano i ribassi.
+            patch["asking_price"] = new_price
+            history_rows.append(
+                {
+                    "id": str(uuid.uuid4()),
+                    "listing_id": listing_id,
+                    "old_price": old_price,
+                    "new_price": new_price,
+                }
+            )
         if new_price is not None and old_price is not None and new_price < old_price:
             patch["asking_price"] = new_price
             patch["original_price"] = old_price
@@ -352,13 +383,21 @@ def apply_republish_updates(
     republished: list[tuple[str, ScrapedListing]],
 ) -> int:
     """Ripubblicazioni: sposta il record esistente sul nuovo URL (storico intatto,
-    nessun duplicato); rinfresca updated_at e la galleria."""
+    nessun duplicato); rinfresca updated_at, prezzo e galleria.
+
+    Se il record era già stato marcato sparito, torna ATTIVO: l'annuncio è di
+    nuovo online, e lasciarlo "venduto" contava una vendita mai avvenuta."""
     now = datetime.now(timezone.utc).isoformat()
     for old_id, listing in republished:
         patch: dict[str, Any] = {"listing_url": listing.url, "updated_at": now}
         if listing.image_urls:
             patch["image_urls"] = listing.image_urls
+        if listing.price_amount is not None:
+            patch["asking_price"] = listing.price_amount
         client.table(table).update(patch).eq("id", old_id).execute()
+        client.table(table).update({"status": "nuovo"}).eq("id", old_id).in_(
+            "status", ["venduto_rimosso", "scaduto"]
+        ).execute()
     return len(republished)
 
 
@@ -478,6 +517,31 @@ async def persist_opportunities(
         else:
             truly_new.append(listing)
 
+    # Anti-ripubblicazione SENZA foto (righe da inventario, o foto cambiate):
+    # stesso venditore + stessa variante + prezzo vicino a un record sparito
+    # da poco → è lo stesso oggetto rimesso online, non un annuncio nuovo.
+    if truly_new:
+        candidates = []
+        for listing in truly_new:
+            meta = listing.metadata or {}
+            variant = resolve_variant(
+                category, listing.title, meta, query=query, strict_filters=strict_filters
+            )
+            candidates.append({
+                "listing": listing, "seller_id": meta.get("seller_id"),
+                "variant_key": variant["variant_key"], "title": listing.title,
+                "price": listing.price_amount,
+            })
+        revived = await asyncio.to_thread(find_revivable, db, table, category, candidates)
+        revived_urls = set()
+        for cand, old in revived:
+            if old["id"] in claimed_ids:
+                continue
+            claimed_ids.add(old["id"])
+            republished.append((old["id"], cand["listing"]))
+            revived_urls.add(cand["listing"].url)
+        truly_new = [l for l in truly_new if l.url not in revived_urls]
+
     # Shadow Dealer (solo auto): riclassifica i finti privati prima dell'insert.
     if category == "automobile" and truly_new:
         await asyncio.to_thread(apply_shadow_dealer, db, table, truly_new)
@@ -509,10 +573,14 @@ async def scrape_subito_and_save(
     pages: int = 1,
     strict_filters: dict[str, Any] | None = None,
     target_id: str | None = None,
+    since: datetime | None = None,
 ) -> dict[str, Any]:
     """Cecchino Live: processa in blocco 'pages' pagine dell'API con routing/UPSERT.
 
-    1) Fetch del blocco via proxy (filtri nativi + anti-spam applicati).
+    Con ``since`` (ultima scansione del target) ``pages`` diventa un tetto: si
+    pagina solo finché non ci si ricongiunge con la scansione precedente.
+
+    1) Fetch del blocco (filtri nativi + anti-spam applicati).
     2) Routing su _auto/_tech, dedup su listing_url.
     3) Immagini SOLO per i nuovi (CDN diretta) + insert; esistenti → updated_at
        e price_history sui cali di prezzo.
@@ -529,6 +597,7 @@ async def scrape_subito_and_save(
         strict_match=not strict_filters,
         filters=strict_filters,
         max_pages=pages,
+        since=since,
     )
 
     result = await persist_opportunities(
@@ -543,7 +612,8 @@ async def scrape_subito_and_save(
     return {
         "query": query,
         "category": category,
-        "pages": pages,
+        "pages": scraper.last_search["pages"],
+        "gap": scraper.last_search["gap"],
         "target_id": target_id,
         "table": opportunities_table(category),
         "scraped_count": len(listings),
@@ -727,6 +797,46 @@ async def run_nightly_batch(
     }
 
 
+# Categorie coperte per intero dalla ricerca ampia: la media notturna si
+# calcola dagli annunci attivi già nel DB, senza nuove richieste a Subito.
+DB_TREND_CATEGORIES = frozenset({"smartphone"})
+
+
+def nightly_trend_from_db(target: dict[str, Any]) -> dict[str, Any]:
+    """Media/IQR del target dagli annunci ATTIVI nel DB (solo condizioni sane)."""
+    from backend.services.variants import is_healthy  # noqa: PLC0415
+
+    db = get_db()
+    table = opportunities_table(target["category"])
+    rows: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        page = (
+            db.table(table).select("asking_price, condition_tier")
+            .eq("target_id", target["id"]).in_("status", list(ACTIVE_STATUSES))
+            .range(start, start + 999).execute().data or []
+        )
+        rows.extend(page)
+        if len(page) < 1000:
+            break
+        start += 1000
+    prices = [
+        float(r["asking_price"]) for r in rows
+        if r.get("asking_price") is not None and is_healthy(r.get("condition_tier") or "buono")
+    ]
+    stats = compute_market_stats(prices)
+    product, _ = get_or_create_product(target["query"], target["category"])
+    trend = save_market_trend(target["id"], str(product["id"]), stats) if stats else None
+    return {
+        "mode": "nightly_db",
+        "query": target["query"],
+        "target_id": target["id"],
+        "prices_considered": len(prices),
+        "stats": stats,
+        "trend": trend,
+    }
+
+
 async def run_nightly_batch_all_products() -> dict[str, Any]:
     """Motore Notturno (scheduled): refresh market trends per TARGET.
 
@@ -744,6 +854,15 @@ async def run_nightly_batch_all_products() -> dict[str, Any]:
     results: list[dict[str, Any]] = []
     for target in targets:
         query = target["query"]
+        if target["category"] in DB_TREND_CATEGORIES:
+            try:
+                outcome = await asyncio.to_thread(nightly_trend_from_db, target)
+                results.append(outcome)
+                logger.info("Nightly (DB) '%s': %s annunci", query, outcome["prices_considered"])
+            except Exception:
+                logger.exception("Nightly (DB) failed for target '%s'", query)
+                results.append({"query": query, "error": True})
+            continue
         try:
             outcome = await run_nightly_batch(
                 query=query,
@@ -775,7 +894,7 @@ def get_active_targets(
     db = client or get_db()
     query = (
         db.table("target_models")
-        .select("id, category, query, strict_filters")
+        .select("id, category, query, strict_filters, last_scanned")
         .eq("is_active", True)
     )
     if category:
@@ -784,84 +903,49 @@ def get_active_targets(
 
 
 def update_target_last_scanned(
-    target_id: str, client: Client | None = None
+    target_id: str,
+    client: Client | None = None,
+    scanned_at: datetime | None = None,
 ) -> None:
     db = client or get_db()
     db.table("target_models").update(
-        {"last_scanned": datetime.now(timezone.utc).isoformat()}
+        {"last_scanned": (scanned_at or datetime.now(timezone.utc)).isoformat()}
     ).eq("id", target_id).execute()
 
 
-async def run_sniper_all_products(
-    category: str | None = None,
-    pages: int = 1,
-) -> dict[str, Any]:
-    """Cecchino Live (scheduled): hunt fresh opportunities for every active target.
-
-    Reads the scraping fleet from ``target_models`` (DB-driven, non hardcoded),
-    processes ``pages`` API blocks per target applying its ``strict_filters``,
-    then stamps ``last_scanned``. ``category`` scopes to one vertical.
-    """
+def _parse_ts(value: Any) -> datetime | None:
+    if not value:
+        return None
     try:
-        targets = await asyncio.to_thread(get_active_targets, category)
-    except Exception:
-        logger.exception("Sniper live: could not fetch target_models")
-        return {"mode": "sniper_targets", "targets": 0, "results": [], "error": True}
-    logger.info(
-        "Sniper live (%s): %d active target(s)", category or "all", len(targets)
-    )
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
 
-    results: list[dict[str, Any]] = []
-    n_ok = n_failed = total_scraped = total_new = 0
-    # Righe nuove e cali di prezzo accumulati per categoria: gli alert partono
-    # UNA volta a fine giro, arricchiti con la BI completa (non per-target).
-    new_by_cat: dict[str, list[dict[str, Any]]] = {}
-    drops_by_cat: dict[str, list[dict[str, Any]]] = {}
-    for index, target in enumerate(targets):
-        # Pausa irregolare tra un target e l'altro: 17 ricerche identiche
-        # sparate a raffica sono un pattern che Akamai profila (ed è la causa
-        # dei 403 sporadici). Costa ~10s su un giro da 5 minuti.
-        if index:
-            await asyncio.sleep(random.uniform(0.4, 1.2))
-        query = target["query"]
-        target_category = target["category"]
-        strict_filters = target.get("strict_filters") or None
-        try:
-            outcome = await scrape_subito_and_save(
-                query=query,
-                category=target_category,
-                pages=pages,
-                strict_filters=strict_filters,
-                target_id=target["id"],
-            )
-            await asyncio.to_thread(update_target_last_scanned, target["id"])
-            n_ok += 1
-            total_scraped += outcome["scraped_count"]
-            total_new += outcome["new_count"]
-            if outcome.get("inserted_rows"):
-                new_by_cat.setdefault(target_category, []).extend(outcome["inserted_rows"])
-            if outcome.get("drop_events"):
-                drops_by_cat.setdefault(target_category, []).extend(outcome["drop_events"])
-            results.append(
-                {
-                    "query": query,
-                    "category": target_category,
-                    "scraped_count": outcome["scraped_count"],
-                    "new_count": outcome["new_count"],
-                    "saved_count": outcome["saved_count"],
-                }
-            )
-            logger.info(
-                "Sniper done for '%s' (block=%d, new opportunities=%d)",
-                query,
-                outcome["scraped_count"],
-                outcome["saved_count"],
-            )
-        except Exception:
-            n_failed += 1
-            logger.exception("Sniper failed for '%s'", query)
-            results.append({"query": query, "error": True})
 
+# Prima scansione di un target (mai visto): si recupera al massimo un giorno.
+FIRST_SCAN_LOOKBACK = timedelta(hours=24)
+# Margine sul ricongiungimento: copre gli annunci pubblicati mentre la
+# scansione precedente era in corso e piccole differenze di orologio.
+SINCE_MARGIN = timedelta(minutes=10)
+
+
+async def finish_run(
+    label: str,
+    n_targets: int,
+    n_ok: int,
+    n_failed: int,
+    total_scraped: int,
+    total_new: int,
+    total_requests: int,
+    gaps: list[str],
+    blocked: bool,
+    new_by_cat: dict[str, list[dict[str, Any]]],
+    drops_by_cat: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Chiusura comune di un giro di raccolta (Sniper per target o ricerca
+    ampia): alert Telegram sulle novità, registrazione in scrape_runs e alert
+    di sistema sulle transizioni down/ripristino. Ritorna l'esito di salute."""
     # Alert Telegram "intelligenti": una passata a fine giro per categoria.
     # Si arricchiscono le NUOVE righe con la stessa BI della dashboard e si
     # notifica SOLO ciò che è un vero affare (classe "affare" + Deal Score ≥
@@ -889,30 +973,147 @@ async def run_sniper_all_products(
                 logger.exception("Alert intelligenti falliti (%s)", cat)
 
     # Salute dello scraper: registra il giro e allerta sulle transizioni
-    # down/ripristino (Akamai/proxy/Subito) — così non si blocca in silenzio.
+    # down/ripristino (Akamai/Subito) — così non si blocca in silenzio.
+    if gaps:
+        logger.warning(
+            "Sniper (%s): %d ricerche non ricongiunte (annunci persi): %s",
+            label, len(gaps), ", ".join(gaps),
+        )
     health = await asyncio.to_thread(
         record_run,
-        category or "all", len(targets), n_ok, n_failed, total_scraped, total_new,
+        label, n_targets, n_ok, n_failed, total_scraped, total_new,
+        total_requests, len(gaps),
     )
     if health["went_down"]:
         logger.error("Scraper DOWN (%s): %d/%d target falliti, %d annunci",
-                     category or "all", n_failed, len(targets), total_scraped)
+                     label, n_failed, n_targets, total_scraped)
+        if blocked:
+            pace = pacer.snapshot()
+            cause = (
+                f"Bloccati da Subito (rate limit): pausa automatica di "
+                f"{pace['blockedForS'] // 60} min, poi ritmo 1 richiesta/{pace['gapS']:.0f}s."
+            )
+        else:
+            cause = "Nessun blocco 403/429: errore di rete o Subito cambiato — controlla."
         try:
             await notify_system_alert(
-                f"🔴 <b>Scraper DOWN</b> ({category or 'all'})\n"
-                f"{n_failed}/{len(targets)} target falliti, {total_scraped} annunci raccolti.\n"
-                f"Probabile blocco Akamai o proxy KO — controlla."
+                f"🔴 <b>Scraper DOWN</b> ({label})\n"
+                f"{n_failed}/{n_targets} target falliti, {total_scraped} annunci raccolti.\n"
+                f"{cause}"
             )
         except Exception:
             logger.exception("Alert di sistema (down) fallito")
     elif health["recovered"]:
         try:
             await notify_system_alert(
-                f"🟢 <b>Scraper ripristinato</b> ({category or 'all'}) — "
+                f"🟢 <b>Scraper ripristinato</b> ({label}) — "
                 f"{total_scraped} annunci nell'ultimo giro."
             )
         except Exception:
             logger.exception("Alert di sistema (recovery) fallito")
+
+    return health
+
+
+async def run_sniper_all_products(
+    category: str | None = None,
+    pages: int = 5,
+) -> dict[str, Any]:
+    """Cecchino Live (scheduled): hunt fresh opportunities for every active target.
+
+    Reads the scraping fleet from ``target_models`` (DB-driven, non hardcoded)
+    and, per target, pages back from the newest ad until it meets the previous
+    scan (``last_scanned``), up to ``pages`` API blocks. A target that hits the
+    cap without catching up has a *gap*: ads were missed and the cadence for
+    that category is too slow. ``category`` scopes to one vertical.
+    """
+    try:
+        targets = await asyncio.to_thread(get_active_targets, category)
+    except Exception:
+        logger.exception("Sniper live: could not fetch target_models")
+        return {"mode": "sniper_targets", "targets": 0, "results": [], "error": True}
+    logger.info(
+        "Sniper live (%s): %d active target(s)", category or "all", len(targets)
+    )
+
+    results: list[dict[str, Any]] = []
+    n_ok = n_failed = total_scraped = total_new = 0
+    # Righe nuove e cali di prezzo accumulati per categoria: gli alert partono
+    # UNA volta a fine giro, arricchiti con la BI completa (non per-target).
+    new_by_cat: dict[str, list[dict[str, Any]]] = {}
+    drops_by_cat: dict[str, list[dict[str, Any]]] = {}
+    blocked = False
+    total_requests = 0
+    gaps: list[str] = []
+    # Il ritmo tra una richiesta e l'altra lo impone il pacer globale dello
+    # scraper (condiviso con gli altri job): qui niente pause proprie.
+    for index, target in enumerate(targets):
+        query = target["query"]
+        target_category = target["category"]
+        strict_filters = target.get("strict_filters") or None
+        scan_started = datetime.now(timezone.utc)
+        last = _parse_ts(target.get("last_scanned"))
+        since = (last - SINCE_MARGIN) if last else scan_started - FIRST_SCAN_LOOKBACK
+        try:
+            outcome = await scrape_subito_and_save(
+                query=query,
+                category=target_category,
+                pages=pages,
+                strict_filters=strict_filters,
+                target_id=target["id"],
+                since=since,
+            )
+            # Si timbra l'INIZIO della scansione: un annuncio pubblicato mentre
+            # questa era in corso deve risultare "dopo" alla prossima.
+            await asyncio.to_thread(
+                update_target_last_scanned, target["id"], None, scan_started
+            )
+            n_ok += 1
+            total_scraped += outcome["scraped_count"]
+            total_new += outcome["new_count"]
+            total_requests += outcome["pages"]
+            if outcome["gap"]:
+                gaps.append(query)
+            if outcome.get("inserted_rows"):
+                new_by_cat.setdefault(target_category, []).extend(outcome["inserted_rows"])
+            if outcome.get("drop_events"):
+                drops_by_cat.setdefault(target_category, []).extend(outcome["drop_events"])
+            results.append(
+                {
+                    "query": query,
+                    "category": target_category,
+                    "scraped_count": outcome["scraped_count"],
+                    "new_count": outcome["new_count"],
+                    "saved_count": outcome["saved_count"],
+                }
+            )
+            logger.info(
+                "Sniper done for '%s' (block=%d, new opportunities=%d)",
+                query,
+                outcome["scraped_count"],
+                outcome["saved_count"],
+            )
+        except ScraperBlockedError as exc:
+            # Bloccati (o ancora in cooldown): insistere coi target restanti
+            # dallo stesso IP allungherebbe il blocco. Si chiude il giro qui.
+            blocked = True
+            remaining = len(targets) - index
+            n_failed += remaining
+            logger.warning(
+                "Sniper (%s) fermato su '%s': %s — %d target saltati",
+                category or "all", query, exc, remaining,
+            )
+            results.append({"query": query, "error": True, "blocked": True})
+            break
+        except Exception:
+            n_failed += 1
+            logger.exception("Sniper failed for '%s'", query)
+            results.append({"query": query, "error": True})
+
+    health = await finish_run(
+        category or "all", len(targets), n_ok, n_failed, total_scraped, total_new,
+        total_requests, gaps, blocked, new_by_cat, drops_by_cat,
+    )
 
     return {
         "mode": "sniper_targets",

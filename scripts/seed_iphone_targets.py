@@ -30,6 +30,9 @@ _GENERATIONS: dict[int, list[str]] = {
     # la linea Air (senza, un "17 Air" finirebbe nel pool del 17 base, che vale
     # ~200€ di più, falsando la media di mercato).
     17: ["", "Air", "Pro", "Pro Max"],
+    # Gen 18 (settembre 2026): sul mercato da subito Pro e Pro Max; il base
+    # segue. Senza questi target gli "iPhone 18 Pro" restavano senza modello.
+    18: ["", "Pro", "Pro Max"],
 }
 # Modelli speciali/storici (numero non lineare) col loro "peso" di generazione
 # per il filtro --from (X/XR/XS ≈ gen 10, SE ~ trasversale).

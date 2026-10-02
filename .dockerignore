@@ -5,7 +5,7 @@ __pycache__
 *.pyc
 frontend
 media
-database
+# database/ entra nell'immagine: le migrazioni le applica il backend all'avvio.
 
 *.md
 .env

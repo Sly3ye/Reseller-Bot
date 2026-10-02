@@ -18,6 +18,23 @@ pulita**:
 Le medie di mercato sono calcolate **per variante**, solo dai listing **sani**
 (esclude rotti/incidentati), ripulite con IQR.
 
+**Modelli canonici (tech).** Il resolver riconosce ogni iPhone reale, dal 4 al
+18: numerici (anche a una cifra: 8, 6s, 5c), a lettere (X, XR, XS, XS Max, SE),
+la linea Air ("iPhone Air", con o senza "17"), i refusi ("I phone", "Iphon").
+Ogni combinazione viene validata contro la gamma Apple vera (`_is_real_iphone`:
+mini solo 12-13, Plus solo 14-16, "e" dalla 16, tetto `MAX_IPHONE_GEN`): un
+"iPhone 17 mini" o un "iPhone 12 e cover" non diventano modelli inventati.
+
+**Statistiche per modello, non per target.** Market Intelligence, venduti e
+tempo di vendita raggruppano per il **modello del titolo** (`_row_model`, dalla
+variante canonica), non per il target della query che ha trovato l'annuncio.
+Così entrano anche gli iPhone senza target e nessun "13 Pro" finisce sotto il
+"13". Le auto restano per target (la variante auto è il target).
+
+**Letture complete.** Le statistiche leggono tutto lo stock (`_select_all`,
+paginato), non più un campione con `limit(2000/5000/20000)`. Il feed delle
+opportunità è in cache 90s (`_enriched_feed`); il triage si rilegge fresco.
+
 ## Fase 2 — Valutazione predittiva (`valuation.py`)
 
 Dal "media della variante" al **valore equo del singolo annuncio**:
@@ -45,9 +62,37 @@ Il **Deal Score** usa il margine vs valore equo (più preciso della media).
 
 ## Time-to-sale & liquidità (C3)
 
-Dai `venduto_rimosso` del Garbage Collector si misura in **quanti giorni ruota**
-ogni modello (liquidità reale): un iPhone 13 con margine 18% che gira in 4gg
-batte un 14 Pro con margine 25% invenduto da 3 settimane.
+Dai `venduto_rimosso` (inventario tech / Garbage Collector auto) si misura in
+**quanti giorni ruota** ogni modello (liquidità reale): un iPhone 13 con
+margine 18% che gira in 4gg batte un 14 Pro con margine 25% invenduto da 3
+settimane. I giorni partono da `published_at` (pubblicazione su Subito) quando
+c'è, altrimenti da `found_at`.
+
+**Kaplan–Meier (`survival.py`).** La media dei soli spariti è ottimista: chi
+resta online mesi non conta, i venduti in 2 giorni sì. La stima di
+sopravvivenza usa anche gli annunci ancora attivi come "censurati" (a N giorni
+non ancora venduti): `daysToSellKM` = giorni entro cui si vende metà degli
+annunci, più `sold7dPct` / `sold30dPct`. `null` = meno di metà venduta nella
+finestra osservata (dato onesto, non un buco). ROI per giorno e costo di
+magazzino usano il dato KM quando c'è; `avgDaysToSell` resta per confronto.
+
+**Venduto, scaduto o ritirato (`removal_kind`).** Subito non dice perché un
+annuncio sparisce. Euristica dichiarata: oltre ~11 mesi → **scaduto**; online
+≥90gg, mai ribassato e ≥10% sopra la mediana di mercato → **ritirato**;
+altrimenti **venduto**. Scaduti e ritirati restano censurati in KM e fuori da
+prezzi di realizzo e grafico prezzo×giorni (`removalKinds` ne dà il conteggio).
+
+**Ripubblicazioni (`republish.py`).** Cancellare e ripubblicare lo stesso
+telefono produceva una vendita falsa + un annuncio "nuovo". Oltre al pHash
+della foto, si riconosce senza foto: stesso venditore + stessa variante
+(modello riconosciuto) + prezzo ±15%, con una regola temporale che salva i
+negozi con più pezzi uguali. Allo Sniper il record sparito torna attivo con il
+nuovo URL; all'inventario il gemello si fonde nel record originale (storico
+prezzi e pipeline compresi). In entrambi i casi resta la data di nascita vera.
+
+**Storico prezzi completo.** `price_history` registra anche i rialzi (prima
+solo i cali); le letture sui ribassi filtrano i cali, il Watch di prezzo
+conta anche i rialzi (`riseCount`: venditore senza fretta).
 
 Il **valore equo** ora poggia sui **venduti** quando c'è campione sufficiente:
 `_sold_variant_refs` calcola la mediana di realizzo per variante dai

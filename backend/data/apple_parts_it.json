@@ -1,0 +1,493 @@
+{
+ "source": "https://selfservicerepair.eu/it-IT (Self Service Repair Store), prezzi IVA inclusa",
+ "fetchedAt": "2026-10-02",
+ "vat": 1.22,
+ "models": {
+  "iphone-12": {
+   "name": "iPhone 12",
+   "batteria": {
+    "partNumber": "661-17920",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-18503",
+    "priceEur": 339.0,
+    "returnCreditEur": 54.24
+   },
+   "fotocamera": {
+    "partNumber": "661-17921",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-12-mini": {
+   "name": "iPhone 12 mini",
+   "batteria": {
+    "partNumber": "661-17939",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-17940",
+    "priceEur": 269.0,
+    "returnCreditEur": 43.04
+   },
+   "fotocamera": {
+    "partNumber": "661-17676",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-12-pro": {
+   "name": "iPhone 12 Pro",
+   "batteria": {
+    "partNumber": "661-17920",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-18504",
+    "priceEur": 339.0,
+    "returnCreditEur": 54.24
+   },
+   "fotocamera": {
+    "partNumber": "661-17922",
+    "priceEur": 228.99,
+    "returnCreditEur": 54.96
+   }
+  },
+  "iphone-12-pro-max": {
+   "name": "iPhone 12 Pro Max",
+   "batteria": {
+    "partNumber": "661-18428",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-18466",
+    "priceEur": 405.0,
+    "returnCreditEur": 64.81
+   },
+   "fotocamera": {
+    "partNumber": "661-18172",
+    "priceEur": 228.99,
+    "returnCreditEur": 54.96
+   }
+  },
+  "iphone-13": {
+   "name": "iPhone 13",
+   "batteria": {
+    "partNumber": "661-21991",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-21988",
+    "priceEur": 339.0,
+    "returnCreditEur": 54.24
+   },
+   "fotocamera": {
+    "partNumber": "661-21992",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-13-mini": {
+   "name": "iPhone 13 mini",
+   "batteria": {
+    "partNumber": "661-22374",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-22311",
+    "priceEur": 269.0,
+    "returnCreditEur": 43.04
+   },
+   "fotocamera": {
+    "partNumber": "661-21992",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-13-pro": {
+   "name": "iPhone 13 Pro",
+   "batteria": {
+    "partNumber": "661-21996",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-21993",
+    "priceEur": 339.0,
+    "returnCreditEur": 54.24
+   },
+   "fotocamera": {
+    "partNumber": "661-22293",
+    "priceEur": 228.99,
+    "returnCreditEur": 54.96
+   }
+  },
+  "iphone-13-pro-max": {
+   "name": "iPhone 13 Pro Max",
+   "batteria": {
+    "partNumber": "661-22294",
+    "priceEur": 99.0,
+    "returnCreditEur": 47.52
+   },
+   "schermo": {
+    "partNumber": "661-22309",
+    "priceEur": 405.0,
+    "returnCreditEur": 64.81
+   },
+   "fotocamera": {
+    "partNumber": "661-22293",
+    "priceEur": 228.99,
+    "returnCreditEur": 54.96
+   }
+  },
+  "iphone-14": {
+   "name": "iPhone 14",
+   "batteria": {
+    "partNumber": "661-30373",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-30366",
+    "priceEur": 339.0,
+    "returnCreditEur": 54.24
+   },
+   "fotocamera": {
+    "partNumber": "661-30370",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-14-plus": {
+   "name": "iPhone 14 Plus",
+   "batteria": {
+    "partNumber": "661-30394",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-30390",
+    "priceEur": 405.0,
+    "returnCreditEur": 64.81
+   },
+   "fotocamera": {
+    "partNumber": "661-30393",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-14-pro": {
+   "name": "iPhone 14 Pro",
+   "batteria": {
+    "partNumber": "661-30382",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-29370",
+    "priceEur": 405.0,
+    "returnCreditEur": 64.81
+   },
+   "fotocamera": {
+    "partNumber": "661-29369",
+    "priceEur": 258.99,
+    "returnCreditEur": 62.16
+   }
+  },
+  "iphone-14-pro-max": {
+   "name": "iPhone 14 Pro Max",
+   "batteria": {
+    "partNumber": "661-30397",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-30401",
+    "priceEur": 489.0,
+    "returnCreditEur": 78.24
+   },
+   "fotocamera": {
+    "partNumber": "661-30398",
+    "priceEur": 258.99,
+    "returnCreditEur": 62.16
+   }
+  },
+  "iphone-15": {
+   "name": "iPhone 15",
+   "batteria": {
+    "partNumber": "661-35885",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-36706",
+    "priceEur": 339.0,
+    "returnCreditEur": 54.24
+   },
+   "fotocamera": {
+    "partNumber": "661-35828",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-15-plus": {
+   "name": "iPhone 15 Plus",
+   "batteria": {
+    "partNumber": "661-37207",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-37213",
+    "priceEur": 405.0,
+    "returnCreditEur": 64.81
+   },
+   "fotocamera": {
+    "partNumber": "661-37216",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-15-pro": {
+   "name": "iPhone 15 Pro",
+   "batteria": {
+    "partNumber": "661-35694",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-35699",
+    "priceEur": 405.0,
+    "returnCreditEur": 64.81
+   },
+   "fotocamera": {
+    "partNumber": "661-35696",
+    "priceEur": 258.99,
+    "returnCreditEur": 62.16
+   }
+  },
+  "iphone-15-pro-max": {
+   "name": "iPhone 15 Pro Max",
+   "batteria": {
+    "partNumber": "661-36918",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-36915",
+    "priceEur": 489.0,
+    "returnCreditEur": 78.24
+   },
+   "fotocamera": {
+    "partNumber": "661-36906",
+    "priceEur": 299.0,
+    "returnCreditEur": 71.76
+   }
+  },
+  "iphone-16": {
+   "name": "iPhone 16",
+   "batteria": {
+    "partNumber": "661-44796",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-44797",
+    "priceEur": 339.0,
+    "returnCreditEur": 40.67
+   },
+   "fotocamera": {
+    "partNumber": "661-44799",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-16-plus": {
+   "name": "iPhone 16 Plus",
+   "batteria": {
+    "partNumber": "661-42837",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-42843",
+    "priceEur": 405.0,
+    "returnCreditEur": 48.6
+   },
+   "fotocamera": {
+    "partNumber": "661-42845",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-16-pro": {
+   "name": "iPhone 16 Pro",
+   "batteria": {
+    "partNumber": "661-42720",
+    "priceEur": 135.01,
+    "returnCreditEur": 64.81
+   },
+   "schermo": {
+    "partNumber": "661-42726",
+    "priceEur": 405.0,
+    "returnCreditEur": 48.6
+   },
+   "fotocamera": {
+    "partNumber": "661-42728",
+    "priceEur": 299.0,
+    "returnCreditEur": 71.76
+   }
+  },
+  "iphone-16-pro-max": {
+   "name": "iPhone 16 Pro Max",
+   "batteria": {
+    "partNumber": "661-44954",
+    "priceEur": 135.01,
+    "returnCreditEur": 64.81
+   },
+   "schermo": {
+    "partNumber": "661-44955",
+    "priceEur": 489.0,
+    "returnCreditEur": 58.68
+   },
+   "fotocamera": {
+    "partNumber": "661-44957",
+    "priceEur": 299.0,
+    "returnCreditEur": 71.76
+   }
+  },
+  "iphone-16e": {
+   "name": "iPhone 16e",
+   "batteria": {
+    "partNumber": "661-49432",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-49431",
+    "priceEur": 269.0,
+    "returnCreditEur": 13.44
+   },
+   "fotocamera": {
+    "partNumber": "661-49425",
+    "priceEur": 149.0,
+    "returnCreditEur": 35.76
+   }
+  },
+  "iphone-17": {
+   "name": "iPhone 17",
+   "batteria": {
+    "partNumber": "661-56064",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-56065",
+    "priceEur": 405.0,
+    "returnCreditEur": 20.25
+   },
+   "fotocamera": {
+    "partNumber": "661-56067",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-17-pro": {
+   "name": "iPhone 17 Pro",
+   "batteria": {
+    "partNumber": "661-56121",
+    "priceEur": 135.01,
+    "returnCreditEur": 64.81
+   },
+   "schermo": {
+    "partNumber": "661-56125",
+    "priceEur": 405.0,
+    "returnCreditEur": 20.25
+   },
+   "fotocamera": {
+    "partNumber": "661-56127",
+    "priceEur": 299.0,
+    "returnCreditEur": 71.76
+   }
+  },
+  "iphone-17-pro-max": {
+   "name": "iPhone 17 Pro Max",
+   "batteria": {
+    "partNumber": "661-56049",
+    "priceEur": 135.01,
+    "returnCreditEur": 64.81
+   },
+   "schermo": {
+    "partNumber": "661-56050",
+    "priceEur": 489.0,
+    "returnCreditEur": 24.45
+   },
+   "fotocamera": {
+    "partNumber": "661-56052",
+    "priceEur": 299.0,
+    "returnCreditEur": 71.76
+   }
+  },
+  "iphone-17e": {
+   "name": "iPhone 17e",
+   "batteria": {
+    "partNumber": "661-60210",
+    "priceEur": 108.99,
+    "returnCreditEur": 52.31
+   },
+   "schermo": {
+    "partNumber": "661-60211",
+    "priceEur": 269.0,
+    "returnCreditEur": 13.44
+   },
+   "fotocamera": {
+    "partNumber": "661-49425",
+    "priceEur": 149.0,
+    "returnCreditEur": 35.76
+   }
+  },
+  "iphone-air": {
+   "name": "iPhone Air",
+   "batteria": {
+    "partNumber": "661-55235",
+    "priceEur": 135.01,
+    "returnCreditEur": 64.81
+   },
+   "schermo": {
+    "partNumber": "661-55240",
+    "priceEur": 405.0,
+    "returnCreditEur": 20.25
+   },
+   "fotocamera": {
+    "partNumber": "661-55242",
+    "priceEur": 198.99,
+    "returnCreditEur": 47.76
+   }
+  },
+  "iphone-se": {
+   "name": "iPhone SE (3rd generation)",
+   "batteria": {
+    "partNumber": "661-25890",
+    "priceEur": 79.0,
+    "returnCreditEur": 37.92
+   },
+   "schermo": {
+    "partNumber": "661-26353",
+    "priceEur": 185.0,
+    "returnCreditEur": 40.7
+   },
+   "fotocamera": {
+    "partNumber": "661-25683",
+    "priceEur": 89.0,
+    "returnCreditEur": 21.36
+   }
+  }
+ }
+}

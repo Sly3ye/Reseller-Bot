@@ -24,9 +24,9 @@ margini isolati per verticale e per variante.
 
 Subito.it è una SPA che carica gli annunci da un'API JSON interna
 (`hades.subito.it`), individuata per reverse engineering: la interroghiamo
-direttamente (con **curl_cffi** per superare l'anti-bot Akamai, via **proxy
-residenziale**), senza browser headless. Uno **scheduler** interno lancia i
-"cecchini" (ogni 5' tech, 15' auto) che raccolgono gli annunci, li parsano
+direttamente (con **curl_cffi** per superare l'anti-bot Akamai, in connessione diretta a
+**ritmo controllato**: nessun proxy né servizio a pagamento), senza browser headless. Uno **scheduler** interno lancia i
+"cecchini" (tech e auto) che raccolgono gli annunci, li parsano
 (NLP), li deduplicano (pHash) e li salvano in Postgres. In lettura, un layer di
 **Business Intelligence** assegna a ogni annuncio la sua **variante canonica**,
 ne stima il **valore equo**, calcola margine, **Deal Score** e posizione di
@@ -38,7 +38,7 @@ nella **pipeline P&L** con profitto netto reale.
 
 ```bash
 cp .env.example .env                  # POSTGRES_PASSWORD (+ PUBLIC_MEDIA_BASE_URL in prod)
-cp backend/.env.example backend/.env  # proxy IPRoyal + Telegram (facoltativi)
+cp backend/.env.example backend/.env  # Telegram + ritmo scraping (facoltativi)
 docker compose up -d                  # Postgres + backend (Sniper attivo)
 docker compose logs -f backend        # segui la raccolta
 
@@ -61,4 +61,5 @@ API su `http://localhost:8000` (`/docs`). Dettagli, config e deploy →
 | [docs/API.md](docs/API.md) | Endpoint REST e script operativi |
 | [docs/VISIONE-IPHONE.md](docs/VISIONE-IPHONE.md) | Definizione di "fatto" per il verticale iPhone: schermate, analitiche, funzionalità |
 | [docs/VISIONE-AUTO.md](docs/VISIONE-AUTO.md) | Idem per il verticale auto: perché non è "l'iPhone con altri nomi" e cosa manca |
+| [docs/RELEASE.md](docs/RELEASE.md) | **Versione release v1**: cosa deve fare il programma per il business (riparazione iPhone) e quanto manca |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Cosa manca / da implementare (backlog prioritizzato) |

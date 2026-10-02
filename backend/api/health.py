@@ -18,3 +18,12 @@ async def scraper_health() -> dict:
     Utile per accorgersi se la raccolta si è bloccata (status 'down').
     """
     return get_health()
+
+
+@router.get("/data-quality")
+async def data_quality(category: str = "smartphone") -> dict:
+    """Qualità del dato: copertura vs Subito, completezza dei campi, raccolta
+    delle ultime 24h. Dice quanto fidarsi delle metriche."""
+    from backend.services.data_quality import get_data_quality  # noqa: PLC0415
+
+    return get_data_quality(category)

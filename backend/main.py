@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -14,7 +15,18 @@ from backend.api.health import router as health_router
 from backend.api.scrape import router as scrape_router
 from backend.api.settings import router as settings_router
 from backend.core.config import settings
+from backend.core.migrations import apply_pending
 from backend.core.scheduler import create_scheduler
+
+# Log applicativi visibili in `docker compose logs backend` (giri di raccolta,
+# blocchi, buchi, migrazioni). Senza, si vedevano solo le righe di uvicorn.
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+# httpx logga ogni singola richiesta (immagini comprese): troppo rumore.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +43,14 @@ CORS_ORIGINS = [
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start the background scheduler with the app and stop it on shutdown."""
+    # Schema allineato PRIMA che lo scheduler lavori (e che il codice controlli
+    # quali colonne esistono). Un errore qui non impedisce l'avvio.
+    try:
+        applied = await asyncio.to_thread(apply_pending)
+        if applied:
+            logger.info("Migrazioni applicate all'avvio: %s", applied)
+    except Exception:
+        logger.exception("Migration runner fallito: schema forse non aggiornato")
     scheduler = create_scheduler()
     scheduler.start()
     app.state.scheduler = scheduler

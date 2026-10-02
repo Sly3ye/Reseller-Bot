@@ -1,7 +1,7 @@
 # Reseller Bot self-hosted — Postgres + backend (FastAPI/scheduler/scraper).
 # Gira identico in locale (per provare) e sul VPS Hetzner (produzione).
 #
-#   cp .env.example .env        # imposta POSTGRES_PASSWORD, proxy, Telegram
+#   cp .env.example .env        # imposta POSTGRES_PASSWORD, Telegram
 #   docker compose up -d
 #
 # Il frontend (Next.js) si lancia a parte (npm run dev, o Vercel) e punta a
@@ -39,7 +39,7 @@ services:
       db:
         condition: service_healthy
     env_file:
-      - backend/.env        # proxy IPRoyal + Telegram (facoltativi)
+      - backend/.env        # Telegram + ritmo scraping (facoltativi)
     environment:
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/reseller
       MEDIA_ROOT: /data/media

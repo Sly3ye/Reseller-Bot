@@ -7,6 +7,13 @@ Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 > modelli, denominazioni e parametri — a livello di gestione dati è più
 > complesso e viene affrontato dopo aver consolidato il tech.
 >
+> 🧭 **Principio (dal 2026-10-02): niente servizi a pagamento.** Il proxy
+> residenziale IPRoyal è dismesso (crediti finiti, nessun rinnovo). Si scrapa
+> in connessione diretta a un ritmo lento, restando sotto la soglia di blocco
+> invece di aggirarla. Obiettivo di sufficienza: **raccogliere più annunci al
+> giorno di quanti ne vengano pubblicati** nelle categorie seguite; oltre quello
+> la velocità non conta. Ogni nuova dipendenza deve essere gratuita/self-hosted.
+>
 > 🎯 **Traguardo iPhone** (schermate, analitiche, funzionalità da completare
 > prima di passare alle auto): vedi [VISIONE-IPHONE.md](VISIONE-IPHONE.md).
 
@@ -19,7 +26,7 @@ Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 | **Fase 1** | Tassonomia canonica & scrematura (varianti, condizione) | ✅ |
 | **Fase 2** | Valutazione predittiva (valore equo, posizione, affare-vs-truffa) | ✅ |
 | **Fase 3 — robustezza** | Salute scraper, alert down, rotazione impersonation | ✅ |
-| **Fase 3 — scala** | Generazione sistematica dei target: gamma iPhone completa ✅ (`scripts/seed_iphone_targets.py`, 31 modelli), gamma auto 🔜 | 🟡 |
+| **Fase 3 — scala** | Generazione sistematica dei target: gamma iPhone completa ✅ (`scripts/seed_iphone_targets.py`, 39 modelli fino alla gen 18) + ricerca ampia che copre anche i modelli senza target ✅, gamma auto 🔜 | 🟡 |
 | **Fase 4** | Profili venditore, stagionalità, CV foto, multi-piattaforma | 🔜 |
 | **Fase 5** | Ops: automations reali ✅, deploy VPS 🔜, test, migration runner | 🟡 (in corso) |
 
@@ -163,6 +170,39 @@ range accanto ai filtri esistenti, validi per entrambe le categorie.
 `sellerTypeLabel(type, category)` in `flipradar-data.ts`: "concessionario" solo
 per le auto, "negozio" per il tech. Corretto anche nel messaggio Telegram.
 
+### 12. ✅ Scraping senza proxy, a ritmo controllato — FATTO (2026-10-02)
+Pacer globale, stop e cooldown crescente su 403/429, paginazione fino a
+ricongiungersi, misura dei buchi (`scrape_runs.gaps`), sonda del rate limit
+(`scripts/probe_rate_limit.py`). Vedi [ARCHITETTURA.md](ARCHITETTURA.md#ritmo-da-un-solo-ip-niente-proxy).
+
+### 13. ✅ Copertura totale del tech — FATTO (2026-10-02)
+Ricerca ampia "iphone" al posto delle 36 query per target; ogni annuncio va al
+target del SUO modello (prima: della query che l'aveva trovato → statistiche
+per modello mescolate); inventario notturno per fasce di prezzo al posto del
+GC tech; recupero iniziale con `scripts/deep_sweep.py`; correzione storica con
+`scripts/reassign_tech_targets.py`. Resolver: refusi ("I phone", "Iphon"),
+linea Air unificata (`iphone-air`), target gen 18.
+
+### 14. ✅ Data di pubblicazione reale (`published_at`) — FATTO (2026-10-02)
+Migrazione 19. Età e tempo di vendita partono dalla pubblicazione su Subito,
+non da quando l'abbiamo visto (che per un annuncio da backfill arriva giorni
+dopo). Le righe vecchie la ricevono quando l'inventario le rivede.
+
+---
+
+## Gestione del dato (2026-10-02) — ✅ tutte e 7 FATTE
+
+Dettagli in [DATA-INTELLIGENCE.md](DATA-INTELLIGENCE.md#time-to-sale--liquidità-c3).
+Testate in `scripts/test_variants.py`, `test_republish.py`, `test_survival.py`.
+
+1. ✅ **Statistiche per modello, non per target.** Market Intelligence, venduti e tempi di vendita raggruppano per `target_id`: un iPhone senza target (es. un modello nuovo prima del seed) non entra nelle statistiche. Usare la chiave modello del resolver (`iphone_model_key`) e lasciare ai target solo il ruolo di "cosa mi interessa per gli alert".
+2. ✅ **Ripubblicazioni senza foto.** L'anti-ripubblicazione usa il pHash della prima foto, ma le righe dal backfill/inventario non hanno immagini: un annuncio cancellato e ripubblicato risulterebbe un "venduto" falso + un nuovo annuncio, falsando time-to-sale e sell-through. Euristica senza foto: stesso venditore + stessa variante + prezzo simile entro pochi giorni.
+3. ✅ **Tempo di vendita con i "censurati".** Oggi si misura solo sugli annunci spariti: quelli che restano online a lungo non contano e il tempo medio risulta ottimista. Stima di sopravvivenza (Kaplan–Meier) che usa anche gli attivi come "non ancora venduti a X giorni".
+4. ✅ **Storico prezzi completo.** Oggi si salvano solo i ribassi; con l'inventario notturno si possono registrare anche i rialzi e uno snapshot giornaliero del prezzo per annuncio.
+5. ✅ **Cruscotto qualità del dato.** % righe con memoria/colore/batteria estratti, % senza target, accessori scartati, copertura vs `count_all` di Subito, buchi e blocchi per giorno.
+6. ✅ **Migration runner.** Le migrazioni manuali sono ora 19 e vanno applicate su due macchine: tabella `schema_migrations` + applicazione all'avvio.
+7. ✅ **Venduto vs ritirato/scaduto.** La sparizione non distingue vendita e ritiro; segnali utili: ribassi prima della sparizione, età, scadenza (`dates.expiration`).
+
 ---
 
 ## In discussione
@@ -186,7 +226,7 @@ fascia condizione sui venduti) fatto con metodo "semplice", senza ML.
 - ✅ **NLP storage**: i GB erano estratti solo dal ~30% dei titoli → ora l'AI
   locale (punto 3) li recupera dalla descrizione e ri-risolve la variante.
   Regex ancora migliorabili, ma il buco è coperto.
-- 🔴 **Colore iPhone**: nuovo campo NLP, necessario per i filtri (punto 5).
+- ✅ **Colore iPhone**: campo NLP `color`, usato dai filtri (punto 5).
 - ✅ **Valore equo dai venduti** (punto 1): `_sold_variant_refs` alimenta la
   valutazione con la mediana di realizzo per variante (≥5 venduti), fallback
   listati. Il `fastSalePrice` resta sui listati di proposito (positioning vs
@@ -194,7 +234,7 @@ fascia condizione sui venduti) fatto con metodo "semplice", senza ML.
 - ✅ **Automations panel reale**: i controlli sono collegati allo scheduler
   (`/api/automations`): avvio immediato, pausa/ripresa, cambio cadenza, stato e
   prossima esecuzione per ogni job.
-- ⚪ **Migration runner** versionato per aggiornamenti incrementali dello schema.
+- ✅ **Migration runner**: `backend/core/migrations.py`, all'avvio del backend.
 - 🟡 **Verticale auto**: catalogo modelli×generazioni completo, denominazioni,
   parametri — rimandato (più complesso del tech).
 

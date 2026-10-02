@@ -104,6 +104,7 @@ create table if not exists public.live_opportunities_auto (
   image_urls     jsonb not null default '[]'::jsonb,
   status         public.opportunity_status not null default 'nuovo',
   found_at       timestamptz not null default now(),
+  published_at   timestamptz,          -- pubblicazione su Subito (migrazione 19)
   updated_at     timestamptz not null default now(),
   image_hash     text,
   features       jsonb,
@@ -141,6 +142,7 @@ create table if not exists public.live_opportunities_tech (
   image_urls     jsonb not null default '[]'::jsonb,
   status         public.opportunity_status not null default 'nuovo',
   found_at       timestamptz not null default now(),
+  published_at   timestamptz,          -- pubblicazione su Subito (migrazione 19)
   updated_at     timestamptz not null default now(),
   image_hash     text,
   features       jsonb,
@@ -186,6 +188,8 @@ create table if not exists public.scrape_runs (
   failed     integer,
   scraped    integer,
   new_count  integer,
+  requests   integer,   -- chiamate a Subito nel giro (migrazione 18)
+  gaps       integer,   -- target non ricongiunti = annunci persi (migrazione 18)
   ran_at     timestamptz not null default now()
 );
 create index if not exists idx_scrape_runs_cat on public.scrape_runs (category, ran_at desc);

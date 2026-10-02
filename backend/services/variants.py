@@ -70,12 +70,63 @@ def _slug(text: str) -> str:
 
 # ------------------------------------------------------------------ tech
 
-# iPhone: numero (13..29) + suffisso opzionale. "16e" ha la e attaccata.
-# "Air" è la linea sottile introdotta con la gen 17 (al posto del Plus): senza
-# di essa un "17 Air" cadrebbe nel pool del "17" base, che vale ~200€ di più.
+# iPhone: numero (6..29, con la "s" dei 6s/5s) + suffisso opzionale. "16e" ha
+# la e attaccata. "Air" è la linea sottile introdotta con la gen 17 (al posto
+# del Plus): senza, un "17 Air" cadrebbe nel pool del "17" base (~200€ in più).
+# Il \b finale evita che "iphone 128gb" diventi un "iPhone 12".
+# La lettera dopo il numero (6s, 5c, 16e) è un gruppo a sé. Attaccata vale
+# sempre; staccata solo la "e" e solo se dopo c'è fine titolo, un numero o
+# punteggiatura: "iPhone 16 e 128GB" è un 16e (si scrive spesso così), mentre
+# in "iPhone 12 e cover" / "iPhone 16 e custodia" la "e" è una congiunzione.
 _IPHONE_RE = re.compile(
-    r"iphone\s*(\d{2})\s*(pro\s*max|pro|plus|mini|air|e)?\b", re.IGNORECASE
+    r"iphone\s*(\d{1,2})([sce]|\s+e(?=\s*$|\s*\d|\s*[^\w\s]))?\s*(pro\s*max|pro|plus|mini|air)?\b",
+    re.IGNORECASE,
 )
+# Modelli più vecchi della gen 11 effettivamente esistiti (numero+lettera, suffisso).
+_OLD_IPHONES = frozenset({
+    ("4", ""), ("4s", ""), ("5", ""), ("5c", ""), ("5s", ""),
+    ("6", ""), ("6", "plus"), ("6s", ""), ("6s", "plus"),
+    ("7", ""), ("7", "plus"), ("8", ""), ("8", "plus"),
+})
+# Generazione più alta accettata: alzala quando esce la successiva (oltre,
+# "iPhone 27 Pro Max" è un refuso, non un modello).
+MAX_IPHONE_GEN = 19
+
+
+def _is_real_iphone(num: str, suffix: str) -> bool:
+    """La combinazione (numero[lettera], suffisso) è un modello Apple esistito?
+    Dalla gen 11: base/Pro/Pro Max sempre; mini solo 12-13; Plus solo 14-16;
+    "e" (modello economico) dalla 16."""
+    if num[-1:].isalpha():
+        gen, letter = int(num[:-1]), num[-1]
+    else:
+        gen, letter = int(num), ""
+    if gen < 11:
+        return (num, suffix) in _OLD_IPHONES
+    if gen > MAX_IPHONE_GEN or letter in ("s", "c"):
+        return False
+    if letter == "e":
+        return gen >= 16 and suffix == ""
+    if suffix in ("", "pro", "promax"):
+        return True
+    if suffix == "mini":
+        return gen in (12, 13)
+    if suffix == "plus":
+        return 14 <= gen <= 16
+    return False
+# Modelli a lettere (2017-2022): X, XR, XS, XS Max, SE. Nei titoli reali l'XS
+# Max è spesso "XS Pro Max" (che non esiste) e il primo SE "iPhone 5 SE".
+_IPHONE_LETTER_RE = re.compile(
+    r"iphone\s*(?:5\s*)?(xs\s*(?:pro\s*)?max|xr|xs|x|se)\b", re.IGNORECASE
+)
+_LETTER_MODELS = {
+    "xsmax": ("xs-max", "XS Max"),
+    "xspromax": ("xs-max", "XS Max"),
+    "xr": ("xr", "XR"),
+    "xs": ("xs", "XS"),
+    "x": ("x", "X"),
+    "se": ("se", "SE"),
+}
 
 
 def _storage_label(storage_gb: int | None) -> str:
@@ -84,22 +135,78 @@ def _storage_label(storage_gb: int | None) -> str:
     return "1TB" if storage_gb >= 1024 else f"{storage_gb}GB"
 
 
-def _iphone_variant(title: str, storage_gb: int | None) -> tuple[str, str] | None:
-    match = _IPHONE_RE.search(title or "")
-    if not match:
+# suffix_label è già "attaccato giusto": " Pro Max" (con spazio) oppure "e"
+# (senza spazio, per il 16e). Così il model label si compone senza aggiustare.
+_IPHONE_SUFFIX = {
+    "promax": ("-pro-max", " Pro Max"),
+    "pro": ("-pro", " Pro"),
+    "plus": ("-plus", " Plus"),
+    "mini": ("-mini", " mini"),
+    "air": ("-air", " Air"),
+}
+
+
+# Refusi frequenti nei titoli reali ("I phone 16 pro", "Iphon 13", "Iphome 17").
+_IPHONE_TYPO_RE = re.compile(r"\b(?:i\s?-?\s?phone|iphon|iphome|ipohne|iphne)(?=\b|\d)", re.IGNORECASE)
+# L'Air (2025) si vende come "iPhone Air", senza numero di generazione.
+_IPHONE_AIR_RE = re.compile(r"iphone\s*(?:\d{2}\s*)?air\b", re.IGNORECASE)
+
+
+def normalize_iphone(text: str | None) -> str:
+    """Riporta i refusi a "iphone" (il resto del testo resta com'è)."""
+    return _IPHONE_TYPO_RE.sub("iphone", text or "")
+
+
+def mentions_iphone(title: str | None) -> bool:
+    return "iphone" in normalize_iphone(title).lower()
+
+
+def _iphone_model(title: str) -> tuple[str, str, str] | None:
+    """(numero, suffix_slug, suffix_label) del primo iPhone nel testo.
+
+    L'Air è un modello a sé (``iphone-air``) che lo si scriva "iPhone Air" o
+    "iPhone 17 Air": senza, gli annunci "iPhone Air" non avevano modello. I
+    modelli a lettere tornano come numero vuoto + slug ("", "xs-max", "XS Max").
+    Se nel testo compaiono più modelli vince il primo."""
+    text = normalize_iphone(title)
+    if _IPHONE_AIR_RE.search(text):
+        return "", "air", "Air"
+    numeric = _IPHONE_RE.search(text)
+    letter = _IPHONE_LETTER_RE.search(text)
+    if letter and (numeric is None or letter.start() <= numeric.start()):
+        slug, label = _LETTER_MODELS[letter.group(1).lower().replace(" ", "")]
+        return "", slug, label
+    if numeric is None:
         return None
-    num = match.group(1)
-    raw = (match.group(2) or "").lower().replace(" ", "")
-    # suffix_label è già "attaccato giusto": " Pro Max" (con spazio) oppure "e"
-    # (senza spazio, per il 16e). Così il model label si compone senza aggiustare.
-    suffix_slug, suffix_label = {
-        "promax": ("-pro-max", " Pro Max"),
-        "pro": ("-pro", " Pro"),
-        "plus": ("-plus", " Plus"),
-        "mini": ("-mini", " mini"),
-        "air": ("-air", " Air"),
-        "e": ("e", "e"),                # 16e: attaccato al numero
-    }.get(raw, ("", ""))
+    num = numeric.group(1) + (numeric.group(2) or "").strip().lower()
+    raw = (numeric.group(3) or "").lower().replace(" ", "")
+    if not _is_real_iphone(num, raw):
+        # "iPhone 1 Pro", "iPhone 17 mini", "iPhone 27": refuso o falso, non
+        # un modello. Meglio nessun modello che un modello inventato.
+        return None
+    suffix_slug, suffix_label = _IPHONE_SUFFIX.get(raw, ("", ""))
+    return num, suffix_slug, suffix_label
+
+
+def iphone_model_key(text: str | None) -> str | None:
+    """Chiave di MODELLO senza memoria: "iPhone 13 Pro 256GB" → "iphone-13-pro",
+    "iPhone XS Max" → "iphone-xs-max", "iPhone Air" → "iphone-air".
+
+    Vale sia per un titolo sia per la query di un target, ed è ciò che lega un
+    annuncio trovato da una ricerca ampia al target del suo modello.
+    """
+    model = _iphone_model(text or "")
+    if model is None:
+        return None
+    num, suffix_slug, _ = model
+    return f"iphone-{num}{suffix_slug}"
+
+
+def _iphone_variant(title: str, storage_gb: int | None) -> tuple[str, str] | None:
+    model = _iphone_model(title)
+    if model is None:
+        return None
+    num, suffix_slug, suffix_label = model
 
     storage_slug = str(storage_gb) if storage_gb else "na"
     key = f"iphone-{num}{suffix_slug}-{storage_slug}"

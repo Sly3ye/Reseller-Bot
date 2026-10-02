@@ -3,13 +3,13 @@
 ## Prerequisiti
 - **Docker + Docker Compose** (modo consigliato: Postgres + backend con un comando)
 - Node.js 18+ (solo per il frontend)
-- (Opzionale, consigliato) credenziali proxy residenziale rotante + bot Telegram
+- (Opzionale) bot Telegram. Nessun proxy né servizio a pagamento.
 
 ## 1. Avvio con Docker (consigliato)
 
 ```bash
 cp .env.example .env                  # POSTGRES_PASSWORD (+ PUBLIC_MEDIA_BASE_URL in prod)
-cp backend/.env.example backend/.env  # proxy IPRoyal + Telegram (facoltativi)
+cp backend/.env.example backend/.env  # Telegram + ritmo scraping (facoltativi)
 
 docker compose up -d                  # avvia Postgres + backend
 docker compose logs -f backend        # segui lo Sniper
@@ -66,7 +66,10 @@ in `backend/.env`.
 | `MEDIA_ROOT` | backend | Cartella immagini (default `./media`; Docker `/data/media`) |
 | `PUBLIC_MEDIA_BASE_URL` | backend/root | URL pubblico da cui il browser carica le immagini |
 | `POSTGRES_PASSWORD` | root | Password Postgres in container |
-| `PROXY_HOST/PORT/USER/PASS` | backend | Proxy residenziale per `hades`; se vuoti → diretta |
+| `SCRAPER_MIN_GAP_S` | backend | Pausa minima tra chiamate a `hades` (s); misurala con `scripts/probe_rate_limit.py` |
+| `SCRAPER_MAX_GAP_S` / `SCRAPER_BLOCK_COOLDOWN_S` | backend | Tetto della pausa dopo blocchi / pausa su 403-429 (default 120 / 900) |
+| `SNIPER_TECH_INTERVAL_MIN` / `SNIPER_AUTO_INTERVAL_MIN` | backend | Cadenza giri Sniper in minuti (default 15 / 30) |
+| `PROXY_HOST/PORT/USER/PASS` | backend | Proxy opzionale per `hades`, dismesso: lascia vuoto (= diretta) |
 | `SCRAPER_IMPERSONATE` | backend | Pool impronte curl_cffi, virgola (default `safari,firefox`) |
 | `TELEGRAM_BOT_TOKEN` | backend | Token bot; vuoto → notifiche off |
 | `TELEGRAM_CHAT_ID_TECH/AUTO/OPS` | backend | Chat per verticali e alert di sistema |

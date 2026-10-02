@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))  # scoring importa services.parts / variants (senza DB)
 
 
 def _load(name: str, rel: str):
@@ -66,9 +67,23 @@ def test_scoring():
         seller_type="privato", defects=["schermo-rotto"], urgency=[],
         features=[], battery_pct=None, has_price_drop=False,
     )
-    # Ricambi Apple per fascia (dalle Impostazioni): un Pro Max costa 380, non 300.
-    check("repair_total", ev["repair"]["total"], 380)
-    check("net_margin", ev["repair"]["netMarginEur"], -30.0)
+    # Listini per modello (services/parts.py). Default: aftermarket, cioè lo
+    # schermo Soft OLED del 13 Pro Max (41,30€ nel listino versionato).
+    item = ev["repair"]["items"][0]
+    check("repair_source default", item["source"], "aftermarket")
+    check("repair_total aftermarket", ev["repair"]["total"], item["aftermarket"]["price"])
+    check("net_margin", ev["repair"]["netMarginEur"], round(650.0 - 300.0 - item["aftermarket"]["price"], 2))
+    # Colonna Apple: prezzo meno il credito di reso della parte vecchia.
+    import backend.services.parts as parts
+    parts.CONFIG["repair_source"] = "apple"
+    ev_apple = scoring.evaluate_opportunity(
+        category="smartphone", title="iPhone 13 Pro Max", asking=300.0,
+        market_avg=650.0, margin_pct=116.0, found_at=None, seller_type="privato",
+        defects=["schermo-rotto"], urgency=[], features=[], battery_pct=None, has_price_drop=False,
+    )
+    a = ev_apple["repair"]["items"][0]["apple"]
+    check("apple netto = prezzo - credito", ev_apple["repair"]["total"], round(a["price"] - a["credit"], 2))
+    parts.CONFIG["repair_source"] = "aftermarket"
     check("offer<asking", ev["suggestedOffer"] is not None and ev["suggestedOffer"] < 300, True)
     ev2 = scoring.evaluate_opportunity(
         category="automobile", title="Golf GTI", asking=17500.0, market_avg=21000.0,

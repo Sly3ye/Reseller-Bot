@@ -24,12 +24,13 @@ from urllib.parse import urlparse
 
 from backend.core.database import Client
 
-from backend.core.database import get_db
+from backend.core.database import get_db, has_column
 from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import evaluate_opportunity, risk_assessment
+from backend.services.survival import removal_kind, survival_summary
 from backend.services.valuation import evaluate_value
-from backend.services.variants import is_healthy
+from backend.services.variants import iphone_model_key, is_healthy
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,20 @@ _AUTO_ONLY_COLUMNS = frozenset({"year", "km", "transmission", "fuel"})
 def _cols(table: str, *names: str) -> str:
     """Lista di colonne per una select, senza quelle assenti in quel verticale."""
     drop = _TECH_ONLY_COLUMNS if table.endswith("_auto") else _AUTO_ONLY_COLUMNS
-    return ", ".join(n for n in names if n not in drop)
+    cols = [n for n in names if n not in drop]
+    # Data di pubblicazione su Subito (migrazione 19) accanto a found_at: è la
+    # vera nascita dell'annuncio (vedi _born). Solo se la colonna esiste già.
+    if "found_at" in cols and has_column(table, "published_at"):
+        cols.append("published_at")
+    return ", ".join(cols)
+
+
+def _born(row: dict[str, Any]) -> datetime | None:
+    """Quando l'annuncio è uscito: published_at (da Subito) se c'è, altrimenti
+    found_at (quando l'abbiamo visto). Per un annuncio recuperato da un
+    backfill found_at arriva giorni dopo e sottostimerebbe età e tempo di
+    vendita."""
+    return _parse_ts(row.get("published_at") or row.get("found_at"))
 
 # Giorni di permanenza in stock assunti quando i venduti non bastano ancora a
 # misurarli davvero (serve al costo di magazzino nel tetto d'acquisto). Un mese
@@ -102,7 +116,9 @@ def _products_for_category(db: Client, category: str) -> dict[str, str]:
         .eq("category", category)
         .execute()
     )
-    return {row["id"]: row["model"] for row in rows.data or []}
+    if category == "automobile":
+        return {row["id"]: row["model"] for row in rows.data or []}
+    return {row["id"]: _canonical_model_name(row["model"]) for row in rows.data or []}
 
 
 def _targets_for_category(db: Client, category: str) -> dict[str, str]:
@@ -113,7 +129,9 @@ def _targets_for_category(db: Client, category: str) -> dict[str, str]:
         .eq("category", category)
         .execute()
     )
-    return {row["id"]: row["query"] for row in rows.data or []}
+    if category == "automobile":
+        return {row["id"]: row["query"] for row in rows.data or []}
+    return {row["id"]: _canonical_model_name(row["query"]) for row in rows.data or []}
 
 
 def _market_avgs(
@@ -156,7 +174,7 @@ def _market_avgs(
 def _latest_price_history(
     db: Client, listing_ids: list[str]
 ) -> dict[str, dict[str, Any]]:
-    """listing_id → ultimo record di calo (old_price/new_price/changed_at)."""
+    """listing_id → ultimo CALO di prezzo (old_price/new_price/changed_at)."""
     if not listing_ids:
         return {}
     rows = (
@@ -168,6 +186,10 @@ def _latest_price_history(
     )
     latest: dict[str, dict[str, Any]] = {}
     for row in rows.data or []:
+        # Lo storico contiene anche i rialzi: qui servono solo i cali.
+        old, new = _to_float(row.get("old_price")), _to_float(row.get("new_price"))
+        if old is None or new is None or new >= old:
+            continue
         # order desc → prima occorrenza per listing_id è la più recente.
         latest.setdefault(row["listing_id"], row)
     return latest
@@ -206,19 +228,24 @@ def _price_watch(
         # changed_at asc → recs[0] = più vecchio, recs[-1] = più recente.
         first = _to_float(recs[0].get("old_price"))
         current = _to_float(recs[-1].get("new_price"))
-        drops = 0
+        drops = rises = 0
+        last_drop: dict[str, Any] | None = None
         for r in recs:
             old = _to_float(r.get("old_price"))
             new = _to_float(r.get("new_price"))
             if old is not None and new is not None and new < old:
                 drops += 1
+                last_drop = r
+            elif old is not None and new is not None and new > old:
+                rises += 1
         total_eur = total_pct = None
         if first is not None and current is not None and first > current:
             total_eur = round(first - current, 2)
             total_pct = round(total_eur / first * 100, 1) if first > 0 else None
         if drops <= 0 and total_eur is None:
             continue
-        last_at = recs[-1].get("changed_at")
+        # Lo storico ha anche i rialzi: "ultimo ribasso" è l'ultimo CALO.
+        last_at = (last_drop or recs[-1]).get("changed_at")
         last_dt = _parse_ts(last_at)
         days_since = (
             max(0, (datetime.now(timezone.utc) - last_dt).days) if last_dt else None
@@ -234,6 +261,8 @@ def _price_watch(
             "firstPrice": first,
             "currentPrice": current,
             "dropCount": drops,
+            # Rialzi dopo la pubblicazione: il venditore non ha fretta.
+            "riseCount": rises,
             "totalDropEur": total_eur,
             "totalDropPct": total_pct,
             "lastDropAt": last_at,
@@ -268,8 +297,8 @@ def _seller_profiles(
     try:
         found = (
             db.table(table)
-            .select("seller_id, status, asking_price, original_price, "
-                    "found_at, updated_at, seller_type")
+            .select(_cols(table, "seller_id", "status", "asking_price", "original_price",
+                          "found_at", "updated_at", "seller_type"))
             .in_("seller_id", seller_ids)
             .limit(20000)
             .execute()
@@ -292,7 +321,7 @@ def _seller_profiles(
             d["active"] += 1
         elif status in _SOLD_STATUSES:
             d["sold"] += 1
-            found_ts = _parse_ts(row.get("found_at"))
+            found_ts = _born(row)
             removed_ts = _parse_ts(row.get("updated_at"))
             if found_ts and removed_ts:
                 days = (removed_ts - found_ts).total_seconds() / 86400
@@ -397,7 +426,7 @@ def _shape_opportunity(
     elif original is not None and asking is not None and original > asking:
         drop = {"oldPrice": original, "newPrice": asking, "changedAt": None}
 
-    found = _parse_ts(row.get("found_at"))
+    found = _born(row)
     days_online = (
         max(0, (datetime.now(timezone.utc) - found).days) if found else None
     )
@@ -415,6 +444,7 @@ def _shape_opportunity(
         "description": row.get("description"),
         "images": row.get("image_urls") or [],
         "foundAt": row.get("found_at"),
+        "publishedAt": row.get("published_at"),
         "daysOnline": days_online,
         "source": "Subito",
         "status": row.get("status"),
@@ -533,7 +563,8 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[floa
     try:
         rows = (
             db.table(table)
-            .select("variant_key, asking_price, condition_tier, title, found_at, updated_at")
+            .select(_cols(table, "variant_key", "asking_price", "condition_tier", "title",
+                          "found_at", "updated_at"))
             .in_("status", list(_SOLD_STATUSES))
             .limit(20000)
             .execute()
@@ -553,7 +584,7 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[floa
             continue
         if not is_healthy(tier) or _is_accessory_listing(row.get("title")):
             continue
-        days = _days_between(row.get("found_at"), row.get("updated_at"))
+        days = _days_between(row.get("published_at") or row.get("found_at"), row.get("updated_at"))
         in_window = days is not None and days <= _SALE_WINDOW_DAYS
         vk_buckets = buckets.setdefault(vk, {})
         for key in ("__all__", tier):
@@ -588,9 +619,59 @@ def _model_label(model_key: str) -> str:
     """iphone-13-pro-max → 'iPhone 13 Pro Max'; iphone-16e → 'iPhone 16e'."""
     parts = model_key.split("-")
     if parts and parts[0] == "iphone":
-        rest = " ".join(p if p[:1].isdigit() else p.capitalize() for p in parts[1:])
+        def word(p: str) -> str:
+            if p[:1].isdigit():
+                return p                      # 13, 16e, 6s
+            if p in ("x", "xr", "xs", "se"):
+                return p.upper()              # X, XR, XS, SE
+            return "mini" if p == "mini" else p.capitalize()
+        rest = " ".join(word(p) for p in parts[1:])
         return f"iPhone {rest}".strip()
     return model_key.replace("-", " ").title()
+
+
+def _row_model(row: dict[str, Any], targets: dict[str, str]) -> str | None:
+    """Modello della riga per le statistiche. Tech: dalla variante canonica
+    (cioè dal TITOLO dell'annuncio), così entrano anche gli iPhone senza target
+    e nessuno finisce sotto il modello della query che l'ha trovato. Auto (o
+    variante non riconosciuta): dal target, come prima."""
+    mk = _model_key(row.get("variant_key"))
+    if mk and mk.startswith("iphone-"):
+        label = _model_label(mk)
+        # Andata e ritorno: la chiave vale solo se il resolver, riletto il nome,
+        # ridà la stessa chiave. Scarta le varianti "di ripiego" ricavate dal
+        # titolo (iphone-128gb-nero-...) e i modelli inesistenti salvati da
+        # versioni precedenti del resolver (iphone-12e, iphone-17-mini).
+        if iphone_model_key(label) == mk:
+            return label
+    return targets.get(row.get("target_id"))
+
+
+def _canonical_model_name(name: str | None) -> str | None:
+    """Nome di target/prodotto allineato all'etichetta di _row_model
+    ("iPhone 17 Air" → "iPhone Air"), così le chiavi per modello combaciano."""
+    key = iphone_model_key(name)
+    return _model_label(key) if key else name
+
+
+_PAGE_ROWS = 5000
+
+
+def _select_all(make_query: Any) -> list[dict[str, Any]]:
+    """Tutte le righe di una select, a pagine (ordinate per id: offset stabile).
+    Le statistiche devono vedere l'intero stock, non un tetto arbitrario: con la
+    copertura totale gli attivi tech sono decine di migliaia."""
+    rows: list[dict[str, Any]] = []
+    start = 0
+    while True:
+        page = (
+            make_query().order("id").range(start, start + _PAGE_ROWS - 1).execute().data
+            or []
+        )
+        rows.extend(page)
+        if len(page) < _PAGE_ROWS:
+            return rows
+        start += _PAGE_ROWS
 
 
 def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
@@ -662,8 +743,12 @@ def _build_enrich_ctx(
     ctx["avg_by_model"] = avg_by_model
     # Giorni medi di vendita per modello (dai venduti) → ROI per giorno di capitale.
     sold_by_model, _overall = _sold_stats(db, table, ctx["targets"])
+    # Per ROI e costo di magazzino conta il tempo ONESTO (Kaplan–Meier); se meno
+    # di metà si è venduta in finestra si ripiega sulla media dei venduti.
     ctx["sold_days"] = {
-        m: s["avgDaysToSell"] for m, s in sold_by_model.items() if s.get("avgDaysToSell")
+        m: s.get("daysToSellKM") or s["avgDaysToSell"]
+        for m, s in sold_by_model.items()
+        if s.get("daysToSellKM") or s.get("avgDaysToSell")
     }
     # Deprezzamento mensile per variante (curva di deprezzamento) → costo di
     # magazzino nel tetto d'acquisto. Solo tech: le varianti auto sono per
@@ -701,7 +786,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     """Arricchisce una riga con margine, variante, valutazione, Deal Score e
     assistente di trattativa (il cuore BI, per singola opportunità)."""
     target_id = row.get("target_id")
-    model = ctx["targets"].get(target_id)
+    model = _row_model(row, ctx["targets"])
     variant_key = row.get("variant_key")
     pool = ctx["variant_pools"].get(variant_key) if variant_key else None
     market_avg = round(statistics.fmean(pool), 2) if pool and len(pool) >= 3 else None
@@ -804,7 +889,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             asking=shaped["askingPrice"],
             market_avg=valuation["fairValue"] or market_avg,
             margin_pct=score_margin,
-            found_at=row.get("found_at"),
+            found_at=row.get("published_at") or row.get("found_at"),
             seller_type=row.get("seller_type"),
             defects=shaped["defects"],
             urgency=shaped["urgencyFlags"],
@@ -852,6 +937,55 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     return shaped
 
 
+# Feed arricchito in cache: valutare TUTTO lo stock attivo (decine di migliaia
+# di annunci con la copertura totale) costa secondi, e i dati cambiano a ritmo
+# di giri di raccolta. Il triage invece si rilegge fresco a ogni richiesta.
+_FEED_TTL_S = 90
+_feed_cache: dict[str, tuple[float, list[tuple[dict[str, Any], dict[str, Any]]]]] = {}
+
+
+def invalidate_feed_cache() -> None:
+    _feed_cache.clear()
+
+
+def _enriched_feed(
+    db: Client, table: str, target_cat: str
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """(riga, opportunità arricchita) per ogni annuncio attivo, con cache."""
+    import time  # noqa: PLC0415
+
+    hit = _feed_cache.get(table)
+    if hit and time.monotonic() - hit[0] < _FEED_TTL_S:
+        return hit[1]
+    rows = _select_all(
+        lambda: db.table(table).select("*").in_("status", list(_ACTIVE_STATUSES))
+    )
+    # Accessori e ricambi ("Cover per iPhone 13", "Display iPhone 15"): non sono
+    # telefoni e col valore equo della variante sembrerebbero affari clamorosi.
+    # Scartati anche QUI, non solo allo scraping, così il filtro vale subito su
+    # tutto lo storico già raccolto senza doverlo cancellare.
+    if not table.endswith("_auto"):
+        rows = [r for r in rows if not _is_accessory_listing(r.get("title"))]
+    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    if rows:
+        ctx = _build_enrich_ctx(db, target_cat, table, rows)
+        pairs = [(r, _enrich_opportunity(r, ctx)) for r in rows]
+    _feed_cache[table] = (time.monotonic(), pairs)
+    return pairs
+
+
+def _current_triage(db: Client, table: str) -> dict[str, str]:
+    """id → triage attuale (pochi record: solo salvati/scartati)."""
+    try:
+        rows = (
+            db.table(table).select("id, triage")
+            .in_("triage", ["salvato", "scartato"]).execute().data or []
+        )
+    except Exception:
+        return {}
+    return {r["id"]: r["triage"] for r in rows}
+
+
 def list_opportunities(
     category: str,
     *,
@@ -886,38 +1020,32 @@ def list_opportunities(
 
     facets = _opportunity_facets(db, table)
 
-    query = db.table(table).select("*").in_("status", list(_ACTIVE_STATUSES))
-    if storage is not None and not table.endswith("_auto"):
-        query = query.eq("storage_gb", storage)
-    if color:
-        query = query.eq("color", color)
-    if condition:
-        query = query.eq("condition_tier", condition)
-    if min_price is not None:
-        query = query.gte("asking_price", min_price)
-    if max_price is not None:
-        query = query.lte("asking_price", max_price)
-    rows = query.execute().data or []
+    pairs = _enriched_feed(db, table, target_cat)
+    triage = _current_triage(db, table)
 
-    # Accessori e ricambi ("Cover per iPhone 13", "Display iPhone 15"): non sono
-    # telefoni e col valore equo della variante sembrerebbero affari clamorosi.
-    # Scartati anche QUI, non solo allo scraping, così il filtro vale subito su
-    # tutto lo storico già raccolto senza doverlo cancellare.
-    if not table.endswith("_auto"):
-        rows = [r for r in rows if not _is_accessory_listing(r.get("title"))]
+    def keep(row: dict[str, Any]) -> bool:
+        price = _to_float(row.get("asking_price"))
+        if storage is not None and not table.endswith("_auto") and row.get("storage_gb") != storage:
+            return False
+        if color and row.get("color") != color:
+            return False
+        if condition and row.get("condition_tier") != condition:
+            return False
+        if min_price is not None and (price is None or price < min_price):
+            return False
+        if max_price is not None and (price is None or price > max_price):
+            return False
+        # Triage utente (ortogonale allo status): salvati / nascondi gli scartati.
+        state = triage.get(row["id"])
+        if view == "salvati":
+            return state == "salvato"
+        if view != "tutti":  # "attivi" (default): nasconde gli scartati
+            return state != "scartato"
+        return True
 
-    # Triage utente (ortogonale allo status): salvati / nascondi gli scartati.
-    if view == "salvati":
-        rows = [r for r in rows if r.get("triage") == "salvato"]
-    elif view != "tutti":  # "attivi" (default): nasconde gli scartati
-        rows = [r for r in rows if r.get("triage") != "scartato"]
-
-    if not rows:
+    items = [{**item, "triage": triage.get(row["id"])} for row, item in pairs if keep(row)]
+    if not items:
         return {"items": [], "total": 0, "facets": facets}
-
-    ctx = _build_enrich_ctx(db, target_cat, table, rows)
-
-    items = [_enrich_opportunity(r, ctx) for r in rows]
 
     # Filtri applicati in Python (campi derivati / ambigui via DB).
     if model:
@@ -1007,7 +1135,27 @@ def _price_bands(points: list[tuple[float, float]]) -> list[dict[str, Any]]:
     return bands
 
 
+_SOLD_STATS_TTL_S = 300
+_sold_stats_cache: dict[str, tuple[float, Any]] = {}
+
+
 def _sold_stats(
+    db: Client, table: str, targets: dict[str, str]
+) -> tuple[dict[str, dict[str, Any]], float | None]:
+    """Versione con cache (5'): scorre tutto lo stock attivo+sparito, e la
+    chiamano sia la dashboard sia gli alert. I dati cambiano a ritmo di giri
+    di raccolta, non di richieste."""
+    import time  # noqa: PLC0415
+
+    hit = _sold_stats_cache.get(table)
+    if hit and time.monotonic() - hit[0] < _SOLD_STATS_TTL_S:
+        return hit[1]
+    result = _compute_sold_stats(db, table, targets)
+    _sold_stats_cache[table] = (time.monotonic(), result)
+    return result
+
+
+def _compute_sold_stats(
     db: Client, table: str, targets: dict[str, str]
 ) -> tuple[dict[str, dict[str, Any]], float | None]:
     """Statistiche dai VENDUTI (annunci spariti) — il segnale di vendita reale.
@@ -1018,33 +1166,70 @@ def _sold_stats(
     **prezzo di vendita reale** (mediana/max dei venduti, NON dei listati) e le
     fasce prezzo→giorni. Solo listing sani. Ritorna (per_modello, mediana giorni).
     """
+    cols = ("target_id", "variant_key", "asking_price", "found_at", "updated_at",
+            "condition_tier", "title")
     try:
-        rows = (
-            db.table(table)
-            .select("target_id, asking_price, found_at, updated_at, condition_tier")
+        sold_rows = _select_all(
+            lambda: db.table(table)
+            .select(_cols(table, *cols, "original_price"))
             .in_("status", list(_SOLD_STATUSES))
-            .order("updated_at", desc=True)
-            .limit(5000)
-            .execute()
-        ).data or []
+        )
+        active_rows = _select_all(
+            lambda: db.table(table)
+            .select(_cols(table, *cols))
+            .in_("status", list(_ACTIVE_STATUSES))
+        )
     except Exception:
         return {}, None
 
+    def usable(row: dict[str, Any]) -> bool:
+        return is_healthy(row.get("condition_tier") or "buono") and not _is_accessory_listing(
+            row.get("title")
+        )
+
+    now = datetime.now(timezone.utc)
+    # Gli ATTIVI entrano come "censurati" (non ancora venduti dopo N giorni) e
+    # danno la mediana di mercato per riconoscere i ritirati.
+    observations: dict[str, list[tuple[float, bool]]] = {}
+    active_prices: dict[str, list[float]] = {}
+    for row in active_rows:
+        if not usable(row):
+            continue
+        model = _row_model(row, targets)
+        born = _born(row)
+        if not model or not born:
+            continue
+        observations.setdefault(model, []).append((max(0.0, (now - born).total_seconds() / 86400), False))
+        price = _to_float(row.get("asking_price"))
+        if price and price > 0:
+            active_prices.setdefault(model, []).append(price)
+    market_median = {m: statistics.median(ps) for m, ps in active_prices.items() if len(ps) >= 3}
+
     by_model: dict[str, list[tuple[float, float]]] = {}
+    kinds: dict[str, Counter] = {}
     all_days: list[float] = []
     outflow_7d: dict[str, int] = {}
-    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
-    for row in rows:
-        if not is_healthy(row.get("condition_tier") or "buono"):
+    cutoff_7d = now - timedelta(days=7)
+    for row in sold_rows:
+        if not usable(row):
             continue
-        model = targets.get(row.get("target_id"))
+        model = _row_model(row, targets)
         price = _to_float(row.get("asking_price"))
-        found = _parse_ts(row.get("found_at"))
+        found = _born(row)
         removed = _parse_ts(row.get("updated_at"))
         if not model or price is None or price <= 0 or not found or not removed:
             continue
         days = (removed - found).total_seconds() / 86400
-        if not (0 <= days <= 365):
+        if not (0 <= days <= 400):
+            continue
+        # Non ogni sparizione è una vendita: scaduti e ritirati restano
+        # "censurati" (fino a quel giorno non venduti) e fuori dai prezzi.
+        kind = removal_kind(
+            days, row.get("original_price") is not None, price, market_median.get(model)
+        )
+        kinds.setdefault(model, Counter())[kind] += 1
+        observations.setdefault(model, []).append((days, kind == "venduto"))
+        if kind != "venduto":
             continue
         by_model.setdefault(model, []).append((price, days))
         all_days.append(days)
@@ -1057,8 +1242,17 @@ def _sold_stats(
             continue
         prices = [p for p, _ in pts]
         days = [d for _, d in pts]
+        survival = survival_summary(observations.get(model, []))
         per_model[model] = {
+            # Media dei SOLI venduti: ottimista (chi resta online non conta).
             "avgDaysToSell": round(statistics.fmean(days), 1),
+            # Kaplan–Meier con gli attivi come censurati: il dato onesto. None =
+            # meno di metà degli annunci si è venduta nella finestra osservata.
+            "daysToSellKM": survival["medianDays"],
+            "sold7dPct": survival["sold7dPct"],
+            "sold30dPct": survival["sold30dPct"],
+            "censored": survival["censored"],
+            "removalKinds": dict(kinds.get(model, {})),
             "sampleSold": len(pts),
             "soldMedian": round(statistics.median(prices)),
             "soldMax": round(max(prices)),
@@ -1067,6 +1261,28 @@ def _sold_stats(
         }
     overall = round(statistics.median(all_days), 1) if all_days else None
     return per_model, overall
+
+
+def _active_market_medians(
+    db: Client, table: str, targets: dict[str, str]
+) -> dict[str, float]:
+    """Mediana dei prezzi ATTIVI sani per modello (serve a removal_kind)."""
+    rows = _select_all(
+        lambda: db.table(table)
+        .select("target_id, variant_key, asking_price, condition_tier, title")
+        .in_("status", list(_ACTIVE_STATUSES))
+    )
+    prices: dict[str, list[float]] = {}
+    for row in rows:
+        if not is_healthy(row.get("condition_tier") or "buono"):
+            continue
+        if _is_accessory_listing(row.get("title")):
+            continue
+        model = _row_model(row, targets)
+        price = _to_float(row.get("asking_price"))
+        if model and price and price > 0:
+            prices.setdefault(model, []).append(price)
+    return {m: statistics.median(ps) for m, ps in prices.items() if len(ps) >= 3}
 
 
 def get_time_to_sale(
@@ -1086,23 +1302,25 @@ def get_time_to_sale(
     table = _opportunities_table(category)
     targets = _targets_for_category(db, target_cat)
     try:
-        rows = (
-            db.table(table)
+        rows = _select_all(
+            lambda: db.table(table)
             .select(
                 _cols(
-                    table, "target_id", "color", "storage_gb", "asking_price",
-                    "found_at", "updated_at", "condition_tier", "title",
+                    table, "target_id", "variant_key", "color", "storage_gb",
+                    "asking_price", "original_price", "found_at", "updated_at",
+                    "condition_tier", "title",
                 )
             )
             .in_("status", list(_SOLD_STATUSES))
-            .order("updated_at", desc=True)
-            .limit(8000)
-            .execute()
-            .data
-            or []
         )
     except Exception:
         rows = []
+
+    try:
+        medians = _active_market_medians(db, table, targets)
+    except Exception:
+        medians = {}
+    excluded: Counter = Counter()
 
     records: list[dict[str, Any]] = []
     models: set[str] = set()
@@ -1115,17 +1333,23 @@ def get_time_to_sale(
         # Restano fuori solo accessori e ricambi, che non sono telefoni.
         if _is_accessory_listing(row.get("title")):
             continue
-        model = targets.get(row.get("target_id"))
-        found = _parse_ts(row.get("found_at"))
+        model = _row_model(row, targets)
+        found = _born(row)
         removed = _parse_ts(row.get("updated_at"))
         if not model or not found or not removed:
             continue
         days = (removed - found).total_seconds() / 86400
-        if not (0 <= days <= 365):
+        if not (0 <= days <= 400):
+            continue
+        price = _to_float(row.get("asking_price"))
+        # Solo le sparizioni che sembrano VENDITE: scaduti e ritirati non dicono
+        # a che prezzo né in quanto tempo si vende.
+        kind = removal_kind(days, row.get("original_price") is not None, price, medians.get(model))
+        if kind != "venduto":
+            excluded[kind] += 1
             continue
         color = row.get("color")
         storage = row.get("storage_gb")
-        price = _to_float(row.get("asking_price"))
         tier = row.get("condition_tier") or "buono"
         records.append(
             {
@@ -1151,6 +1375,8 @@ def get_time_to_sale(
         "storages": sorted(storages),
         "conditions": sorted(conditions),
         "sampleSold": len(records),
+        # Spariti esclusi perché probabilmente non venduti (scaduti/ritirati).
+        "excluded": dict(excluded),
     }
 
 
@@ -1163,19 +1389,23 @@ def _resale_suggestions(
     economici → vendita rapida), 'maxSalePrice' = mediana (prezzo pieno).
     """
     try:
-        rows = (
-            db.table(table)
-            .select("target_id, asking_price")
+        rows = _select_all(
+            lambda: db.table(table)
+            .select("target_id, variant_key, asking_price, condition_tier, title")
             .in_("status", list(_ACTIVE_STATUSES))
-            .limit(2000)
-            .execute()
-        ).data or []
+        )
     except Exception:
         return {}
 
     prices_by_model: dict[str, list[float]] = {}
     for row in rows:
-        model = targets.get(row.get("target_id"))
+        # Prezzo di rivendita = cosa chiedono gli altri per un telefono SANO:
+        # rotti e accessori abbasserebbero il p25 a un prezzo irrealistico.
+        if not is_healthy(row.get("condition_tier") or "buono"):
+            continue
+        if _is_accessory_listing(row.get("title")):
+            continue
+        model = _row_model(row, targets)
         price = _to_float(row.get("asking_price"))
         if model and price and price > 0:
             prices_by_model.setdefault(model, []).append(price)
@@ -1202,20 +1432,16 @@ def _model_analytics(
     venditori (distinti + finti privati) e distribuzione dell'analisi AI.
     """
     try:
-        rows = (
-            db.table(table)
+        rows = _select_all(
+            lambda: db.table(table)
             .select(
                 _cols(
-                    table, "target_id", "storage_gb", "condition_tier",
+                    table, "target_id", "variant_key", "storage_gb", "condition_tier",
                     "asking_price", "seller_id", "seller_type", "ai_analysis",
-                    "found_at",
+                    "found_at", "title",
                 )
             )
             .in_("status", list(_ACTIVE_STATUSES))
-            .limit(20000)
-            .execute()
-            .data
-            or []
         )
     except Exception:
         return {}
@@ -1224,7 +1450,9 @@ def _model_analytics(
 
     agg: dict[str, dict[str, Any]] = {}
     for row in rows:
-        model = targets.get(row.get("target_id"))
+        if _is_accessory_listing(row.get("title")):
+            continue
+        model = _row_model(row, targets)
         if not model:
             continue
         d = agg.setdefault(
@@ -1236,7 +1464,7 @@ def _model_analytics(
                        "sospetto": 0, "riparabili": 0},
             },
         )
-        found = _parse_ts(row.get("found_at"))
+        found = _born(row)
         if found and found >= cutoff_7d:
             d["inflow7d"] += 1
         price = _to_float(row.get("asking_price"))
@@ -1427,9 +1655,10 @@ def get_market_intelligence(
             if margin_pot is not None
             else None
         )
-        # ROI per giorno di capitale = margine potenziale ÷ giorni medi di
-        # vendita: il vero ordinamento del "cosa comprare" (resa/tempo).
-        avg_days = sold.get("avgDaysToSell")
+        # ROI per giorno di capitale = margine potenziale ÷ giorni di vendita:
+        # il vero ordinamento del "cosa comprare" (resa/tempo). Giorni ONESTI
+        # (Kaplan–Meier) quando disponibili, altrimenti media dei venduti.
+        avg_days = sold.get("daysToSellKM") or sold.get("avgDaysToSell")
         roi_per_day = (
             round(margin_pot / avg_days, 2)
             if margin_pot is not None and avg_days and avg_days > 0
@@ -1467,6 +1696,10 @@ def get_market_intelligence(
                 "ai": a.get("ai") or {},
                 # C — vendite reali
                 "avgDaysToSell": sold.get("avgDaysToSell"),
+                "daysToSellKM": sold.get("daysToSellKM"),
+                "sold7dPct": sold.get("sold7dPct"),
+                "sold30dPct": sold.get("sold30dPct"),
+                "removalKinds": sold.get("removalKinds") or {},
                 "sampleSold": sold.get("sampleSold"),
                 "soldMedian": sold.get("soldMedian"),
                 "soldMax": sold.get("soldMax"),
@@ -1540,17 +1773,13 @@ def _seller_ranking(
     fretta o ribassa spesso.
     """
     try:
-        rows = (
-            db.table(table)
+        rows = _select_all(
+            lambda: db.table(table)
             .select(
-                "seller_id, seller_type, status, asking_price, original_price, "
-                "found_at, updated_at, title"
+                _cols(table, "seller_id", "seller_type", "status", "asking_price",
+                      "original_price", "found_at", "updated_at", "title")
             )
             .in_("status", list(_ACTIVE_STATUSES) + list(_SOLD_STATUSES))
-            .limit(20000)
-            .execute()
-            .data
-            or []
         )
     except Exception:
         return []
@@ -1570,7 +1799,7 @@ def _seller_ranking(
             d["active"] += 1
         elif status in _SOLD_STATUSES:
             d["sold"] += 1
-            f = _parse_ts(row.get("found_at"))
+            f = _born(row)
             u = _parse_ts(row.get("updated_at"))
             if f and u:
                 days = (u - f).total_seconds() / 86400

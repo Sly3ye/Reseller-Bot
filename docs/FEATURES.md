@@ -4,10 +4,18 @@
 > time-to-sale, pipeline) ha un documento dedicato: [DATA-INTELLIGENCE.md](DATA-INTELLIGENCE.md).
 
 ### 1. Cecchino Live (Sniper)
-Job schedulato che legge la flotta attiva da `target_models`, interroga `hades`
-**ordinando per data** (gli ultimi pubblicati), scarica le immagini solo per i
-nuovi e fa l'upsert su `live_opportunities_*`. Cadenze: **tech ogni 5'**,
-**auto ogni 15'**. Verticali a scope disgiunto.
+Interroga `hades` **ordinando per data** (gli ultimi pubblicati), scarica le
+immagini solo per i nuovi e fa l'upsert su `live_opportunities_*`, paginando
+all'indietro solo fino al giro precedente (nessun annuncio perso tra un giro e
+l'altro). **Tech ogni 15'** con UNA ricerca ampia "iphone" e assegnazione di
+ogni annuncio al target del suo modello; **auto ogni 30'** con una ricerca per
+target. Dettagli: [ARCHITETTURA.md](ARCHITETTURA.md#copertura-del-tech-ricerca-ampia--inventario).
+
+### 1b. Inventario tech notturno
+Giro completo dello stock iPhone attivo per fasce di prezzo (~540 richieste):
+prezzi aggiornati per tutti gli annunci e rilevamento dei venduti (verifica
+pagina per pagina solo dei candidati). Il primo recupero si lancia a mano con
+`scripts/deep_sweep.py`.
 
 ### 2. Motore Notturno (Market Intelligence)
 Job giornaliero (03:00) che ricalcola la media di mercato per target con la
@@ -53,14 +61,19 @@ Dedup persistente su `sent_alerts`. Config assente → no-op.
 
 ### 10. Monitoraggio salute scraper (Fase 3)
 Ogni giro registra esito in `scrape_runs` (ok/degraded/down). Alert Telegram di
-**sistema** su transizione down/ripristino (Akamai/proxy/Subito) → non si
-blocca mai in silenzio. Stato leggibile da `GET /health/scraper`.
+**sistema** su transizione down/ripristino (blocco Akamai/Subito) → non si
+blocca mai in silenzio. Ogni giro registra anche le chiamate fatte
+(`requests`) e i target con annunci persi (`gaps`). Stato leggibile da
+`GET /health/scraper`, ritmo corrente incluso (`pacing`).
 
 ### 11. Deep Backfill
 `scripts/run_backfill.py` ("aspirapolvere"): pagina in profondità l'intero
 risultato di ricerca per popolare lo storico di un target, senza scaricare
 immagini (le riempirà lo Sniper).
 
-### 12. Resilienza anti-ban
-Chiamate a `hades` con retry + backoff esponenziale (`tenacity`) su 403/429/500
-ed errori di rete/proxy, cambiando nodo residenziale a ogni tentativo.
+### 12. Resilienza anti-ban (senza proxy)
+Un solo IP, quindi niente raffiche: pausa minima globale tra le chiamate a
+`hades`, retry con backoff (`tenacity`) solo su errori di rete e 5xx. Su
+403/429 lo scraper si ferma per un cooldown crescente e rallenta, invece di
+insistere (vedi [ARCHITETTURA.md](ARCHITETTURA.md#ritmo-da-un-solo-ip-niente-proxy)).
+Anche il Garbage Collector va a basso parallelismo e si ferma se bloccato.

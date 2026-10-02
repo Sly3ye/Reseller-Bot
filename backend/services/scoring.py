@@ -51,7 +51,9 @@ _REPAIR_LABEL = {
 }
 
 # Difetti tech con sostituzione STANDARD → margine netto ricalcolabile.
-REPAIRABLE_TECH_DEFECTS = ("schermo-rotto", "batteria-esausta")
+# Ricambi con prezzo a listino (services/parts.py): lo schermo, la batteria e
+# la scocca posteriore (solo aftermarket: Apple non la vende self-service).
+REPAIRABLE_TECH_DEFECTS = ("schermo-rotto", "batteria-esausta", "back-rotto")
 
 # ------------------------------------------------ penalità difetti (in €)
 
@@ -110,21 +112,30 @@ def _model_tier(title: str | None) -> str:
 def repair_costs(
     category: str, title: str | None, defects: list[str]
 ) -> list[dict[str, Any]]:
-    """Radar riparazioni (solo tech): [{defect, label, cost}] con SOLO il costo
-    del ricambio Apple originale (no manodopera), per gli interventi standard."""
+    """Radar riparazioni (solo tech): una voce per ricambio con le DUE colonne
+    (originale Apple al netto del credito di reso, aftermarket) e il ``cost``
+    usato nei conti (colonna scelta nelle Impostazioni + manodopera).
+
+    Listini per MODELLO (``services/parts.py``); se il modello non c'è in
+    nessuno dei due si ripiega sulla vecchia tabella Apple per fascia."""
     if category == "automobile":
         return []
-    prices = APPLE_PART_EUR[_model_tier(title)]
+    from backend.services.parts import DEFECT_TO_PART, part_quote  # noqa: PLC0415
+    from backend.services.variants import iphone_model_key  # noqa: PLC0415
+
+    model_key = iphone_model_key(title)
     items: list[dict[str, Any]] = []
     for defect in defects:
-        if defect in REPAIRABLE_TECH_DEFECTS:
-            items.append(
-                {
-                    "defect": defect,
-                    "label": _REPAIR_LABEL[defect],
-                    "cost": prices[defect],
-                }
-            )
+        part = DEFECT_TO_PART.get(defect)
+        if not part:
+            continue
+        quote = part_quote(model_key, part)
+        if quote["cost"] is None:
+            fallback = APPLE_PART_EUR[_model_tier(title)].get(defect)
+            if fallback is None:
+                continue  # niente listino per questo ricambio: nessuna cifra inventata
+            quote = {**quote, "cost": float(fallback), "source": "apple-fascia"}
+        items.append({"defect": defect, **quote})
     return items
 
 

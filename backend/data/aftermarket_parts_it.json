@@ -1,0 +1,2527 @@
+{
+ "source": "https://brotech.it (catalogo pubblico), prezzi IVA inclusa",
+ "fetchedAt": "2026-10-02",
+ "models": {
+  "iphone-11": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 11 FOG GRADE ZY",
+      "priceEur": 19.04,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 INCELL FHD JK",
+      "priceEur": 13.09,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 INCELL GX",
+      "priceEur": 12.53,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 INCELL ZY",
+      "priceEur": 13.73,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 LG PULLED",
+      "priceEur": 54.4,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 SHARP PULLED",
+      "priceEur": 42.49,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 TOSHIBA PULLED",
+      "priceEur": 40.55,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 11 INCELL GX",
+     "priceEur": 12.53,
+     "grade": "incell"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 11 CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 12.18,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 DEJI",
+      "priceEur": 7.84,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 HIGH CAPACITY 3650mAh",
+      "priceEur": 12.55,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 11 DEJI",
+     "priceEur": 7.84,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-11-pro": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 11 PRO HARD OLED DD",
+      "priceEur": 25.24,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO INCELL FHD JK",
+      "priceEur": 13.83,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO INCELL ZY",
+      "priceEur": 14.52,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO OLED GX HARD",
+      "priceEur": 31.78,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO PULLED",
+      "priceEur": 74.2,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 11 PRO HARD OLED DD",
+     "priceEur": 25.24,
+     "grade": "hard oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 12.43,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO DEJI",
+      "priceEur": 10.44,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO HIGH CAPACITY 3400mAh",
+      "priceEur": 13.3,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO NEW QUALITY",
+      "priceEur": 9.96,
+      "grade": "generica"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO NO FLAT",
+      "priceEur": 12.58,
+      "grade": "cella-da-programmare"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 11 PRO DEJI",
+     "priceEur": 10.44,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-11-pro-max": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX GX HARD",
+      "priceEur": 37.44,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX HARD OLED DD",
+      "priceEur": 31.28,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX HARD OLED ITRUCOLOR SERIE BLACK",
+      "priceEur": 46.19,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX INCELL FHD IC RIMOVIBILE REWA",
+      "priceEur": 19.31,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX INCELL FHD JK",
+      "priceEur": 14.09,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX PULLED",
+      "priceEur": 53.12,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX SOFT OLED JK",
+      "priceEur": 35.21,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 11 PRO MAX ZY INCELL",
+      "priceEur": 15.6,
+      "grade": "incell"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 11 PRO MAX SOFT OLED JK",
+     "priceEur": 35.21,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO MAX CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 12.79,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO MAX DEJI",
+      "priceEur": 11.43,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO MAX HIGH CAPACITY 4500mAh",
+      "priceEur": 14.37,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 11 PRO MAX NO FLAT",
+      "priceEur": 3.5,
+      "grade": "cella-da-programmare"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 11 PRO MAX DEJI",
+     "priceEur": 11.43,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "SCOCCA IPHONE 11 PRO MAX GOLD NO LOGO",
+      "priceEur": 16.47,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "SCOCCA IPHONE 11 PRO MAX GOLD NO LOGO",
+     "priceEur": 16.47,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-12": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO HARD OLED DD",
+      "priceEur": 39.77,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO INCELL FHD JK",
+      "priceEur": 15.25,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO INCELL ITRUCOLOR SERIE RED",
+      "priceEur": 16.2,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO INCELL ZY",
+      "priceEur": 14.71,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO OLED GX HARD",
+      "priceEur": 33.75,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO PULLED",
+      "priceEur": 63.77,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO SOFT OLED JK",
+      "priceEur": 61.98,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 /12 PRO SOFT OLED FHD IC RIMOVIBILE REWA",
+      "priceEur": 62.07,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 12 / 12 PRO SOFT OLED JK",
+     "priceEur": 61.98,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 12.18,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO CONFIGURABILE",
+      "priceEur": 11.48,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO DEJI",
+      "priceEur": 9.06,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO HIGH CAPACITY 3250mAh",
+      "priceEur": 12.8,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO NO FLAT",
+      "priceEur": 6.51,
+      "grade": "cella-da-programmare"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 12 / 12 PRO DEJI",
+     "priceEur": 9.06,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-12-mini": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 12 MINI HARD OLED DD",
+      "priceEur": 51.12,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 MINI INCELL",
+      "priceEur": 43.85,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 MINI INCELL FHD JK 120HZ CON FRAME",
+      "priceEur": 20.92,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 MINI INCELL ZY",
+      "priceEur": 20.09,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 MINI OLED GX HARD",
+      "priceEur": 57.61,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 MINI PULLED",
+      "priceEur": 79.41,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 12 MINI HARD OLED DD",
+     "priceEur": 51.12,
+     "grade": "hard oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 12 MINI CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 9.91,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 MINI CONFIGURABILE",
+      "priceEur": 11.35,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 MINI DEJI",
+      "priceEur": 9.08,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 MINI HIGH CAPACITY 2450mAh",
+      "priceEur": 10.74,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 12 MINI DEJI",
+     "priceEur": 9.08,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "SCOCCA IPHONE 12 MINI BLACK COMPLETA PULLED GRADO A",
+      "priceEur": 105.92,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "SCOCCA IPHONE 12 MINI BLACK COMPLETA PULLED GRADO A",
+     "priceEur": 105.92,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-12-pro": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO HARD OLED DD",
+      "priceEur": 39.77,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO INCELL FHD JK",
+      "priceEur": 15.25,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO INCELL ITRUCOLOR SERIE RED",
+      "priceEur": 16.2,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO INCELL ZY",
+      "priceEur": 14.71,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO OLED GX HARD",
+      "priceEur": 33.75,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO PULLED",
+      "priceEur": 63.77,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 / 12 PRO SOFT OLED JK",
+      "priceEur": 61.98,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 /12 PRO SOFT OLED FHD IC RIMOVIBILE REWA",
+      "priceEur": 62.07,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 PRO HARD OLED YK",
+      "priceEur": 40.36,
+      "grade": "hard oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 12 / 12 PRO SOFT OLED JK",
+     "priceEur": 61.98,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 12.18,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO CONFIGURABILE",
+      "priceEur": 11.48,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO DEJI",
+      "priceEur": 9.06,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO HIGH CAPACITY 3250mAh",
+      "priceEur": 12.8,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 / 12 PRO NO FLAT",
+      "priceEur": 6.51,
+      "grade": "cella-da-programmare"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 12 / 12 PRO DEJI",
+     "priceEur": 9.06,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "SCOCCA IPHONE 12 PRO SPACE GRAY COMPLETA PULLED GRADO A",
+      "priceEur": 97.64,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "SCOCCA IPHONE 12 PRO SPACE GRAY COMPLETA PULLED GRADO A",
+     "priceEur": 97.64,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-12-pro-max": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 12 PRO MAX HARD OLED DD",
+      "priceEur": 41.64,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 PRO MAX HARD OLED ITRUCOLOR SERIE BLACK",
+      "priceEur": 36.83,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 PRO MAX INCELL COF ZY",
+      "priceEur": 27.52,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 PRO MAX INCELL FHD JK",
+      "priceEur": 23.61,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 PRO MAX INCELL ITRUCOLOR SERIE RED",
+      "priceEur": 20.63,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 PRO MAX INCELL ZY",
+      "priceEur": 21.86,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 12 PRO MAX PULLED",
+      "priceEur": 177.0,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 12 PRO MAX HARD OLED ITRUCOLOR SERIE BLACK",
+     "priceEur": 36.83,
+     "grade": "hard oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 12 PRO MAX CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 14.09,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 PRO MAX DEJI",
+      "priceEur": 10.49,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 12 PRO MAX HIGH CAPACITY 4350mAh",
+      "priceEur": 14.41,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 12 PRO MAX DEJI",
+     "priceEur": 10.49,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-13": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 13 + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 92.37,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 HARD OLED YK",
+      "priceEur": 47.31,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 INCELL COF ZY",
+      "priceEur": 18.14,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 INCELL FHD JK",
+      "priceEur": 16.34,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 INCELL ZY",
+      "priceEur": 16.37,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 OLED GX HARD",
+      "priceEur": 38.69,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PULLED",
+      "priceEur": 83.69,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 SOFT OLED DD",
+      "priceEur": 39.86,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 SOFT OLED JK",
+      "priceEur": 50.35,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 13 SOFT OLED DD",
+     "priceEur": 39.86,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 13 CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 13.46,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 CONFIGURABILE",
+      "priceEur": 18.91,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 DEJI",
+      "priceEur": 11.55,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 HIGH CAPACITY 3450mAh",
+      "priceEur": 13.71,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 13 DEJI",
+     "priceEur": 11.55,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-13-mini": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 13 MINI + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 160.16,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 MINI INCELL FHD JK",
+      "priceEur": 21.41,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 MINI INCELL ZY",
+      "priceEur": 24.64,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 MINI PULLED",
+      "priceEur": 125.04,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 13 MINI INCELL FHD JK",
+     "priceEur": 21.41,
+     "grade": "incell"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 13 MINI DEJI",
+      "priceEur": 10.61,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 MINI HIGH CAPACITY 2450mAh",
+      "priceEur": 11.8,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 13 MINI DEJI",
+     "priceEur": 10.61,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-13-pro": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 13 PRO + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 159.6,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO HARD OLED ITRUCOLOR SERIE BLACK",
+      "priceEur": 36.83,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO INCELL COF ZY",
+      "priceEur": 86.32,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO INCELL FHD JK",
+      "priceEur": 20.34,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO INCELL ZY",
+      "priceEur": 19.13,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO OLED GX HARD",
+      "priceEur": 24.79,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO OLED HARD ZY",
+      "priceEur": 38.64,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO OLED ZY COF",
+      "priceEur": 39.25,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO SOFT OLED DD",
+      "priceEur": 43.1,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO SOFT OLED FHD IC RIMOVIBILE REWA",
+      "priceEur": 65.17,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 13 PRO SOFT OLED DD",
+     "priceEur": 43.1,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 12.22,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO CONFIGURABILE",
+      "priceEur": 14.38,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO DEJI",
+      "priceEur": 13.27,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO HIGH CAPACITY 3300mAh",
+      "priceEur": 14.87,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO NEW QUALITY",
+      "priceEur": 15.85,
+      "grade": "generica"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 13 PRO DEJI",
+     "priceEur": 13.27,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-13-pro-max": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 13 PRO MAX + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 159.1,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO MAX HARD OLED DD",
+      "priceEur": 63.84,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO MAX INCELL COF ZY",
+      "priceEur": 21.92,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO MAX INCELL FHD JK CON FRAME",
+      "priceEur": 24.36,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO MAX PULLED",
+      "priceEur": 189.25,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 13 PRO MAX SOFT OLED DD",
+      "priceEur": 41.3,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY PER IPHONE 13 PRO MAX INCELL ZY",
+      "priceEur": 18.53,
+      "grade": "incell"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 13 PRO MAX SOFT OLED DD",
+     "priceEur": 41.3,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO MAX CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 14.14,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO MAX DEJI",
+      "priceEur": 14.36,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO MAX HIGH CAPACITY 4800mAh",
+      "priceEur": 16.25,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 13 PRO MAX NEW QUALITY",
+      "priceEur": 16.73,
+      "grade": "generica"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 13 PRO MAX DEJI",
+     "priceEur": 14.36,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "SCOCCA IPHONE 13 PRO MAX SILVER COMPLETA PULLED GRADO AB",
+      "priceEur": 145.52,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "SCOCCA IPHONE 13 PRO MAX SILVER COMPLETA PULLED GRADO AB",
+     "priceEur": 145.52,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-14": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 14 + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 84.88,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 HARD OLED YK",
+      "priceEur": 47.31,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 INCELL COF ZY",
+      "priceEur": 18.4,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 INCELL FHD JK",
+      "priceEur": 17.35,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 INCELL ITRUCOLOR SERIE RED",
+      "priceEur": 17.68,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 INCELL ZY",
+      "priceEur": 16.75,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 OLED GX HARD",
+      "priceEur": 48.97,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PULLED",
+      "priceEur": 145.14,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 SOFT OLED DD",
+      "priceEur": 39.33,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 SOFT OLED JK",
+      "priceEur": 62.04,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 14 SOFT OLED DD",
+     "priceEur": 39.33,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 14 CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 11.92,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 CONFIGURABILE",
+      "priceEur": 15.52,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 DEJI",
+      "priceEur": 18.71,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 HIGH CAPACITY 3590mAH",
+      "priceEur": 14.13,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 14 DEJI",
+     "priceEur": 18.71,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 14 BLACK PULLED",
+      "priceEur": 39.54,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 14 BLUE PULLED",
+      "priceEur": 42.11,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 14 PURPLE PULLED",
+      "priceEur": 41.86,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 14 WHITE PULLED",
+      "priceEur": 39.91,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 14 BLACK PULLED",
+     "priceEur": 39.54,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-14-plus": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 14 PLUS + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 131.67,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PLUS HARD OLED DD",
+      "priceEur": 61.28,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PLUS INCELL COF ZY",
+      "priceEur": 40.15,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PLUS INCELL FHD JK",
+      "priceEur": 32.57,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PLUS PULLED",
+      "priceEur": 98.05,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 14 PLUS HARD OLED DD",
+     "priceEur": 61.28,
+     "grade": "hard oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 14 PLUS DEJI",
+      "priceEur": 13.37,
+      "grade": "deji"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 14 PLUS DEJI",
+     "priceEur": 13.37,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-14-pro": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 14 PRO + FLAT FRONTALE PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 189.72,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO HARD OLED YK",
+      "priceEur": 105.74,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO INCELL COF ZY",
+      "priceEur": 22.51,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO INCELL FHD JK",
+      "priceEur": 22.4,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO INCELL ZY",
+      "priceEur": 22.8,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO OLED GX HARD",
+      "priceEur": 99.84,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO PULLED",
+      "priceEur": 172.89,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO SOFT OLED DD",
+      "priceEur": 42.6,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 14 PRO SOFT OLED DD",
+     "priceEur": 42.6,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 14 PRO CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 12.83,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 PRO CONFIGURABILE",
+      "priceEur": 14.38,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 PRO DEJI",
+      "priceEur": 14.69,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 PRO HIGH CAPACITY 3400mAH",
+      "priceEur": 15.98,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 14 PRO DEJI",
+     "priceEur": 14.69,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-14-pro-max": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 363.6,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX HARD OLED YK",
+      "priceEur": 145.06,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX INCELL COF ZY",
+      "priceEur": 27.73,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX INCELL FHD JK 120Hz",
+      "priceEur": 22.4,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX INCELL ZY",
+      "priceEur": 23.96,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX PULLED",
+      "priceEur": 254.68,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX SOFT OLED + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 69.16,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 14 PRO MAX SOFT OLED DD",
+      "priceEur": 44.05,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 14 PRO MAX SOFT OLED DD",
+     "priceEur": 44.05,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 14 PRO MAX CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 15.76,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 PRO MAX DEJI",
+      "priceEur": 16.27,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 14 PRO MAX HIGH CAPACITY 4690mAH",
+      "priceEur": 17.13,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 14 PRO MAX DEJI",
+     "priceEur": 16.27,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-15": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 15 + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 137.07,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 INCELL COF ZY",
+      "priceEur": 21.0,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 INCELL FHD JK",
+      "priceEur": 18.03,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 INCELL ZY",
+      "priceEur": 19.07,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PULLED",
+      "priceEur": 199.52,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 SOFT OLED DD",
+      "priceEur": 43.19,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 15 SOFT OLED DD",
+     "priceEur": 43.19,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 15 CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 14.99,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 CONFIGURABILE",
+      "priceEur": 13.65,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 DEJI",
+      "priceEur": 12.09,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 HIGH CAPACITY 3520mAH",
+      "priceEur": 15.45,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 15 DEJI",
+     "priceEur": 12.09,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 15 BLACK PULLED GRADO A",
+      "priceEur": 44.49,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 BLUE PULLED GRADO A",
+      "priceEur": 52.44,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 GREEN PULLED GRADO A",
+      "priceEur": 57.02,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PINK PULLED GRADO A",
+      "priceEur": 57.07,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 15 BLACK PULLED GRADO A",
+     "priceEur": 44.49,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-15-plus": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 15 PLUS + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 219.05,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PLUS INCELL A-SI ZY HD+ CON FRAME",
+      "priceEur": 16.75,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PLUS SOFT OLED DD",
+      "priceEur": 40.3,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 15 PLUS SOFT OLED DD",
+     "priceEur": 40.3,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 15 PLUS CHIP ORIGINALE TEXAS INSTRUMENTS 4383mAh",
+      "priceEur": 14.99,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 PLUS DEJI",
+      "priceEur": 15.12,
+      "grade": "deji"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 15 PLUS DEJI",
+     "priceEur": 15.12,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 15 PLUS BLACK PULLED GRADO A",
+      "priceEur": 62.34,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PLUS BLUE PULLED GRADO A",
+      "priceEur": 62.92,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PLUS PINK PULLED GRADO A",
+      "priceEur": 60.85,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 15 PLUS PINK PULLED GRADO A",
+     "priceEur": 60.85,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-15-pro": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 15 PRO + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 280.44,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO INCELL COF ZY",
+      "priceEur": 20.59,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO INCELL FHD JK",
+      "priceEur": 19.76,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO INCELL ZY",
+      "priceEur": 19.09,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO SOFT OLED DD",
+      "priceEur": 43.19,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 15 PRO SOFT OLED DD",
+     "priceEur": 43.19,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 15 PRO CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 15.76,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 PRO CONFIGURABILE",
+      "priceEur": 15.68,
+      "grade": "cella-da-programmare"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 PRO DEJI",
+      "priceEur": 15.43,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 PRO HIGH CAPACITY 3400mAH",
+      "priceEur": 17.48,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 15 PRO DEJI",
+     "priceEur": 15.43,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 15 PRO BLACK TITANIO PULLED",
+      "priceEur": 90.77,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PRO BLU TITANIO PULLED",
+      "priceEur": 87.93,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PRO TITANIO NATURALE PULLED",
+      "priceEur": 102.13,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PRO WHITE TITANIO PULLED",
+      "priceEur": 81.72,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 15 PRO WHITE TITANIO PULLED",
+     "priceEur": 81.72,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-15-pro-max": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 15 PRO MAX + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 297.13,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO MAX INCELL COF ZY",
+      "priceEur": 43.2,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO MAX INCELL FHD JK",
+      "priceEur": 22.0,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO MAX INCELL ZY",
+      "priceEur": 31.01,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 15 PRO MAX SOFT OLED DD",
+      "priceEur": 44.09,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 15 PRO MAX SOFT OLED DD",
+     "priceEur": 44.09,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 15 PRO MAX CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 16.6,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 PRO MAX DEJI",
+      "priceEur": 16.27,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 15 PRO MAX HIGH CAPACITY 4770mAH",
+      "priceEur": 14.7,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 15 PRO MAX DEJI",
+     "priceEur": 16.27,
+     "grade": "deji"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 15 PRO MAX BIANCO TITANIO PULLED",
+      "priceEur": 102.74,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PRO MAX BLACK TITANIO PULLED",
+      "priceEur": 98.73,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 15 PRO MAX TITANIO NATURALE PULLED",
+      "priceEur": 109.62,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 15 PRO MAX BLACK TITANIO PULLED",
+     "priceEur": 98.73,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-16": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 16 + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 182.32,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 INCELL COF ZY",
+      "priceEur": 32.9,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 INCELL FHD JK",
+      "priceEur": 21.4,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 INCELL ZY",
+      "priceEur": 23.77,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PULLED",
+      "priceEur": 227.97,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 SOFT OLED DD",
+      "priceEur": 43.18,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 16 SOFT OLED DD",
+     "priceEur": 43.18,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 16 CHIP ORIGINALE TEXAS INSTRUMENTS 3561mAh",
+      "priceEur": 17.84,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 16 HIGH CAPACITY",
+      "priceEur": 20.63,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 16 CHIP ORIGINALE TEXAS INSTRUMENTS 3561mAh",
+     "priceEur": 17.84,
+     "grade": "chip-ti"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 16 BLACK PULLED GRADO A",
+      "priceEur": 72.15,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 BLUE PULLED GRADO A",
+      "priceEur": 61.41,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 GREEN PULLED GRADO A",
+      "priceEur": 61.57,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 PINK PULLED GRADO A",
+      "priceEur": 65.38,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 WHITE PULLED GRADO A",
+      "priceEur": 66.5,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 16 BLUE PULLED GRADO A",
+     "priceEur": 61.41,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-16-plus": {
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 16 PLUS GREEN TITANIO PULLED GRADO A",
+      "priceEur": 88.38,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 16 PLUS GREEN TITANIO PULLED GRADO A",
+     "priceEur": 88.38,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-16-pro": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 16 PRO + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 355.69,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PRO HARD OLED DD",
+      "priceEur": 93.72,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PRO INCELL COF ZY IC INTERCAMBIABILE",
+      "priceEur": 69.74,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PRO INCELL FHD JK",
+      "priceEur": 24.8,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PRO INCELL ZY",
+      "priceEur": 27.05,
+      "grade": "incell"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 16 PRO HARD OLED DD",
+     "priceEur": 93.72,
+     "grade": "hard oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 16 PRO CHIP ORIGINALE TEXAS INSTRUMENTS 3582 mAh",
+      "priceEur": 19.61,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 16 PRO HIGH CAPACITY",
+      "priceEur": 27.0,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 16 PRO CHIP ORIGINALE TEXAS INSTRUMENTS 3582 mAh",
+     "priceEur": 19.61,
+     "grade": "chip-ti"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 16 PRO BLACK TITANIO PULLED GRADO A",
+      "priceEur": 98.59,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 PRO DESERT TITANIO PULLED GRADO A",
+      "priceEur": 97.97,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 PRO NATURAL TITANIO PULLED GRADO A",
+      "priceEur": 97.38,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 16 PRO NATURAL TITANIO PULLED GRADO A",
+     "priceEur": 97.38,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-16-pro-max": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY INCELL X IPHONE 16 PRO MAX ZY IC REMOVIBILE 120HZ",
+      "priceEur": 34.28,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PRO MAX INCELL A-SI ZY HD+ CON FRAME",
+      "priceEur": 48.82,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PRO MAX INCELL COF ZY IC INTERCAMBIABILE",
+      "priceEur": 88.19,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 16 PRO MAX INCELL FHD JK",
+      "priceEur": 27.76,
+      "grade": "incell"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 16 PRO MAX INCELL FHD JK",
+     "priceEur": 27.76,
+     "grade": "incell"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 16 PRO MAX CHIP ORIGINALE TEXAS INSTRUMENTS 4685mAh",
+      "priceEur": 23.45,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 16 PRO MAX HIGH CAPACITY",
+      "priceEur": 29.02,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 16 PRO MAX CHIP ORIGINALE TEXAS INSTRUMENTS 4685mAh",
+     "priceEur": 23.45,
+     "grade": "chip-ti"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "BACK GLASS IPHONE 16 PRO MAX BLACK TITANIO PULLED GRADO A",
+      "priceEur": 109.62,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 PRO MAX DESERT TITANIO PULLED GRADO A",
+      "priceEur": 107.67,
+      "grade": "standard"
+     },
+     {
+      "name": "BACK GLASS IPHONE 16 PRO MAX NATURAL TITANIO PULLED GRADO A",
+      "priceEur": 114.0,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "BACK GLASS IPHONE 16 PRO MAX DESERT TITANIO PULLED GRADO A",
+     "priceEur": 107.67,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-16e": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 16E OLED PARTE USATA PULLED",
+      "priceEur": 74.76,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 16E SOFT OLED DD",
+      "priceEur": 43.1,
+      "grade": "soft oled"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 16E SOFT OLED DD",
+     "priceEur": 43.1,
+     "grade": "soft oled"
+    }
+   }
+  },
+  "iphone-17": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 17 + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 265.09,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": null
+   }
+  },
+  "iphone-17-pro": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 17 PRO + FLAT FRONTA PER CALIBRAZIONE PARTE USATA PULLED",
+      "priceEur": 344.78,
+      "grade": "pulled"
+     }
+    ],
+    "recommended": null
+   }
+  },
+  "iphone-6": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 6 WHITE HIGH-END",
+      "priceEur": 3.66,
+      "grade": "lcd"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 6 WHITE HIGH-END",
+     "priceEur": 3.66,
+     "grade": "lcd"
+    }
+   }
+  },
+  "iphone-6-plus": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 6 PLUS BLACK HIGH-END",
+      "priceEur": 6.75,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 6 PLUS WHITE HIGH-END",
+      "priceEur": 11.35,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 6 PLUS WHITE PULLED",
+      "priceEur": 6.26,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 6 PLUS WHITE STANDARD",
+      "priceEur": 6.19,
+      "grade": "altro"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 6 PLUS BLACK HIGH-END",
+     "priceEur": 6.75,
+     "grade": "lcd"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 6 PLUS",
+      "priceEur": 2.26,
+      "grade": "generica"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 6 PLUS CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 2.65,
+      "grade": "chip-ti"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 6 PLUS CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 2.65,
+     "grade": "chip-ti"
+    }
+   }
+  },
+  "iphone-6s": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 6S BLACK HIGH-END",
+      "priceEur": 13.93,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 6S WHITE HIGH-END",
+      "priceEur": 10.82,
+      "grade": "lcd"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 6S WHITE HIGH-END",
+     "priceEur": 10.82,
+     "grade": "lcd"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 6S CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 5.78,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 6S HIGH CAPACITY 2350mAh",
+      "priceEur": 6.7,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 6S CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 5.78,
+     "grade": "chip-ti"
+    }
+   }
+  },
+  "iphone-6s-plus": {
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 6S PLUS CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 7.33,
+      "grade": "chip-ti"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 6S PLUS CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 7.33,
+     "grade": "chip-ti"
+    }
+   }
+  },
+  "iphone-7": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 7 BLACK HIGH-END",
+      "priceEur": 10.82,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 BLACK ZY VIVID",
+      "priceEur": 16.98,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 INCELL WHITE",
+      "priceEur": 5.4,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 WHITE HIGH-END",
+      "priceEur": 10.72,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 WHITE PULLED",
+      "priceEur": 13.73,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 WHITE ZY VIVID",
+      "priceEur": 15.65,
+      "grade": "altro"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 7 INCELL WHITE",
+     "priceEur": 5.4,
+     "grade": "incell"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 7 CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 5.99,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 7 HIGH CAPACITY 2330mAh",
+      "priceEur": 6.98,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 7 CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 5.99,
+     "grade": "chip-ti"
+    }
+   }
+  },
+  "iphone-7-plus": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 7 PLUS BLACK HIGH-END",
+      "priceEur": 11.08,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 PLUS BLACK POLARIZZATO JK5",
+      "priceEur": 12.3,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 PLUS WHITE HIGH-END",
+      "priceEur": 3.95,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 7 PLUS WHITE POLARIZZATO JK5",
+      "priceEur": 7.38,
+      "grade": "altro"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 7 PLUS WHITE HIGH-END",
+     "priceEur": 3.95,
+     "grade": "lcd"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 7 PLUS HIGH CAPACITY 3600mAh",
+      "priceEur": 7.43,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 7 PLUS HIGH CAPACITY 3600mAh",
+     "priceEur": 7.43,
+     "grade": "alta-capacita"
+    }
+   }
+  },
+  "iphone-8": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 8 BLACK HIGH-END",
+      "priceEur": 19.52,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 8 BLACK ZY VIVID",
+      "priceEur": 11.7,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 8 WHITE HIGH-END",
+      "priceEur": 10.93,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 8 WHITE ZY VIVID",
+      "priceEur": 11.85,
+      "grade": "altro"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 8 WHITE HIGH-END",
+     "priceEur": 10.93,
+     "grade": "lcd"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 8 CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 6.86,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE 8 HIGH CAPACITY 2220mAh",
+      "priceEur": 7.32,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 8 CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 6.86,
+     "grade": "chip-ti"
+    }
+   }
+  },
+  "iphone-8-plus": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE 8 PLUS BLACK HIGH-END",
+      "priceEur": 12.6,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 8 PLUS BLACK ZY VIVID",
+      "priceEur": 12.86,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE 8 PLUS WHITE HIGH-END",
+      "priceEur": 12.09,
+      "grade": "lcd"
+     },
+     {
+      "name": "DISPLAY IPHONE 8 PLUS WHITE ZY VIVID",
+      "priceEur": 12.86,
+      "grade": "altro"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE 8 PLUS WHITE HIGH-END",
+     "priceEur": 12.09,
+     "grade": "lcd"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE 8 PLUS HIGH CAPACITY 3420mAh",
+      "priceEur": 8.13,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE 8 PLUS HIGH CAPACITY 3420mAh",
+     "priceEur": 8.13,
+     "grade": "alta-capacita"
+    }
+   }
+  },
+  "iphone-se": {
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE SE 2020 CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 6.87,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE SE 2020 DEJI",
+      "priceEur": 7.23,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE SE 2020 HIGH CAPACITY 2220mAh",
+      "priceEur": 7.61,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE SE 2022 DEJI",
+      "priceEur": 10.76,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE SE 3 GEN CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 8.85,
+      "grade": "chip-ti"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE SE 2020 DEJI",
+     "priceEur": 7.23,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-x": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE X HARD OLED DD",
+      "priceEur": 23.61,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE X INCELL FHD JK",
+      "priceEur": 12.81,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE X OLED GX HARD",
+      "priceEur": 30.5,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE X PULLED",
+      "priceEur": 81.94,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY IPHONE X ZY INCELL",
+      "priceEur": 12.04,
+      "grade": "incell"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE X HARD OLED DD",
+     "priceEur": 23.61,
+     "grade": "hard oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE X CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 10.2,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE X DEJI",
+      "priceEur": 8.93,
+      "grade": "deji"
+     },
+     {
+      "name": "BATTERIA PER IPHONE X HIGH CAPACITY 3250mAh",
+      "priceEur": 10.39,
+      "grade": "alta-capacita"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE X DEJI",
+     "priceEur": 8.93,
+     "grade": "deji"
+    }
+   }
+  },
+  "iphone-xr": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE XR FOG GRADE ZY",
+      "priceEur": 20.85,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE XR INCELL FHD JK",
+      "priceEur": 12.74,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE XR INCELL GX",
+      "priceEur": 12.49,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE XR INCELL ZY",
+      "priceEur": 12.71,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE XR RIGENERATO BY BROTECH",
+      "priceEur": 20.0,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE XR TOSHIBA PULLED",
+      "priceEur": 21.59,
+      "grade": "pulled"
+     },
+     {
+      "name": "DISPLAY SP IPHONE XR LG",
+      "priceEur": 42.64,
+      "grade": "altro"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE XR INCELL GX",
+     "priceEur": 12.49,
+     "grade": "incell"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE XR CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 7.39,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE XR HIGH CAPACITY 3550mAh",
+      "priceEur": 8.13,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE XR NO FLAT",
+      "priceEur": 3.78,
+      "grade": "cella-da-programmare"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE XR CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 7.39,
+     "grade": "chip-ti"
+    }
+   },
+   "scocca": {
+    "options": [
+     {
+      "name": "SCOCCA IPHONE XR BLACK COMPLETA PULLED",
+      "priceEur": 47.41,
+      "grade": "standard"
+     }
+    ],
+    "recommended": {
+     "name": "SCOCCA IPHONE XR BLACK COMPLETA PULLED",
+     "priceEur": 47.41,
+     "grade": "standard"
+    }
+   }
+  },
+  "iphone-xs": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE XS HARD OLED DD",
+      "priceEur": 23.06,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS HARD OLED ITRUCOLOR SERIE BLACK",
+      "priceEur": 20.63,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS HARD OLED YK",
+      "priceEur": 27.49,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS INCELL A-SI ZY",
+      "priceEur": 10.14,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE XS INCELL FHD JK",
+      "priceEur": 12.6,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE XS OLED GX HARD",
+      "priceEur": 27.51,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE XS SOFT OLED FHD REWA",
+      "priceEur": 41.6,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS SOFT OLED ITRUCOLOR SERIE RED",
+      "priceEur": 36.83,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS ZY INCELL",
+      "priceEur": 12.71,
+      "grade": "incell"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE XS SOFT OLED ITRUCOLOR SERIE RED",
+     "priceEur": 36.83,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE XS CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 10.32,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE XS HIGH CAPACITY 3000mAh",
+      "priceEur": 10.68,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE XS NO FLAT",
+      "priceEur": 3.44,
+      "grade": "cella-da-programmare"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE XS CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 10.32,
+     "grade": "chip-ti"
+    }
+   }
+  },
+  "iphone-xs-max": {
+   "schermo": {
+    "options": [
+     {
+      "name": "DISPLAY IPHONE XS MAX HARD OLED DD",
+      "priceEur": 29.32,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS MAX HARD OLED ITRUCOLOR SERIE BLACK",
+      "priceEur": 23.57,
+      "grade": "hard oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS MAX INCELL FHD JK",
+      "priceEur": 13.18,
+      "grade": "incell"
+     },
+     {
+      "name": "DISPLAY IPHONE XS MAX OLED GX HARD",
+      "priceEur": 42.26,
+      "grade": "altro"
+     },
+     {
+      "name": "DISPLAY IPHONE XS MAX SOFT OLED JK",
+      "priceEur": 45.55,
+      "grade": "soft oled"
+     },
+     {
+      "name": "DISPLAY IPHONE XS MAX ZY INCELL",
+      "priceEur": 14.71,
+      "grade": "incell"
+     }
+    ],
+    "recommended": {
+     "name": "DISPLAY IPHONE XS MAX SOFT OLED JK",
+     "priceEur": 45.55,
+     "grade": "soft oled"
+    }
+   },
+   "batteria": {
+    "options": [
+     {
+      "name": "BATTERIA PER IPHONE XS MAX CHIP ORIGINALE TEXAS INSTRUMENTS",
+      "priceEur": 11.59,
+      "grade": "chip-ti"
+     },
+     {
+      "name": "BATTERIA PER IPHONE XS MAX HIGH CAPACITY 3700mAh",
+      "priceEur": 10.96,
+      "grade": "alta-capacita"
+     },
+     {
+      "name": "BATTERIA PER IPHONE XS MAX NO FLAT",
+      "priceEur": 3.37,
+      "grade": "cella-da-programmare"
+     }
+    ],
+    "recommended": {
+     "name": "BATTERIA PER IPHONE XS MAX CHIP ORIGINALE TEXAS INSTRUMENTS",
+     "priceEur": 11.59,
+     "grade": "chip-ti"
+    }
+   }
+  }
+ }
+}

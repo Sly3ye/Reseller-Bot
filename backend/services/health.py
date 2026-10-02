@@ -42,8 +42,14 @@ def record_run(
     failed: int,
     scraped: int,
     new_count: int,
+    requests: int | None = None,
+    gaps: int | None = None,
 ) -> dict[str, Any]:
     """Registra l'esito del giro e rileva le transizioni down/ripristino.
+
+    ``requests`` = chiamate hades del giro (il costo, da un IP solo);
+    ``gaps`` = target che non si sono ricongiunti con la scansione precedente
+    (annunci persi → cadenza troppo lenta per quella categoria).
 
     Ritorna {status, previous, went_down, recovered}. Import DB lazy per non
     accoppiare il modulo (compute_status resta puro).
@@ -64,17 +70,22 @@ def record_run(
             .data
         )
         previous = last[0]["status"] if last else None
-        db.table("scrape_runs").insert(
-            {
-                "category": category,
-                "status": status,
-                "targets": targets,
-                "ok": ok,
-                "failed": failed,
-                "scraped": scraped,
-                "new_count": new_count,
-            }
-        ).execute()
+        row = {
+            "category": category,
+            "status": status,
+            "targets": targets,
+            "ok": ok,
+            "failed": failed,
+            "scraped": scraped,
+            "new_count": new_count,
+        }
+        try:
+            db.table("scrape_runs").insert(
+                {**row, "requests": requests, "gaps": gaps}
+            ).execute()
+        except Exception:
+            # Migrazione 18 non ancora applicata: si registra senza le colonne nuove.
+            db.table("scrape_runs").insert(row).execute()
     except Exception:
         logger.warning("scrape_runs non disponibile: monitoraggio salute limitato.")
 
@@ -193,9 +204,11 @@ def get_health() -> dict[str, Any]:
     """Snapshot per /health/scraper: ultimo giro, storico recente, copertura, config."""
     from backend.core.database import get_db  # noqa: PLC0415
     from backend.core.config import settings  # noqa: PLC0415
+    from backend.scrapers.subito import pacer  # noqa: PLC0415
 
     out: dict[str, Any] = {
         "proxy_configured": bool(settings.proxy_url),
+        "pacing": pacer.snapshot(),
         "impersonate_pool": settings.impersonate_pool,
         "scraper": {},
         "recent": {},
@@ -207,7 +220,8 @@ def get_health() -> dict[str, Any]:
         try:
             recent = (
                 db.table("scrape_runs")
-                .select("status, targets, ok, failed, scraped, new_count, ran_at")
+                # "*": include requests/gaps se la migrazione 18 è applicata.
+                .select("*")
                 .eq("category", cat)
                 .order("ran_at", desc=True)
                 .limit(20)

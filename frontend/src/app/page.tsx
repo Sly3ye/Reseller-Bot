@@ -12,6 +12,7 @@ import {
   fetchDepreciation,
   fetchOpportunities,
   fetchScraperHealth,
+  fetchDataQuality,
   fetchSettings,
   fetchTimeToSale,
   fetchTrends,
@@ -38,6 +39,7 @@ import {
   type OpportunityFacets,
   type PresetMode,
   type ScraperHealth,
+  type DataQuality,
   type TargetCoverage,
   type SellerRankRow,
   type SortMode,
@@ -2118,7 +2120,18 @@ function NegotiationAssistant(props: {
           ? `+${eur(item.repair.netMarginEur)}` +
             (item.repair.netMarginPct !== null ? ` (${item.repair.netMarginPct}%)` : "")
           : "—",
-      hint: `solo ricambio Apple ${eur(item.repair.total)} · no manodopera`,
+      hint: item.repair.items
+        .map((r) => {
+          const after = r.aftermarket ? `aftermarket ${eur(r.aftermarket.price)} (${r.aftermarket.grade})` : null;
+          const apple = r.apple
+            ? `Apple ${eur(r.apple.net)}${r.apple.credit ? ` (${eur(r.apple.price)} − ${eur(r.apple.credit)} reso)` : ""}`
+            : null;
+          const used = r.source === "aftermarket" ? "aftermarket" : "Apple";
+          return `${r.label}: ${[after, apple].filter(Boolean).join(" · ")} → nei conti ${used}${
+            r.labor ? ` + ${eur(r.labor)} manodopera` : ""
+          }`;
+        })
+        .join(" | "),
       color: "oklch(0.80 0.13 75)",
     });
   }
@@ -3961,8 +3974,17 @@ function BuyRow(props: { m: ApiModelStat; open: boolean; onToggle: () => void })
             "—"
           )}
         </div>
-        <div style={{ fontFamily: MONO }}>
-          {m.avgDaysToSell != null ? `${m.avgDaysToSell}gg` : "—"}
+        <div
+          style={{ fontFamily: MONO }}
+          title={
+            m.avgDaysToSell == null
+              ? undefined
+              : m.daysToSellKM != null
+                ? `Kaplan–Meier: conta anche chi è ancora online. Media dei soli venduti: ${m.avgDaysToSell}gg (ottimista)`
+                : `Meno di metà degli annunci si è venduta nel periodo osservato: il tempo tipico non è ancora misurabile. Media dei soli venduti: ${m.avgDaysToSell}gg (ottimista)`
+          }
+        >
+          {m.daysToSellKM != null ? `${m.daysToSellKM}gg` : m.avgDaysToSell != null ? "n/d" : "—"}
         </div>
         <div style={{ fontFamily: MONO }}>
           {m.sellThroughRate != null ? `${m.sellThroughRate}%` : "—"}
@@ -4104,7 +4126,23 @@ function BuyDetail(props: { m: ApiModelStat }) {
                   : "↓ capitale fermo"}
             </div>
             {m.sellThroughRate != null && <div>sell-through {m.sellThroughRate}%</div>}
-            {m.avgDaysToSell != null && <div>vende in ~{m.avgDaysToSell}gg</div>}
+            {m.daysToSellKM != null ? (
+              <div>metà si vende entro ~{m.daysToSellKM}gg</div>
+            ) : (
+              m.avgDaysToSell != null && <div>i venduti spariscono in ~{m.avgDaysToSell}gg</div>
+            )}
+            {m.sold7dPct != null && (
+              <div>
+                venduto entro 7gg: {m.sold7dPct}% · entro 30gg: {m.sold30dPct}%
+              </div>
+            )}
+            {m.removalKinds && Object.keys(m.removalKinds).length > 0 && (
+              <div title="Stima: oltre 11 mesi = scaduto; ≥90gg, mai ribassato e sopra mercato = ritirato">
+                spariti: {Object.entries(m.removalKinds)
+                  .map(([k, n]) => `${n} ${k}`)
+                  .join(" · ")}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -4189,6 +4227,7 @@ const JOB_ICON: Record<string, string> = {
   sniper_auto_live: "🎯",
   nightly_batch: "🌙",
   garbage_collector: "🧹",
+  inventory_tech: "📦",
   ai_enrich: "🤖",
 };
 
@@ -4320,11 +4359,51 @@ function SettingsScreen() {
         </div>
       </div>
 
-      {/* Ricambi Apple */}
+      {/* Riparazioni: colonna di costo, credito Apple, manodopera */}
       <div style={card}>
-        <div style={{ fontSize: "15px", fontWeight: 700 }}>Prezzi ricambi Apple (solo pezzo, no manodopera)</div>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Riparazioni</div>
+        <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px", lineHeight: 1.6 }}>
+          Prezzi dei ricambi per modello da due listini: originali Apple (Self Service Repair,
+          IVA inclusa) e aftermarket (Soft OLED / Incell, batterie Deji). Si aggiornano con{" "}
+          <code>scripts/fetch_apple_parts.py</code> e <code>scripts/fetch_aftermarket_parts.py</code>.
+        </div>
+        <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "flex-end" }}>
+          {field(
+            "Ricambi usati nei conti",
+            <select
+              value={s.repair_source ?? "aftermarket"}
+              onChange={(e) => setS({ ...s, repair_source: e.target.value as "aftermarket" | "apple" })}
+              style={{ padding: "6px 8px", borderRadius: "8px" }}
+            >
+              <option value="aftermarket">Aftermarket</option>
+              <option value="apple">Originali Apple</option>
+            </select>,
+          )}
+          {field(
+            "Credito reso Apple",
+            <label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "13px" }}>
+              <input
+                type="checkbox"
+                checked={s.apple_return_credit ?? true}
+                onChange={(e) => setS({ ...s, apple_return_credit: e.target.checked })}
+              />
+              rispedisco la parte vecchia
+            </label>,
+          )}
+          {Object.entries(s.repair_labor_eur ?? {}).map(([part, v]) =>
+            field(
+              `Manodopera ${part}`,
+              num(v, (nv) => setS({ ...s, repair_labor_eur: { ...s.repair_labor_eur, [part]: nv } }), "€"),
+            ),
+          )}
+        </div>
+      </div>
+
+      {/* Ricambi Apple per fascia: ripiego per i modelli senza listino */}
+      <div style={card}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Ripiego: prezzi Apple per fascia</div>
         <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px" }}>
-          Inserisci i prezzi esatti del ricambio dal sito Apple (Self Service Repair).
+          Usati solo per i modelli che non compaiono in nessuno dei due listini.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr", gap: "10px", alignItems: "center" }}>
           <div />
@@ -4492,6 +4571,8 @@ function ScraperHealthPanel(props: { health: ScraperHealth }) {
               {last?.ran_at && (
                 <div style={{ fontSize: "11.5px", color: "oklch(0.5 0.01 250)" }}>
                   ultimo giro {relativeTime(last.ran_at)} · {last.ok}/{last.targets} target ok · {last.scraped} annunci
+                  {last.requests != null ? ` · ${last.requests} richieste` : ""}
+                  {last.gaps ? ` · ⚠ ${last.gaps} target con annunci persi (cadenza troppo lenta)` : ""}
                 </div>
               )}
             </div>
@@ -4499,13 +4580,108 @@ function ScraperHealthPanel(props: { health: ScraperHealth }) {
         })}
       </div>
       <div style={{ fontSize: "12px", color: "oklch(0.55 0.01 250)" }}>
-        Proxy residenziale {health.proxy_configured ? "✓ configurato" : "✗ non configurato (connessione diretta)"} ·
+        {health.pacing && (
+          <>
+            Ritmo: 1 richiesta ogni ~{health.pacing.gapS}s (minimo {health.pacing.minGapS}s)
+            {health.pacing.blockedForS > 0
+              ? ` · ⏸ in pausa anti-blocco ancora ${Math.ceil(health.pacing.blockedForS / 60)} min`
+              : ""}
+            {health.pacing.totalBlocks > 0 ? ` · blocchi dall'avvio: ${health.pacing.totalBlocks}` : ""} ·{" "}
+          </>
+        )}
+        {health.proxy_configured ? "proxy configurato · " : "connessione diretta · "}
         impronte TLS: {health.impersonate_pool?.join(", ") || "—"}
       </div>
       {cats.map(([cat, label]) => {
         const rows = health.coverage[cat]?.targets ?? [];
         return rows.length ? <TargetCoverageTable key={cat} label={label} rows={rows} /> : null;
       })}
+      <DataQualityPanel />
+    </div>
+  );
+}
+
+const QUALITY_FIELD_LABELS: Record<string, string> = {
+  modelloRiconosciuto: "Modello riconosciuto",
+  memoria: "Memoria",
+  colore: "Colore",
+  batteria: "Batteria",
+  dataPubblicazione: "Data di pubblicazione",
+  foto: "Foto",
+  target: "Target assegnato",
+  venditore: "Venditore",
+};
+
+/** Quanto fidarsi delle metriche: copertura vs Subito, campi estratti, raccolta. */
+function DataQualityPanel() {
+  const [q, setQ] = useState<DataQuality | null>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const load = () => fetchDataQuality("smartphone", ctrl.signal).then(setQ).catch(() => null);
+    Promise.resolve().then(load);
+    const poll = setInterval(load, 60000);
+    return () => {
+      ctrl.abort();
+      clearInterval(poll);
+    };
+  }, []);
+  if (!q) return null;
+  const cov = q.coverage;
+  const head: CSSProperties = {
+    fontSize: "10.5px", fontWeight: 700, color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.04em",
+  };
+  const tone = (pct: number) =>
+    pct >= 80 ? "var(--accent)" : pct >= 50 ? "oklch(0.78 0.14 80)" : "oklch(0.68 0.17 25)";
+  return (
+    <div
+      style={{
+        border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px",
+        padding: "14px 16px", display: "flex", flexDirection: "column", gap: "12px",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: "14px", fontWeight: 700 }}>Qualità del dato · iPhone</div>
+        <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "2px", lineHeight: 1.6 }}>
+          {q.activeListings.toLocaleString("it-IT")} annunci attivi in archivio
+          {cov.subitoTotal != null && cov.seenLastInventory != null ? (
+            <>
+              {" "}· ultimo inventario: <b>{cov.seenLastInventory.toLocaleString("it-IT")}</b> visti su{" "}
+              {cov.subitoTotal.toLocaleString("it-IT")} dichiarati da Subito ({cov.seenPct}%)
+              {cov.inventoryComplete === false ? " · inventario incompleto" : ""}
+              {cov.inventoryAt ? ` · ${relativeTime(cov.inventoryAt)}` : ""}
+            </>
+          ) : (
+            " · copertura vs Subito disponibile dopo il primo inventario notturno"
+          )}
+        </div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "10px" }}>
+        {Object.entries(q.fieldsPct).map(([k, pct]) => (
+          <div key={k} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px" }}>
+              <span>{QUALITY_FIELD_LABELS[k] ?? k}</span>
+              <span style={{ fontFamily: MONO, fontWeight: 700 }}>{pct}%</span>
+            </div>
+            <div style={{ height: "5px", borderRadius: "3px", background: "oklch(0.24 0.008 250)", overflow: "hidden" }}>
+              <div style={{ width: `${pct}%`, height: "100%", background: tone(pct) }} />
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
+        <span style={head}>Ultime 24h</span>
+        <span>{q.last24h.runs} giri</span>
+        <span>{q.last24h.requests.toLocaleString("it-IT")} richieste</span>
+        <span>+{q.last24h.new.toLocaleString("it-IT")} nuovi</span>
+        <span style={{ color: q.last24h.gaps ? "oklch(0.68 0.17 25)" : undefined }}>
+          {q.last24h.gaps} giri con annunci persi
+        </span>
+        <span style={{ color: q.last24h.down ? "oklch(0.68 0.17 25)" : undefined }}>
+          {q.last24h.down} giri down
+        </span>
+        <span>{q.removed7d.toLocaleString("it-IT")} spariti in 7 giorni</span>
+      </div>
     </div>
   );
 }

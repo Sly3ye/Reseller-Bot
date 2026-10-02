@@ -3,20 +3,24 @@
 Interroghiamo l'API JSON interna del frontend Subito (`hades.subito.it/v1/
 search/items`), che restituisce l'intero annuncio in JSON in frazioni di secondo.
 
-Split routing (per contenere il budget del proxy residenziale a consumo):
-- api_client  → chiamate di ricerca/paginazione verso hades, INSTRADATE dal
-  proxy residenziale rotante IPRoyal (con retry ed exponential backoff). Usa
+Due client:
+- api_client  → chiamate di ricerca/paginazione verso hades, in connessione
+  DIRETTA (il proxy residenziale a pagamento è dismesso dal 2026-10-02). Usa
   curl_cffi con impronta TLS di un browser reale: hades è protetto da Akamai
   Bot Manager, che blocca (403) i client dall'impronta "non-browser" come httpx.
-- cdn_client  → download concorrente delle immagini dalla CDN, a connessione
-  DIRETTA e gratuita (httpx, mai attraverso il proxy).
+  Da un solo IP il ritmo è tutto: ogni chiamata passa dal ``HadesPacer``
+  (pausa minima globale + stop su blocco), invece di ritentare a raffica.
+- cdn_client  → download concorrente delle immagini dalla CDN (httpx diretto).
 """
 
 import asyncio
 import io
+import logging
 import random
 import re
+import time
 from dataclasses import replace
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -37,13 +41,91 @@ from backend.core.database import upload_image_to_storage
 from backend.scrapers.base import BaseScraper, ScrapedListing, SearchRequest
 from backend.scrapers.nlp_parser import parse_listing
 
-# Codici HTTP transitori (ban temporaneo / rate limit / errore server) su cui
-# vale la pena riprovare cambiando nodo residenziale.
-RETRYABLE_STATUS = frozenset({403, 429, 500})
+logger = logging.getLogger(__name__)
+
+# 403/429 = Akamai/Subito ci sta limitando. Da IP fisso ritentare subito
+# peggiora il blocco: si ferma tutto per il cooldown (vedi HadesPacer).
+BLOCK_STATUS = frozenset({403, 429})
+# Errori lato server: transitori, vale un retry breve.
+RETRYABLE_STATUS = frozenset({500, 502, 503, 504})
 
 
 class RetryableHTTPError(Exception):
-    """Sollevata su uno status 403/429/500 per innescare il retry di tenacity."""
+    """Sollevata su uno status 5xx per innescare il retry di tenacity."""
+
+
+class ScraperBlockedError(Exception):
+    """Subito ci ha bloccato (403/429) o siamo ancora nel cooldown: il giro
+    deve fermarsi, non passare al target successivo."""
+
+
+class HadesPacer:
+    """Ritmo globale verso hades, condiviso da tutti i job del processo.
+
+    - Tra due richieste passa almeno ``gap_s`` (±25% di jitter: un intervallo
+      perfettamente regolare è a sua volta una firma da bot).
+    - Su blocco: stop per ``cooldown`` (raddoppia se i blocchi si ripetono, max
+      4h) e ``gap_s`` raddoppia fino a ``scraper_max_gap_s``.
+    - Ogni richiesta riuscita riporta ``gap_s`` verso il minimo del 2%: dopo un
+      blocco il ritmo torna su gradualmente, non di colpo.
+    """
+
+    MAX_COOLDOWN_S = 4 * 3600
+
+    def __init__(self) -> None:
+        self.gap_s = settings.scraper_min_gap_s
+        self._next_at = 0.0
+        self._blocked_until = 0.0
+        self.consecutive_blocks = 0
+        self.total_blocks = 0
+        self._lock: asyncio.Lock | None = None
+
+    def blocked_for(self) -> float:
+        """Secondi di cooldown residui (0 = libero)."""
+        return max(0.0, self._blocked_until - time.monotonic())
+
+    async def wait_turn(self) -> None:
+        if self.blocked_for():
+            raise ScraperBlockedError(
+                f"cooldown anti-blocco attivo ancora {self.blocked_for():.0f}s"
+            )
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            delay = self._next_at - time.monotonic()
+            if delay > 0:
+                await asyncio.sleep(delay)
+            self._next_at = time.monotonic() + self.gap_s * random.uniform(0.75, 1.25)
+
+    def on_success(self) -> None:
+        self.consecutive_blocks = 0
+        self.gap_s = max(settings.scraper_min_gap_s, self.gap_s * 0.98)
+
+    def on_block(self, status: int) -> None:
+        self.consecutive_blocks += 1
+        self.total_blocks += 1
+        cooldown = min(
+            settings.scraper_block_cooldown_s * 2 ** (self.consecutive_blocks - 1),
+            self.MAX_COOLDOWN_S,
+        )
+        self._blocked_until = time.monotonic() + cooldown
+        self.gap_s = min(self.gap_s * 2, settings.scraper_max_gap_s)
+        logger.warning(
+            "hades HTTP %s: blocco n.%d consecutivo → pausa %.0f min, ritmo 1 richiesta/%.0fs",
+            status, self.consecutive_blocks, cooldown / 60, self.gap_s,
+        )
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "gapS": round(self.gap_s, 1),
+            "minGapS": settings.scraper_min_gap_s,
+            "blockedForS": round(self.blocked_for()),
+            "consecutiveBlocks": self.consecutive_blocks,
+            "totalBlocks": self.total_blocks,
+        }
+
+
+pacer = HadesPacer()
 
 
 class SubitoScraper(BaseScraper):
@@ -54,13 +136,11 @@ class SubitoScraper(BaseScraper):
     )
     IMAGE_RULE = "?rule=fullscreen-1x-auto"
     PAGE_SIZE = 100          # max annunci per richiesta all'API
+    MAX_DEPTH = 10_000       # hades non restituisce risultati oltre start=10000
     MAX_REQUESTS = 8         # tetto di sicurezza sulle pagine per una search
     IMAGE_CONCURRENCY = 6    # download immagini paralleli (CDN diretta)
 
-    MAX_RETRIES = 5          # tentativi sull'api_client (nodo proxy/ban/rate limit)
-    # Timeout dedicato alle chiamate hades: un nodo residenziale che non manda
-    # un byte in 15s è morto, inutile aspettarne 30 per cinque volte di fila
-    # (17 target in serie devono stare dentro il giro da 5 minuti dello sniper).
+    MAX_RETRIES = 3          # tentativi su errori di rete/5xx (mai su 403/429)
     API_TIMEOUT_S = 15.0
 
     LISTING_ID_RE = re.compile(r"-(\d+)\.htm(?:$|[?#])")
@@ -81,6 +161,7 @@ class SubitoScraper(BaseScraper):
     ) -> None:
         self.timeout_s = timeout_ms / 1000
         self.organic_only = organic_only
+        self.last_search: dict[str, Any] = {"pages": 0, "gap": False, "oldest_published": None}
 
     @property
     def source_name(self) -> str:
@@ -94,14 +175,9 @@ class SubitoScraper(BaseScraper):
         Subito è dietro Akamai Bot Manager, che blocca con 403 i client
         dall'impronta TLS "non-browser" come httpx, a prescindere da IP e header.
         curl_cffi imita il fingerprint di Safari/Firefox (configurabile via
-        SCRAPER_IMPERSONATE) e passa. Instradata dal proxy residenziale se
-        configurato; le immagini restano su httpx diretto (vedi _make_cdn_client).
-
-        Sessione USA E GETTA, una per richiesta: curl_cffi tiene il pool di
-        connessioni aperto, quindi riusare la sessione significa riuscire dallo
-        STESSO nodo residenziale con la STESSA impronta — e un 403 di Akamai (o
-        un nodo morto) si ripeterebbe identico a ogni retry. Ricrearla forza il
-        gateway IPRoyal a dare un IP nuovo e ripesca un'impronta dal pool.
+        SCRAPER_IMPERSONATE) e passa. Connessione diretta, salvo un proxy
+        opzionale in config; le immagini restano su httpx (vedi _make_cdn_client).
+        Sessione usa e getta, una per richiesta: ripesca un'impronta dal pool.
         """
         proxies = None
         if settings.proxy_url:
@@ -144,66 +220,124 @@ class SubitoScraper(BaseScraper):
         strict_match: bool = True,
         filters: dict[str, Any] | None = None,
         max_pages: int | None = None,
+        since: datetime | None = None,
     ) -> list[ScrapedListing]:
-        """Fetch listings from the hades API (via proxy). Does NOT download images.
+        """Fetch listings from the hades API. Does NOT download images.
 
         Applies, in-block: title strict-match, price bounds and category-native
         strict_filters (year/km/transmission) so irrelevant ads are discarded
         before margins/save. Raw CDN image URLs are kept in metadata for a
         later, separate call to :meth:`store_images` over the direct CDN client.
 
-        ``max_pages`` caps the number of API requests (i.e. proxy calls): the
-        sniper processes exactly N blocks instead of paginating to fill a quota.
+        ``max_pages`` caps the number of API requests: the sniper processes
+        exactly N blocks instead of paginating to fill a quota.
+
+        ``since`` (modalità Sniper, ordine per data): si pagina finché la pagina
+        è piena e il suo annuncio più vecchio è stato pubblicato DOPO ``since``
+        (= la scansione precedente), cioè finché potrebbero esserci annunci mai
+        visti più indietro; ``max_pages`` resta il tetto. In questa modalità
+        ``max_results`` non ferma la paginazione. L'esito finisce in
+        ``self.last_search``: pagine lette e ``gap`` = tetto raggiunto senza
+        ricongiungersi (annunci persi: target da scansionare più spesso).
         """
         match_query = query if strict_match else None
-        page_size = min(self.PAGE_SIZE, max(max_results, 30))
+        page_size = self.PAGE_SIZE if since else min(self.PAGE_SIZE, max(max_results, 30))
         request_cap = max_pages if max_pages is not None else self.MAX_REQUESTS
+        self.last_search = {"pages": 0, "gap": False, "oldest_published": None}
 
         listings: list[ScrapedListing] = []
         seen_urls: set[str] = set()
 
         start = 0
         count_all: int | None = None
-        for _ in range(request_cap):
-            if len(listings) >= max_results:
+        for page_index in range(request_cap):
+            if since is None and len(listings) >= max_results:
                 break
 
             payload = await self._fetch_page(
                 query, page_size, start, min_price, max_price
             )
+            self.last_search["pages"] = page_index + 1
             ads = payload.get("ads") or []
             if not ads:
                 break
             if count_all is None:
                 count_all = payload.get("count_all") or 0
+            published = [p for p in (self._published_at(ad) for ad in ads) if p]
+            oldest = min(published) if published else None
+            self.last_search["oldest_published"] = oldest
 
-            for ad in ads:
-                if filters and not self._passes_filters(ad, filters):
-                    continue
-                listing = self._parse_ad(ad)
-                if listing is None or listing.url in seen_urls:
-                    continue
-                if (listing.metadata or {}).get("is_accessory"):
-                    # Cover/vetro/caricatore "per iPhone": non è il telefono,
-                    # inquinerebbe prezzi medi e valore equo del tech.
-                    continue
-                if filters and not self._passes_listing_filters(listing, filters):
-                    continue
-                if match_query and not self._matches_query(listing.title, match_query):
-                    continue
-                if not self._within_price(listing.price_amount, min_price, max_price):
-                    continue
-
-                seen_urls.add(listing.url)
-                listings.append(listing)
-                if len(listings) >= max_results:
-                    break
+            listings.extend(
+                self.select_ads(
+                    ads, filters=filters, match_query=match_query,
+                    min_price=min_price, max_price=max_price, seen_urls=seen_urls,
+                )
+            )
+            if since is None and len(listings) >= max_results:
+                break
 
             start += page_size
             if count_all and start >= count_all:
                 break
+            if since is not None:
+                caught_up = len(ads) < page_size or oldest is None or oldest <= since
+                if caught_up:
+                    break
+                # Tetto di pagine nostro, o di hades (10.000 risultati max).
+                if page_index + 1 == request_cap or start >= self.MAX_DEPTH:
+                    self.last_search["gap"] = True
+                    break
 
-        return listings[:max_results]
+        return listings if since is not None else listings[:max_results]
+
+    def select_ads(
+        self,
+        ads: list[dict],
+        *,
+        filters: dict[str, Any] | None = None,
+        match_query: str | None = None,
+        min_price: int | None = None,
+        max_price: int | None = None,
+        seen_urls: set[str] | None = None,
+    ) -> list[ScrapedListing]:
+        """Parsing + scrematura di una pagina grezza di hades (filtri nativi,
+        accessori, strict match sul titolo, prezzo). ``seen_urls`` deduplica tra
+        pagine e viene aggiornato."""
+        seen = seen_urls if seen_urls is not None else set()
+        out: list[ScrapedListing] = []
+        for ad in ads:
+            if filters and not self._passes_filters(ad, filters):
+                continue
+            listing = self._parse_ad(ad)
+            if listing is None or listing.url in seen:
+                continue
+            if (listing.metadata or {}).get("is_accessory"):
+                # Cover/vetro/caricatore "per iPhone": non è il telefono,
+                # inquinerebbe prezzi medi e valore equo del tech.
+                continue
+            if filters and not self._passes_listing_filters(listing, filters):
+                continue
+            if match_query and not self._matches_query(listing.title, match_query):
+                continue
+            if not self._within_price(listing.price_amount, min_price, max_price):
+                continue
+            seen.add(listing.url)
+            out.append(listing)
+        return out
+
+    @staticmethod
+    def _published_at(ad: dict) -> datetime | None:
+        """Data di pubblicazione (es. '2026-10-02T09:56:57.363+0200')."""
+        raw = (ad.get("dates") or {}).get("display_iso8601")
+        if not raw:
+            return None
+        try:
+            return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S.%f%z")
+        except ValueError:
+            try:
+                return datetime.strptime(raw, "%Y-%m-%dT%H:%M:%S%z")
+            except ValueError:
+                return None
 
     async def _fetch_page(
         self,
@@ -231,24 +365,22 @@ class SubitoScraper(BaseScraper):
 
     @retry(
         stop=stop_after_attempt(MAX_RETRIES),
-        # Jitter: 17 target in serie ritentano sfalsati, non tutti sullo stesso
-        # istante (un burst sincrono è esattamente ciò che Akamai profila).
-        wait=wait_exponential(multiplier=0.5, max=8) + wait_random(0, 1.5),
+        wait=wait_exponential(multiplier=2, max=30) + wait_random(0, 3),
         retry=retry_if_exception_type((CurlError, RetryableHTTPError)),
         reraise=True,
     )
     async def _get_with_retry(self, url: str, params: dict[str, str]):
-        """GET con retry (tenacity): fino a 5 tentativi su 403/429/500 o errori di
-        rete/proxy (CurlError copre timeout, connessione, ProxyError).
-
-        Ogni tentativo apre una sessione NUOVA: è ciò che cambia davvero nodo
-        residenziale e impronta TLS (vedi ``_make_api_client``). Ritentare sulla
-        stessa sessione riusava la connessione, quindi lo stesso IP già bloccato
-        da Akamai o lo stesso nodo IPRoyal morto — e i 5 tentativi fallivano
-        tutti allo stesso modo.
+        """GET a ritmo controllato (``pacer``), con retry SOLO su errori di rete
+        e 5xx. Un 403/429 non si ritenta: apre il cooldown e solleva
+        ``ScraperBlockedError``, così il giro si ferma invece di insistere
+        dallo stesso IP (il modo più rapido per allungare il blocco).
         """
+        await pacer.wait_turn()
         async with self._make_api_client() as client:
             response = await client.get(url, params=params)
+            if response.status_code in BLOCK_STATUS:
+                pacer.on_block(response.status_code)
+                raise ScraperBlockedError(f"HTTP {response.status_code} da hades")
             if response.status_code in RETRYABLE_STATUS:
                 raise RetryableHTTPError(f"HTTP {response.status_code} da hades")
             if response.status_code >= 400:
@@ -256,6 +388,7 @@ class SubitoScraper(BaseScraper):
                 raise RuntimeError(
                     f"HTTP {response.status_code} da hades (non ritentabile)"
                 )
+            pacer.on_success()
             return response
 
     # ----------------------------------------------------------------- parse
@@ -280,6 +413,7 @@ class SubitoScraper(BaseScraper):
         # Pre-parsing NLP su titolo+descrizione: difetti, urgenza, allestimenti
         # normalizzati e fallback su km/anno quando l'API non li espone.
         nlp = parse_listing(title, description)
+        published = self._published_at(ad)
 
         return ScrapedListing(
             source=self.source_name,
@@ -292,6 +426,9 @@ class SubitoScraper(BaseScraper):
             image_urls=[],
             metadata={
                 "condition": self._feature(features, "/item_condition"),
+                # Pubblicazione su Subito (≠ found_at = quando l'abbiamo visto):
+                # base corretta per età dell'annuncio e tempo di vendita.
+                "published_at": published.isoformat() if published else None,
                 "image_count": len(images),
                 "raw_images": images,
                 # Campi strutturati auto (None per gli smartphone). Preferiamo il

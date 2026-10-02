@@ -26,8 +26,9 @@ class Settings:
         "PUBLIC_MEDIA_BASE_URL", "http://localhost:8000"
     )
 
-    # Rotating residential proxy (IPRoyal) — used ONLY for the hades API calls.
-    # Image/CDN downloads go direct (see split routing in the scraper).
+    # Proxy HTTP opzionale per le chiamate hades. DISMESSO dal 2026-10-02 (niente
+    # servizi a pagamento): si va in connessione diretta a ritmo controllato.
+    # Lasciato configurabile solo per eventuali proxy gratuiti/self-hosted.
     proxy_host: str | None = os.getenv("PROXY_HOST") or None
     proxy_port: str | None = os.getenv("PROXY_PORT") or None
     proxy_user: str | None = os.getenv("PROXY_USER") or None
@@ -38,6 +39,20 @@ class Settings:
     # a caso per ogni target, così se Akamai flagga un profilo gli altri reggono.
     # "safari"/"firefox" testati OK; aggiungi "chrome" per più varietà.
     scraper_impersonate: str = os.getenv("SCRAPER_IMPERSONATE", "safari,firefox")
+
+    # Ritmo verso hades da UN solo IP (vedi scripts/probe_rate_limit.py per
+    # misurare il limite reale della macchina). Pausa minima tra due richieste,
+    # condivisa da tutti i job; su blocco (403/429) la pausa raddoppia fino al
+    # massimo e lo scraper si ferma per il cooldown (che raddoppia se il blocco
+    # si ripete), poi torna verso il minimo un passo alla volta.
+    scraper_min_gap_s: float = float(os.getenv("SCRAPER_MIN_GAP_S", "6"))
+    scraper_max_gap_s: float = float(os.getenv("SCRAPER_MAX_GAP_S", "120"))
+    scraper_block_cooldown_s: float = float(os.getenv("SCRAPER_BLOCK_COOLDOWN_S", "900"))
+    # Cadenza dei giri Sniper. Misurato il 2026-10-02: il target iPhone più
+    # vivace pubblica ~290 annunci/giorno (~12/h), una pagina ne contiene 100 →
+    # 15' lascia un margine enorme. Se scrape_runs.gaps sale, abbassala.
+    sniper_tech_interval_min: int = int(os.getenv("SNIPER_TECH_INTERVAL_MIN", "15"))
+    sniper_auto_interval_min: int = int(os.getenv("SNIPER_AUTO_INTERVAL_MIN", "30"))
 
     @property
     def impersonate_pool(self) -> list[str]:

@@ -30,6 +30,8 @@ export type PriceWatch = {
   firstPrice: number | null;
   currentPrice: number | null;
   dropCount: number;
+  /** Rialzi dopo la pubblicazione (venditore senza fretta). */
+  riseCount?: number;
   totalDropEur: number | null;
   totalDropPct: number | null;
   lastDropAt: string | null;
@@ -49,8 +51,22 @@ export type SellerProfile = {
   motivated: boolean;
 };
 
+export type RepairQuote = {
+  defect: string;
+  part: string;
+  label: string;
+  /** Ricambio originale Apple (Self Service Repair): prezzo, credito di reso, netto. */
+  apple: { price: number; credit: number; net: number } | null;
+  /** Ricambio aftermarket consigliato (qualità: soft oled, incell, deji...). */
+  aftermarket: { price: number; grade: string; name: string } | null;
+  /** Colonna usata nei conti: "aftermarket" | "apple" | "apple-fascia" (ripiego). */
+  source: string | null;
+  labor: number;
+  cost: number;
+};
+
 export type RepairInfo = {
-  items: { defect: string; label: string; cost: number }[];
+  items: RepairQuote[];
   total: number;
   netMarginEur: number | null;
   netMarginPct: number | null;
@@ -186,7 +202,15 @@ export type ApiModelStat = {
   fintoPrivato: number;
   ai: AiDistribution;
   // C — vendite reali
+  /** Media dei soli venduti: ottimista (chi resta online non conta). */
   avgDaysToSell: number | null;
+  /** Kaplan–Meier (attivi come censurati): giorni entro cui si vende metà. null =
+   * meno di metà venduta nella finestra osservata. */
+  daysToSellKM?: number | null;
+  sold7dPct?: number | null;
+  sold30dPct?: number | null;
+  /** Natura stimata delle sparizioni: venduto / ritirato / scaduto. */
+  removalKinds?: Record<string, number>;
   sampleSold: number | null;
   soldMedian: number | null;
   soldMax: number | null;
@@ -568,6 +592,10 @@ export type ScrapeRun = {
   scraped: number;
   new_count: number;
   ran_at: string;
+  /** Chiamate a Subito nel giro (migrazione 18). */
+  requests?: number | null;
+  /** Target non ricongiunti con la scansione precedente = annunci persi. */
+  gaps?: number | null;
 };
 
 export type TargetCoverage = {
@@ -585,8 +613,17 @@ export type Coverage = {
   targets: TargetCoverage[];
 };
 
+export type Pacing = {
+  gapS: number;
+  minGapS: number;
+  blockedForS: number;
+  consecutiveBlocks: number;
+  totalBlocks: number;
+};
+
 export type ScraperHealth = {
   proxy_configured: boolean;
+  pacing?: Pacing;
   impersonate_pool: string[];
   scraper: Record<string, ScrapeRun | null>;
   recent: Record<string, ScrapeRun[]>;
@@ -604,6 +641,35 @@ export async function fetchScraperHealth(
   return res.json();
 }
 
+export type DataQuality = {
+  category: string;
+  activeListings: number;
+  coverage: {
+    subitoTotal: number | null;
+    seenLastInventory: number | null;
+    keptLastInventory: number | null;
+    inventoryAt: string | null;
+    inventoryComplete: boolean | null;
+    seenPct: number | null;
+  };
+  /** % di annunci attivi con il campo estratto. */
+  fieldsPct: Record<string, number>;
+  last24h: { runs: number; down: number; requests: number; gaps: number; new: number };
+  removed7d: number;
+};
+
+export async function fetchDataQuality(
+  category = "smartphone",
+  signal?: AbortSignal,
+): Promise<DataQuality> {
+  const res = await fetch(`${API_BASE_URL}/health/data-quality?category=${category}`, {
+    cache: "no-store",
+    signal,
+  });
+  if (!res.ok) throw new Error(`GET /health/data-quality failed (${res.status})`);
+  return res.json();
+}
+
 /* ------------------------------------------------------------- Impostazioni */
 
 export type AppSettings = {
@@ -612,6 +678,9 @@ export type AppSettings = {
   alert_min_score: number;
   target_margin_pct: Record<string, number>;
   apple_part_eur: Record<string, Record<string, number>>;
+  repair_source: "aftermarket" | "apple";
+  apple_return_credit: boolean;
+  repair_labor_eur: Record<string, number>;
   telegram_chat_tech: string | null;
   telegram_chat_auto: string | null;
   telegram_chat_ops: string | null;

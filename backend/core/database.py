@@ -343,6 +343,23 @@ def get_db() -> DBClient:
     return _client
 
 
+_column_cache: dict[tuple[str, str], bool] = {}
+
+
+def has_column(table: str, column: str, client: DBClient | None = None) -> bool:
+    """True se `table.column` esiste. Le migrazioni si applicano a mano, quindi
+    il codice deve girare anche prima: chi usa una colonna nuova lo chiede qui.
+    Esito memorizzato per processo (dopo una migrazione: riavvia il backend)."""
+    key = (table, column)
+    if key not in _column_cache:
+        try:
+            (client or _client).table(table).select(column).limit(1).execute()
+            _column_cache[key] = True
+        except Exception:
+            _column_cache[key] = False
+    return _column_cache[key]
+
+
 # ------------------------------------------------------------ storage
 
 def _media_root() -> Path:

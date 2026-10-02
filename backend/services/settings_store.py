@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+import backend.services.parts as parts
 import backend.services.scoring as scoring
 from backend.core.config import settings
 from backend.core.database import get_db
@@ -33,6 +34,11 @@ def _defaults() -> dict[str, Any]:
         "alert_min_score": settings.alert_min_score,
         "target_margin_pct": copy.deepcopy(scoring.TARGET_MARGIN_PCT),
         "apple_part_eur": copy.deepcopy(scoring.APPLE_PART_EUR),
+        # Riparazioni: colonna di costo usata nei conti, credito di reso Apple,
+        # manodopera per tipo di intervento (services/parts.py).
+        "repair_source": "aftermarket",
+        "apple_return_credit": True,
+        "repair_labor_eur": {"schermo": 0, "batteria": 0, "scocca": 0},
         "telegram_chat_tech": settings.telegram_chat_tech,
         "telegram_chat_auto": settings.telegram_chat_auto,
         "telegram_chat_ops": settings.telegram_chat_ops,
@@ -66,6 +72,7 @@ def get_all(force: bool = False) -> dict[str, Any]:
             merged[key] = value
 
     scoring.apply_config(merged)
+    parts.configure(merged)
 
     with _lock:
         _cache = merged

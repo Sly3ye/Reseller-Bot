@@ -7,6 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from backend.core.config import settings
 from backend.services.ai_analysis import enrich_missing
 from backend.services.garbage_collector import run_garbage_collector
+from backend.services.sweep import reconcile_inventory, run_sweep
 from backend.tasks import run_nightly_batch_all_products, run_sniper_all_products
 
 logger = logging.getLogger(__name__)
@@ -21,14 +22,14 @@ def create_scheduler() -> AsyncIOScheduler:
     - Motore Notturno: recomputes market trends daily at 03:00.
     - Garbage Collector: verifica annunci rimossi ogni notte alle 04:30
       (alimenta il time-to-sale oltre a pulire il feed).
-    - Cecchino Tech: smartphone sniper every 5 minutes — su Subito il primo
-      che scrive vince, e una pagina API tech costa pochissimo proxy.
-    - Cecchino Auto: dedicated automobile sniper every 15 minutes.
+    - Cecchino Tech / Auto: ogni SNIPER_TECH/AUTO_INTERVAL_MIN (default 15/30).
+      Da un solo IP ogni richiesta conta: ogni target pagina all'indietro solo
+      fino alla scansione precedente, quindi una cadenza più lenta non perde
+      annunci (lo misura scrape_runs.gaps), costa solo freschezza degli alert.
 
     I due Cecchini sono scoping-disgiunti per categoria (tech vs automobile),
-    così non si scansionano gli stessi target due volte. La cadenza auto resta
-    a 15' per evitare l'accavallamento: con molti target auto + download
-    immagini un giro può superare i 5 minuti.
+    così non si scansionano gli stessi target due volte; il ritmo delle
+    richieste lo regola il pacer globale dello scraper.
 
     All jobs are async httpx-based, so they never block the FastAPI event loop.
     """
@@ -49,29 +50,44 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Tech: inventario completo + verifica dei soli spariti (~600 richieste
+    # invece di una per annuncio attivo). Prima del Motore Notturno delle 03:00,
+    # che calcola le medie tech dal DB appena riconciliato.
+    scheduler.add_job(
+        reconcile_inventory,
+        trigger=CronTrigger(hour=1, minute=30),
+        kwargs={"category": "smartphone"},
+        id="inventory_tech",
+        name="Inventario Tech (stock completo, prezzi, rimossi → time-to-sale)",
+        replace_existing=True,
+    )
+
     scheduler.add_job(
         run_garbage_collector,
         trigger=CronTrigger(hour=4, minute=30),
+        kwargs={"category": "automobile"},
         id="garbage_collector",
-        name="Garbage Collector (annunci rimossi → time-to-sale)",
+        name="Garbage Collector Auto (annunci rimossi → time-to-sale)",
         replace_existing=True,
     )
 
+    # Tech: UNA ricerca ampia "iphone" invece di una per target (vedi
+    # services/sweep.py). L'id resta "sniper_live" per la UI Automations.
     scheduler.add_job(
-        run_sniper_all_products,
-        trigger=IntervalTrigger(minutes=5),
+        run_sweep,
+        trigger=IntervalTrigger(minutes=settings.sniper_tech_interval_min),
         kwargs={"category": "smartphone"},
         id="sniper_live",
-        name="Cecchino Tech (smartphone, 5 min)",
+        name=f"Cecchino Tech (ricerca ampia iPhone, {settings.sniper_tech_interval_min} min)",
         replace_existing=True,
     )
 
     scheduler.add_job(
         run_sniper_all_products,
-        trigger=IntervalTrigger(minutes=15),
-        kwargs={"category": "automobile", "pages": 1},
+        trigger=IntervalTrigger(minutes=settings.sniper_auto_interval_min),
+        kwargs={"category": "automobile"},
         id="sniper_auto_live",
-        name="Cecchino Auto (automobile, 15 min)",
+        name=f"Cecchino Auto (automobile, {settings.sniper_auto_interval_min} min)",
         replace_existing=True,
     )
 

@@ -10,8 +10,10 @@ target si allineano per nome `(category, query)`.
 
 ## Prerequisiti
 - **Docker Desktop** attivo.
-- (Consigliato) credenziali **proxy IPRoyal** — le stesse usate sul Mac. Senza
-  proxy lo scraper va in diretta su `hades.subito.it` e rischia blocchi Akamai.
+- Nessun proxy: lo scraper va in diretta su `hades.subito.it` a ritmo
+  controllato (vedi [ARCHITETTURA.md](ARCHITETTURA.md#ritmo-da-un-solo-ip-niente-proxy)).
+  ⚠️ Se Mac e PC scrapano **dalla stessa rete di casa** escono con lo stesso IP
+  e si dividono lo stesso limite: meglio uno solo alla volta.
 - (Opzionale) **Ollama** in esecuzione sull'host per l'analisi AI locale.
 
 ## Avvio (una volta)
@@ -20,10 +22,10 @@ target si allineano per nome `(category, query)`.
 cp .env.example .env
 #    → apri .env e imposta POSTGRES_PASSWORD
 
-# 2. Segreti dell'app (proxy + Telegram, opzionali ma il proxy è consigliato)
+# 2. Segreti dell'app (Telegram, opzionale)
 cp backend/.env.example backend/.env
-#    → in backend/.env compila PROXY_HOST/PORT/USER/PASS (le tue IPRoyal)
-#      Telegram puoi lasciarlo vuoto: qui stai solo accumulando.
+#    → lascia vuoti i PROXY_*. Telegram puoi lasciarlo vuoto: qui stai solo
+#      accumulando.
 
 # 3. Su lo stack: Postgres (schema da init.sql al 1° avvio) + backend + scheduler
 docker compose up -d --build
@@ -33,8 +35,8 @@ docker compose up -d --build
 docker compose exec backend python scripts/seed_targets.py
 ```
 
-Fatto. Lo **scheduler parte da solo**: il cecchino tech gira ogni ~5 minuti, quello
-auto ogni ~15. Da qui in poi il DB si riempie.
+Fatto. Lo **scheduler parte da solo**: il cecchino tech gira ogni ~15 minuti, quello
+auto ogni ~30. Da qui in poi il DB si riempie.
 
 ## Verifica che stia raccogliendo
 - Log backend: `docker compose logs -f backend` → cerca `Scheduler started with jobs`

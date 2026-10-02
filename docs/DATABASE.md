@@ -30,5 +30,28 @@ rimosse perché l'unico client che si connette è il backend, fidato.
 - **`align_from_supabase.sql`** allinea uno schema *ripristinato da Supabase*
   (più vecchio) al codice: aggiunge le colonne variante/tech, converte array
   `text[]`→`jsonb`, crea `sent_alerts`/`deals`/`scrape_runs`. Idempotente.
-- Non esiste ancora un **migration runner** versionato per aggiornamenti
-  incrementali di uno schema già popolato (vedi [ROADMAP.md](ROADMAP.md)).
+- **Migration runner** (`backend/core/migrations.py`): all'avvio il backend
+  applica da solo i `database/NN_*.sql` non ancora registrati in
+  `schema_migrations`, in ordine, una transazione per file. 01–17 (storico
+  Supabase, già in `init.sql`) vengono solo registrati al primo giro. Stato e
+  applicazione manuale: `python scripts/migrate.py [--apply]`. **Ogni nuova
+  migrazione dev'essere idempotente** (`if not exists`): un DB nuovo la riceve
+  sia da `init.sql` sia dal runner.
+- Applicazione a mano (non più necessaria, utile per debug) — idempotenti:
+  ```bash
+  # bash / zsh (Mac, Linux)
+  docker compose exec -T db psql -U postgres -d reseller < database/18_scrape_runs_pacing.sql
+  docker compose exec -T db psql -U postgres -d reseller < database/19_published_at.sql
+  ```
+  ```powershell
+  # PowerShell (Windows): "<" non esiste, il file si passa con una pipe
+  Get-Content database\18_scrape_runs_pacing.sql -Raw | docker compose exec -T db psql -U postgres -d reseller
+  Get-Content database\19_published_at.sql -Raw | docker compose exec -T db psql -U postgres -d reseller
+  ```
+  Poi `docker compose up -d --build backend`: il codice è nell'immagine, e il
+  riavvio rilegge quali colonne esistono.
+  - **18**: `scrape_runs.requests` / `gaps` (costo del giro e annunci persi).
+  - **19**: `published_at` su `live_opportunities_*` (pubblicazione su Subito:
+    base corretta per età e tempo di vendita).
+  Il codice gira anche senza (salta le colonne mancanti), ma perde quei dati.
+
