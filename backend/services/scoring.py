@@ -139,6 +139,26 @@ def repair_costs(
     return items
 
 
+# Ricambio aftermarket → quale sconto di mercato si applica alla rivendita.
+# La scocca non dà avvisi in iOS (nessuno sconto); la fotocamera sì, come lo schermo.
+_RATIO_FOR_PART = {"schermo": "schermo", "batteria": "batteria", "fotocamera": "schermo", "scocca": None}
+
+
+def repair_resale_factor(
+    repairs: list[dict[str, Any]], ratios: dict[str, float] | None
+) -> float:
+    """Moltiplicatore sul prezzo del sano per il telefono riparato: prodotto
+    degli sconti delle parti montate aftermarket (1.0 se tutte Apple)."""
+    factor = 1.0
+    for item in repairs:
+        if item.get("source") != "aftermarket":
+            continue
+        key = _RATIO_FOR_PART.get(item.get("part", ""))
+        if key and ratios and ratios.get(key):
+            factor *= ratios[key]
+    return round(factor, 3)
+
+
 def defect_penalty_eur(
     category: str, title: str | None, defects: list[str]
 ) -> tuple[int, dict[str, int]]:
@@ -337,6 +357,7 @@ def evaluate_opportunity(
     resale_ref: float | None = None,
     carry_month_eur: int | None = None,
     hold_days: int | None = None,
+    non_original_ratios: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Valutazione completa di un'opportunità per l'API (score + trattativa).
 
@@ -357,19 +378,27 @@ def evaluate_opportunity(
 
     resale = resale_ref if (resale_ref and resale_ref > 0) else market_avg
 
+    # Riparato con ricambi aftermarket: si rivende meno del sano tutto originale
+    # (rapporto misurato sul mercato, services/repair_matrix.py). Con ricambio
+    # Apple la parte è originale e il prezzo resta quello del sano.
+    resale_factor = repair_resale_factor(repairs, non_original_ratios)
+    if repairs and resale:
+        resale = resale * resale_factor
+
     # Costo di magazzino: quanto si deprezza mentre resta invenduto.
     carry_total = 0
     if carry_month_eur and hold_days:
         carry_total = round(carry_month_eur * hold_days / 30)
     bid = max_bid(category, resale, penalty_total, repair_total, carry_total)
 
-    # Margine netto post-riparazione (radar riparazioni): per i "rotti
-    # riparabili" il vero margine è contro la media del funzionante, meno il
-    # costo del ricambio.
+    # Margine netto post-riparazione (radar riparazioni): si rivende come SANO
+    # riparato, quindi la base è il prezzo del sano (``resale``), non il valore
+    # equo del rotto — che è già scontato per la condizione e farebbe contare
+    # il guasto due volte (bug corretto il 2026-10-02).
     net_margin_eur: float | None = None
     net_margin_pct: float | None = None
-    if repairs and market_avg is not None and asking is not None and asking > 0:
-        net_margin_eur = round(market_avg - asking - repair_total, 2)
+    if repairs and resale is not None and asking is not None and asking > 0:
+        net_margin_eur = round(resale - asking - repair_total - carry_total, 2)
         net_margin_pct = round(net_margin_eur / (asking + repair_total) * 100, 1)
 
     score_input_margin = net_margin_pct if net_margin_pct is not None else margin_pct
@@ -392,6 +421,8 @@ def evaluate_opportunity(
             {
                 "items": repairs,
                 "total": repair_total,
+                "resaleAfterRepair": round(resale) if resale else None,
+                "resaleFactor": resale_factor,
                 "netMarginEur": net_margin_eur,
                 "netMarginPct": net_margin_pct,
             }

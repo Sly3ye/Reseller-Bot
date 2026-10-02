@@ -38,6 +38,8 @@ async def get_opportunities(
     q: str | None = Query(default=None),
     view: View = Query(default="attivi"),
     preset: Preset | None = Query(default=None),
+    defect: str | None = Query(default=None, description="guasto NLP, es. schermo-rotto"),
+    only_defect: bool = Query(default=False, description="solo quel guasto (+ segni estetici)"),
     limit: int = Query(default=30, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
@@ -60,9 +62,24 @@ async def get_opportunities(
             q=q,
             view=view,
             preset=preset,
+            defect=defect,
+            only_defect=only_defect,
             limit=limit,
             offset=offset,
         )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get("/repair-matrix")
+async def get_repair_matrix_endpoint() -> dict:
+    """Matrice opportunità modello × guasto (iPhone): acquisto tipico, sconto vs
+    sano, riparazione (aftermarket/Apple), rivendita del riparato misurata sul
+    mercato, margine, volume settimanale e potenziale €/settimana."""
+    from backend.services.repair_matrix import get_repair_matrix  # noqa: PLC0415
+
+    try:
+        return get_repair_matrix()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

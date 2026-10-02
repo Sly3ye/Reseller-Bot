@@ -31,6 +31,8 @@ TELEGRAM_API = "https://api.telegram.org"
 
 ALERT_NEW = "new_deal"
 ALERT_DROP = "price_drop"
+# Opportunità di riparazione: rotto che, riparato, rende sopra soglia.
+ALERT_REPAIR = "repair_deal"
 # Calo su un annuncio SALVATO (⭐). Il tipo include il nuovo prezzo: il vincolo
 # di unicità è (listing_id, alert_type), quindi ogni ribasso successivo è una
 # chiave diversa e ti arriva. Sui salvati vuoi seguire tutta la discesa, non
@@ -209,6 +211,41 @@ def _fmt_smart_deal(item: dict[str, Any], category: str) -> str:
     return "\n".join(lines)
 
 
+def _fmt_repair_deal(item: dict[str, Any]) -> str:
+    """Rotto da riparare: i conti del business, non il margine da "sano"."""
+    title = html.escape(str(item.get("title") or "Annuncio"))
+    repair = item.get("repair") or {}
+    lines = ["🔧 <b>DA RIPARARE</b>", f"<b>{title}</b>",
+             f"💰 Chiede {_fmt_eur(item.get('askingPrice'))}"
+             + (f" · tetto d'acquisto {_fmt_eur(item.get('maxBid'))}" if item.get("maxBid") else "")]
+    for part in repair.get("items") or []:
+        cols = []
+        if part.get("aftermarket"):
+            cols.append(f"aftermarket {_fmt_eur(part['aftermarket']['price'])} ({part['aftermarket']['grade']})")
+        if part.get("apple"):
+            cols.append(f"Apple {_fmt_eur(part['apple']['net'])}")
+        used = "Apple" if part.get("source") == "apple" else "aftermarket"
+        lines.append(f"🛠️ {html.escape(str(part.get('label')))}: {' · '.join(cols)} → conti con {used}")
+    if repair.get("resaleAfterRepair"):
+        factor = repair.get("resaleFactor") or 1
+        note = f" (−{round((1 - factor) * 100)}% per ricambi non originali)" if factor < 1 else ""
+        lines.append(f"📈 Rivendita riparato ≈ {_fmt_eur(repair['resaleAfterRepair'])}{note}")
+    lines.append(f"✅ <b>Margine netto {_fmt_eur(repair.get('netMarginEur'))}</b>"
+                 + (f" ({repair['netMarginPct']:.0f}%)" if repair.get("netMarginPct") is not None else ""))
+    other = [d for d in (item.get("defects") or [])
+             if d not in {p.get("defect") for p in repair.get("items") or []} and d != "graffi"]
+    if other:
+        lines.append(f"⚠️ Altri difetti dichiarati: {html.escape(', '.join(map(str, other)))}")
+    risk = item.get("risk") or {}
+    if risk.get("level") == "medio":
+        lines.append(f"⚠️ {html.escape('; '.join(risk.get('reasons') or []))}")
+    place = item.get("location")
+    if place:
+        lines.append(f"📍 {html.escape(str(place))}")
+    lines.append(str(item.get("url") or ""))
+    return "\n".join(lines)
+
+
 def _fmt_price_drop(event: dict[str, Any], market_avg: float | None) -> str:
     title = html.escape(str(event.get("title") or "Annuncio"))
     old = event["old_price"]
@@ -304,6 +341,7 @@ async def notify_deals(
     category: str,
     deal_items: list[dict[str, Any]],
     drop_events: list[dict[str, Any]],
+    repair_items: list[dict[str, Any]] | None = None,
 ) -> dict[str, int]:
     """Notifica gli affari di un giro sniper, con l'intelligence completa.
 
@@ -325,7 +363,7 @@ async def notify_deals(
     if cfg.get(key) and settings.telegram_bot_token:
         chat_id = cfg[key]
     if not chat_id:
-        return {"sent": 0, "skipped": len(deal_items) + len(drop_events)}
+        return {"sent": 0, "skipped": len(deal_items) + len(drop_events) + len(repair_items or [])}
 
     to_send: list[tuple[str, str, str, str | None]] = []  # (lid, type, text, photo)
 
@@ -342,6 +380,13 @@ async def notify_deals(
                 images[0] if images else None,
             )
         )
+
+    for item in repair_items or []:
+        lid = item.get("id")
+        if not lid:
+            continue
+        images = item.get("images") or []
+        to_send.append((str(lid), ALERT_REPAIR, _fmt_repair_deal(item), images[0] if images else None))
 
     # Annunci ⭐ salvati fra quelli che hanno cambiato prezzo: su questi il calo
     # si notifica SEMPRE, anche sotto la soglia minima — li stai seguendo apposta.

@@ -43,6 +43,9 @@ class DealCreate(BaseModel):
     market_avg: float | None = None
     offer_price: float | None = None
     notes: str | None = None
+    # Stima del bot al momento dell'aggancio (vedi migrazione 20):
+    # {kind, marginEur, repairItems:[{part, source, cost}], resaleAfterRepair, maxBid}
+    estimate: dict[str, Any] | None = None
 
 
 class DealUpdate(BaseModel):
@@ -51,9 +54,38 @@ class DealUpdate(BaseModel):
     buy_price: float | None = None
     sell_price: float | None = None
     extra_costs: list[dict[str, Any]] | None = Field(
-        default=None, description='[{"label": "batteria", "amount": 79}]'
+        default=None, description='[{"label": "spedizione", "amount": 9}]'
+    )
+    # Riparazione vera: i ricambi vanno QUI (non in extra_costs) così si
+    # confrontano con la stima per pezzo.
+    repair: dict[str, Any] | None = Field(
+        default=None,
+        description='{"parts": [{"part": "schermo", "source": "aftermarket", "cost": 40}], '
+                    '"minutes": 45, "outcome": "riuscita", "notes": ""}',
     )
     notes: str | None = None
+
+
+REPAIR_OUTCOMES = ("riuscita", "parziale", "fallita")
+
+
+def _repair_numbers(row: dict[str, Any]) -> dict[str, Any]:
+    """Costo reale dei ricambi, stima dei ricambi e scarto (per pezzo e totale)."""
+    repair = row.get("repair") or {}
+    estimate = row.get("estimate") or {}
+    actual_parts = repair.get("parts") or []
+    est_parts = estimate.get("repairItems") or []
+    actual = sum(float(p.get("cost") or 0) for p in actual_parts) if actual_parts else None
+    est = sum(float(p.get("cost") or 0) for p in est_parts) if est_parts else None
+    return {
+        "repairCost": round(actual, 2) if actual is not None else None,
+        "repairCostEstimated": round(est, 2) if est is not None else None,
+        "repairCostErrorEur": (
+            round(actual - est, 2) if actual is not None and est is not None else None
+        ),
+        "repairOutcome": repair.get("outcome") if repair.get("outcome") in REPAIR_OUTCOMES else None,
+        "repairMinutes": repair.get("minutes"),
+    }
 
 
 # Da quanti giorni un affare può restare fermo in uno stadio prima che sia un
@@ -112,6 +144,8 @@ def _shape_deal(
     costs = sum(
         float(c.get("amount") or 0) for c in (row.get("extra_costs") or [])
     )
+    rep = _repair_numbers(row)
+    costs += rep["repairCost"] or 0
 
     invested = (buy + costs) if buy is not None else None
     profit = (sell - invested) if (sell is not None and invested) else None
@@ -121,9 +155,16 @@ def _shape_deal(
 
     # Margine stimato dal bot al momento dell'aggancio (per il confronto
     # stima vs realtà una volta chiuso l'affare).
+    # Se c'è la stima fotografata all'aggancio (riparazioni comprese) vale
+    # quella; altrimenti il vecchio "media − richiesto", che per un rotto
+    # ignora la riparazione ed è quindi ottimista.
     asking = float(row["asking_price"]) if row.get("asking_price") is not None else None
     avg = float(row["market_avg"]) if row.get("market_avg") is not None else None
-    estimated = round(avg - asking, 2) if (avg is not None and asking) else None
+    snap = (row.get("estimate") or {}).get("marginEur")
+    if snap is not None:
+        estimated = round(float(snap), 2)
+    else:
+        estimated = round(avg - asking, 2) if (avg is not None and asking) else None
 
     # Feedback loop: quanto il profitto reale si scosta dalla stima del bot.
     estimate_error = (
@@ -169,6 +210,7 @@ def _shape_deal(
         "estimateErrorEur": estimate_error,
         "heldDays": held_days,
         "roiPerDayPct": roi_per_day,
+        **rep,
     }
 
 
@@ -264,6 +306,14 @@ async def deals_summary() -> dict:
         if rel:
             accuracy = round(max(0.0, 100 - sum(rel) / len(rel) * 100), 1)
 
+    # Riparazioni: tasso di riuscita e quanto i ricambi reali si scostano dai
+    # listini (positivo = hai speso più della stima). Base per correggere i
+    # costi e il rischio dei "non si accende".
+    repaired = [d for d in shaped if d.get("repairOutcome")]
+    outcomes = {o: sum(1 for d in repaired if d["repairOutcome"] == o) for o in REPAIR_OUTCOMES}
+    cost_err = [d["repairCostErrorEur"] for d in shaped if d.get("repairCostErrorEur") is not None]
+    minutes = [float(d["repairMinutes"]) for d in shaped if d.get("repairMinutes")]
+
     held = [d["heldDays"] for d in sold if d.get("heldDays") is not None]
     roi_days = [d["roiPerDayPct"] for d in sold if d.get("roiPerDayPct") is not None]
 
@@ -289,6 +339,13 @@ async def deals_summary() -> dict:
         "estimationAccuracyPct": accuracy,
         "avgHeldDays": round(sum(held) / len(held), 1) if held else None,
         "realizedRoiPerDayPct": round(sum(roi_days) / len(roi_days), 2) if roi_days else None,
+        "repairs": len(repaired),
+        "repairOutcomes": outcomes,
+        "repairSuccessPct": (
+            round(outcomes["riuscita"] / len(repaired) * 100, 1) if repaired else None
+        ),
+        "repairCostBiasEur": round(sum(cost_err) / len(cost_err), 2) if cost_err else None,
+        "avgRepairMinutes": round(sum(minutes) / len(minutes)) if minutes else None,
     }
 
 
@@ -311,6 +368,9 @@ async def create_deal(payload: DealCreate) -> dict:
 @router.patch("/{deal_id}")
 async def update_deal(deal_id: str, payload: DealUpdate) -> dict:
     patch = payload.model_dump(exclude_none=True)
+    outcome = (patch.get("repair") or {}).get("outcome")
+    if outcome is not None and outcome not in REPAIR_OUTCOMES:
+        raise HTTPException(status_code=422, detail=f"Esito non valido: {outcome}")
     if not patch:
         raise HTTPException(status_code=422, detail="Nessun campo da aggiornare.")
     db = get_db()

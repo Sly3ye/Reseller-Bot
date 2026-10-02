@@ -103,7 +103,30 @@ def test_scoring():
     )
     a = ev_apple["repair"]["items"][0]["apple"]
     check("apple netto = prezzo - credito", ev_apple["repair"]["total"], round(a["price"] - a["credit"], 2))
+    # Con ricambio Apple la rivendita resta quella del sano (fattore 1).
+    check("apple: rivendita piena",
+          scoring.evaluate_opportunity(
+              category="smartphone", title="iPhone 13 Pro Max", asking=300.0, market_avg=650.0,
+              margin_pct=None, found_at=None, seller_type=None, defects=["schermo-rotto"], urgency=[],
+              features=[], battery_pct=None, has_price_drop=False,
+              non_original_ratios={"schermo": 0.844})["repair"]["resaleFactor"], 1.0)
     parts.CONFIG["repair_source"] = "aftermarket"
+    # Aftermarket: si rivende al prezzo del sano × sconto misurato per lo schermo.
+    ev_r = scoring.evaluate_opportunity(
+        category="smartphone", title="iPhone 13 Pro Max", asking=300.0, market_avg=650.0,
+        margin_pct=None, found_at=None, seller_type=None, defects=["schermo-rotto"], urgency=[],
+        features=[], battery_pct=None, has_price_drop=False, non_original_ratios={"schermo": 0.844},
+    )
+    part_cost = ev_r["repair"]["items"][0]["cost"]
+    check("rivendita riparato = sano × 0,844", ev_r["repair"]["resaleAfterRepair"], round(650 * 0.844))
+    check("margine sul riparato", ev_r["repair"]["netMarginEur"], round(650 * 0.844 - 300 - part_cost, 2))
+    # Il bug del doppio conteggio: il margine NON parte dal valore equo del rotto.
+    ev_fv = scoring.evaluate_opportunity(
+        category="smartphone", title="iPhone 13 Pro Max", asking=300.0, market_avg=650 * 0.55,
+        margin_pct=None, found_at=None, seller_type=None, defects=["schermo-rotto"], urgency=[],
+        features=[], battery_pct=None, has_price_drop=False, resale_ref=650.0,
+    )
+    check("base = sano, non valore equo del rotto", ev_fv["repair"]["netMarginEur"], round(650 - 300 - part_cost, 2))
     check("offer<asking", ev["suggestedOffer"] is not None and ev["suggestedOffer"] < 300, True)
     ev2 = scoring.evaluate_opportunity(
         category="automobile", title="Golf GTI", asking=17500.0, market_avg=21000.0,

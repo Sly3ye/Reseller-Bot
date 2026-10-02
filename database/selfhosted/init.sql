@@ -221,6 +221,8 @@ create table if not exists public.deals (
   extra_costs  jsonb not null default '[]'::jsonb,
   sell_price   numeric(12,2),
   notes        text,
+  estimate     jsonb,         -- stima del bot all aggancio (migrazione 20)
+  repair       jsonb,         -- riparazione reale: pezzi, minuti, esito (migrazione 20)
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   constraint chk_deals_stage check (

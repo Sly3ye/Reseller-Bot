@@ -30,7 +30,7 @@ from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import evaluate_opportunity, risk_assessment
 from backend.services.survival import removal_kind, survival_summary
 from backend.services.valuation import evaluate_value
-from backend.services.variants import iphone_model_key, is_healthy
+from backend.services.variants import AUTO_ONLY_DEFECTS, iphone_model_key, is_healthy
 
 logger = logging.getLogger(__name__)
 
@@ -738,6 +738,18 @@ def _build_enrich_ctx(
         "seller_profiles": _seller_profiles(db, table, rows),
         "km_models": {},
     }
+    # Quanto vale meno un riparato aftermarket (schermo/batteria non originali),
+    # misurato sul mercato dalla matrice riparazioni (in cache 5').
+    ctx["non_original_ratios"] = {}
+    if target_cat != "automobile":
+        try:
+            from backend.services.repair_matrix import get_repair_matrix  # noqa: PLC0415
+
+            ctx["non_original_ratios"] = {
+                k: v["ratio"] for k, v in get_repair_matrix()["nonOriginalRatios"].items()
+            }
+        except Exception:
+            logger.exception("Rapporti parti non originali non disponibili")
     avg_by_target, avg_by_model = _market_avgs(db, target_cat)
     ctx["avg_by_target"] = avg_by_target
     ctx["avg_by_model"] = avg_by_model
@@ -901,6 +913,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             resale_ref=sold_reference or market_avg,
             carry_month_eur=carry_month,
             hold_days=hold_days,
+            non_original_ratios=ctx.get("non_original_ratios"),
         )
     )
     # Anti-truffa affinato con l'AI locale:
@@ -1003,6 +1016,8 @@ def list_opportunities(
     q: str | None = None,
     view: str = "attivi",
     preset: str | None = None,
+    defect: str | None = None,
+    only_defect: bool = False,
     limit: int = 30,
     offset: int = 0,
     client: Client | None = None,
@@ -1035,6 +1050,12 @@ def list_opportunities(
             return False
         if max_price is not None and (price is None or price > max_price):
             return False
+        # Guasto (dalla matrice riparazioni): l'annuncio lo dichiara; con
+        # only_defect è l'UNICO guasto funzionale (segni estetici ammessi).
+        if defect:
+            found = set(row.get("defects_noted") or []) - {"graffi"} - AUTO_ONLY_DEFECTS
+            if defect not in found or (only_defect and found != {defect}):
+                return False
         # Triage utente (ortogonale allo status): salvati / nascondi gli scartati.
         state = triage.get(row["id"])
         if view == "salvati":

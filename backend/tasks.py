@@ -967,7 +967,19 @@ async def finish_run(
                     if it.get("dealClass") == "affare"
                     and (it.get("score") or 0) >= min_score
                 ]
-                await notify_deals(db, cat, deals, drops)
+                # Il business principale: rotti che, riparati, rendono sopra
+                # soglia (margine netto già al netto di ricambio, sconto per
+                # parti non originali e magazzino), rischio non alto.
+                min_repair = settings_store.get_all()["alert_min_repair_margin_eur"]
+                deal_ids = {it.get("id") for it in deals}
+                repairs = [
+                    it
+                    for it in items
+                    if it.get("id") not in deal_ids
+                    and ((it.get("repair") or {}).get("netMarginEur") or 0) >= min_repair
+                    and (it.get("risk") or {}).get("level") != "alto"
+                ]
+                await notify_deals(db, cat, deals, drops, repairs)
             except Exception:
                 # Le notifiche sono supplementari: mai far fallire il giro.
                 logger.exception("Alert intelligenti falliti (%s)", cat)

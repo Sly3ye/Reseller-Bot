@@ -51,19 +51,19 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | # | Criterio | Stato |
 |---|---|---|
 | C1 | Costi ricambi per modello in due colonne (Apple con credito di reso, aftermarket) | ✅ |
-| C2 | **Sconto rotto vs sano per modello × guasto** (non un unico "rotto") | ◻️ |
-| C3 | **Prezzo di rivendita del riparato** (con parti non originali), misurato sul mercato | ◻️ |
+| C2 | **Sconto rotto vs sano per modello × guasto** (non un unico "rotto") | ✅ matrice Riparazioni |
+| C3 | **Prezzo di rivendita del riparato** (con parti non originali), misurato sul mercato | ✅ schermo non originale −15,6%, batteria −2% (misurati) |
 | C4 | Tempo di vendita onesto (Kaplan–Meier), venduto/ritirato/scaduto separati | ✅ codice · 🔧 servono 4–6 settimane di venduti |
-| C5 | **Matrice opportunità modello × guasto**: prezzo tipico d'acquisto, riparazione, rivendita, margine, giorni, annunci/settimana | ◻️ |
+| C5 | **Matrice opportunità modello × guasto**: prezzo tipico d'acquisto, riparazione, rivendita, margine, giorni, annunci/settimana | ✅ schermata Riparazioni (giorni di vendita: con i venduti) |
 | C6 | Concorrenza sui rotti: quanto in fretta spariscono quelli sottoprezzati | ◻️ matura coi dati |
 
 ### D. Decisione sul singolo annuncio
 
 | # | Criterio | Stato |
 |---|---|---|
-| D1 | Tetto d'acquisto per i rotti = rivendita del riparato − ricambio − manodopera − magazzino − margine | 🔧 c'è, ma con rivendita da "sano originale" (C3) |
+| D1 | Tetto d'acquisto per i rotti = rivendita del riparato − ricambio − manodopera − magazzino − margine | ✅ (corretto anche il doppio conteggio del guasto) |
 | D2 | Rischio (iCloud, truffa, venditore) | ✅ |
-| D3 | **Alert Telegram per le opportunità di riparazione** (oggi gli alert seguono il margine da "sano") | ◻️ |
+| D3 | **Alert Telegram per le opportunità di riparazione** | ✅ soglia margine netto in Impostazioni (default 60€) |
 | D4 | Sani sottoprezzati segnalati comunque | ✅ |
 
 ### E. Imparare dalle proprie riparazioni
@@ -71,7 +71,7 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | # | Criterio | Stato |
 |---|---|---|
 | E1 | Pipeline P&L con stima vs reale | ✅ |
-| E2 | Per ogni riparazione: pezzo usato, costo reale, tempo, esito (riuscita/fallita), prezzo di vendita | ◻️ |
+| E2 | Per ogni riparazione: pezzo usato, costo reale, tempo, esito (riuscita/fallita), prezzo di vendita | ✅ pipeline: stima all'aggancio + riparazione reale |
 | E3 | I dati reali correggono costi (C1), rivendita (C3) e il tasso di fallimento dei "non si accende" | ◻️ |
 
 ### F. Operatività
@@ -86,9 +86,9 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 ## Distanza
 
 - **Fatto:** la base (A1, A4, C1, C4, D2, D4, E1, F1, F3, F4).
-- **Sviluppo che manca, in ordine:** B3+B4 → B5 → C2 → C3 → C5 → D1/D3 → E2/E3
-  → A5/F2. Il cuore è B3: tutte le metriche di riparazione stanno sopra la
-  classificazione dei guasti.
+- **Sviluppo che manca, in ordine:** B5 (modello AI, misura sul Mac) → B3/B4
+  oltre le regex → E3 (correggere listini e rischio con le riparazioni vere)
+  → A5/F2 (una macchina sempre accesa, backup schedulati).
 - **Tempo che nessuno sviluppo accorcia:** venduti e tempi di vendita (C4, C6)
   diventano affidabili solo con **4–6 settimane** di inventari notturni.
   Conviene quindi spostare presto la raccolta su una macchina sempre accesa (A5).

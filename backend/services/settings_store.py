@@ -32,6 +32,8 @@ def _defaults() -> dict[str, Any]:
         "alert_min_margin_pct": settings.alert_min_margin_pct,
         "alert_min_drop_pct": settings.alert_min_drop_pct,
         "alert_min_score": settings.alert_min_score,
+        # Alert "da riparare": margine netto minimo (€) dopo la riparazione.
+        "alert_min_repair_margin_eur": 60,
         "target_margin_pct": copy.deepcopy(scoring.TARGET_MARGIN_PCT),
         "apple_part_eur": copy.deepcopy(scoring.APPLE_PART_EUR),
         # Riparazioni: colonna di costo usata nei conti, credito di reso Apple,

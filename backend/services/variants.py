@@ -33,6 +33,11 @@ _TECH_BROKEN = frozenset(
     {"schermo-rotto", "icloud-bloccato", "per-ricambi", "da-riparare",
      "face-id-rotto", "back-rotto", "scheda-madre", "acqua", "non-si-accende"}
 )
+# Codici del dizionario AUTO: il parser è unico, quindi in un annuncio iPhone
+# "fuso orario" o "da rivedere" li farebbero scattare. Per il tech non contano.
+AUTO_ONLY_DEFECTS = frozenset(
+    {"frizione", "grandine", "da-rivedere", "spia-motore", "incidentata", "fuso"}
+)
 # Solo estetici: un telefono con qualche graffio è il normale mercato dell'usato
 # e deve restare nel pool dei sani che fa il prezzo (prima finiva in "difetti").
 _TECH_COSMETIC = frozenset({"graffi"})
@@ -51,6 +56,7 @@ def condition_tier(category: str, defects: list[str] | None,
             return "incidentata"
         return "difetti" if d else "buono"
     # tech
+    d -= AUTO_ONLY_DEFECTS
     if d & _TECH_BROKEN:
         return "rotto"
     if d - _TECH_COSMETIC:

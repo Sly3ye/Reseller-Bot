@@ -13,6 +13,7 @@ import {
   fetchOpportunities,
   fetchScraperHealth,
   fetchDataQuality,
+  fetchRepairMatrix,
   fetchSettings,
   fetchTimeToSale,
   fetchTrends,
@@ -40,6 +41,9 @@ import {
   type PresetMode,
   type ScraperHealth,
   type DataQuality,
+  type DealRepair,
+  type RepairCell,
+  type RepairMatrix,
   type TargetCoverage,
   type SellerRankRow,
   type SortMode,
@@ -60,7 +64,7 @@ import {
 const MONO = "var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace";
 
 type Vertical = "tech" | "auto";
-type Screen = "sniper" | "intel" | "tempo" | "pipeline" | "automations" | "settings";
+type Screen = "sniper" | "riparazioni" | "intel" | "tempo" | "pipeline" | "automations" | "settings";
 type MarginFilter = "all" | "high";
 
 const PAGE_SIZE = 30;
@@ -116,6 +120,8 @@ export default function FlipRadar() {
   const [fMaxPrice, setFMaxPrice] = useState<number | null>(null);
   const [fMinDays, setFMinDays] = useState<number | null>(null);
   const [fMaxDays, setFMaxDays] = useState<number | null>(null);
+  // Guasto (dalla matrice Riparazioni): annunci con SOLO quel guasto.
+  const [fDefect, setFDefect] = useState<{ code: string; label: string } | null>(null);
   const [page, setPage] = useState(0);
 
   const [opportunities, setOpportunities] = useState<ApiOpportunity[]>([]);
@@ -180,6 +186,8 @@ export default function FlipRadar() {
         q: search || null,
         view,
         preset,
+        defect: fDefect?.code ?? null,
+        onlyDefect: !!fDefect,
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       },
@@ -204,7 +212,7 @@ export default function FlipRadar() {
   }, [
     category, sortMode, fModel, fStorage, fColor, fCondition,
     fMinPrice, fMaxPrice, fMinDays, fMaxDays,
-    marginFilter, search, view, preset, page,
+    marginFilter, search, view, preset, page, fDefect,
   ]);
 
   useEffect(() => {
@@ -265,6 +273,26 @@ export default function FlipRadar() {
           asking_price: item.askingPrice ?? undefined,
           market_avg: item.marketAvg ?? undefined,
           offer_price: item.suggestedOffer ?? undefined,
+          // La stima di OGGI resta agganciata all'affare: il confronto con la
+          // realtà non cambia se domani cambiano listini o prezzi di mercato.
+          estimate: item.repair
+            ? {
+                kind: "riparazione",
+                marginEur: item.repair.netMarginEur,
+                repairItems: item.repair.items.map((r) => ({
+                  part: r.part, source: r.source, cost: r.cost,
+                })),
+                resaleAfterRepair: item.repair.resaleAfterRepair ?? null,
+                maxBid: item.maxBid,
+              }
+            : {
+                kind: "rivendita",
+                marginEur:
+                  item.marketAvg != null && item.askingPrice != null
+                    ? item.marketAvg - item.askingPrice
+                    : null,
+                maxBid: item.maxBid,
+              },
         });
         setPipelineIds((cur) => new Set(cur).add(item.id));
         reloadDeals();
@@ -308,6 +336,7 @@ export default function FlipRadar() {
   // Reset filtri + pagina al cambio verticale (i filtri sono tech-specifici).
   const resetFilters = useCallback(() => {
     setFModel(null);
+    setFDefect(null);
     setFStorage(null);
     setFColor(null);
     setFCondition(null);
@@ -534,6 +563,26 @@ export default function FlipRadar() {
             Live Sniper
           </div>
 
+          {isTech && (
+            <div onClick={() => setScreen("riparazioni")} style={navItem(screen === "riparazioni")}>
+              <div
+                style={{
+                  width: "16px",
+                  height: "16px",
+                  flexShrink: 0,
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: "2px",
+                }}
+              >
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} style={{ background: "currentColor", borderRadius: "1px", opacity: i === 1 ? 0.45 : 1 }} />
+                ))}
+              </div>
+              Riparazioni
+            </div>
+          )}
+
           <div onClick={() => setScreen("intel")} style={navItem(screen === "intel")}>
             <div
               style={{
@@ -687,6 +736,42 @@ export default function FlipRadar() {
 
         {/* MAIN */}
         <div style={{ flex: 1, overflowY: "auto", padding: "28px 32px 60px" }}>
+          {screen === "riparazioni" && (
+            <RepairMatrixScreen
+              onOpenCell={(cell) => {
+                setFModel(cell.modelKey);
+                setFDefect({ code: cell.defect, label: `${cell.model} · ${cell.defectLabel}` });
+                setPreset(null);
+                setSortMode("margin");
+                setPage(0);
+                setScreen("sniper");
+              }}
+            />
+          )}
+
+          {screen === "sniper" && fDefect && (
+            <div
+              style={{
+                display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px",
+                padding: "8px 12px", borderRadius: "10px", fontSize: "13px",
+                background: "var(--accent-soft)", color: "var(--accent-text)", width: "fit-content",
+              }}
+            >
+              🔧 Solo annunci con questo guasto: <b>{fDefect.label}</b>
+              <span
+                onClick={() => {
+                  setFDefect(null);
+                  setFModel(null);
+                  setPage(0);
+                }}
+                style={{ cursor: "pointer", fontWeight: 700 }}
+                title="Togli il filtro"
+              >
+                ✕
+              </span>
+            </div>
+          )}
+
           {screen === "sniper" && (
             <SniperScreen
               total={total}
@@ -2131,7 +2216,13 @@ function NegotiationAssistant(props: {
             r.labor ? ` + ${eur(r.labor)} manodopera` : ""
           }`;
         })
-        .join(" | "),
+        .join(" | ") +
+        (item.repair.resaleAfterRepair
+          ? ` | rivendita riparato ≈ ${eur(item.repair.resaleAfterRepair)}` +
+            (item.repair.resaleFactor && item.repair.resaleFactor < 1
+              ? ` (−${Math.round((1 - item.repair.resaleFactor) * 100)}% ricambi non originali)`
+              : "")
+          : ""),
       color: "oklch(0.80 0.13 75)",
     });
   }
@@ -2495,6 +2586,174 @@ function SaleScatter(props: { records: TimeToSaleRecord[] }) {
         Ogni punto è un annuncio sparito da Subito: <b>a sinistra</b> ciò che è
         andato via in fretta, <b>in alto</b> i prezzi più alti. Le linee tratteggiate sono
         i giorni mediani per fascia di prezzo. Passa sopra un punto per il dettaglio.
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ RIPARAZIONI */
+
+const DEFECT_FILTERS: [string, string][] = [
+  ["", "Tutti i guasti"],
+  ["schermo-rotto", "Schermo"],
+  ["batteria-esausta", "Batteria"],
+  ["back-rotto", "Scocca posteriore"],
+  ["fotocamera-rotta", "Fotocamera"],
+  ["face-id-rotto", "Face ID"],
+  ["audio-rotto", "Audio / microfono"],
+  ["ricarica-rotta", "Porta di ricarica"],
+  ["tasti-rotti", "Tasti"],
+];
+
+/** Matrice opportunità modello × guasto: dove conviene cacciare. */
+function RepairMatrixScreen(props: { onOpenCell: (cell: RepairCell) => void }) {
+  const [data, setData] = useState<RepairMatrix | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [defect, setDefect] = useState("");
+  const [showFragile, setShowFragile] = useState(false);
+  const [sortBy, setSortBy] = useState<"potential" | "marginGood" | "weekly" | "roi">("potential");
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchRepairMatrix(ctrl.signal)
+      .then(setData)
+      .catch((e: unknown) => {
+        if (!ctrl.signal.aborted) setErr(e instanceof Error ? e.message : "Errore");
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  const rows = useMemo(() => {
+    if (!data) return [];
+    const key = (c: RepairCell): number => {
+      if (sortBy === "weekly") return c.weekly;
+      if (sortBy === "marginGood") return c.best?.marginAtGoodBuy ?? -1e9;
+      if (sortBy === "roi") return c.best?.roiPct ?? -1e9;
+      return c.weeklyPotentialEur ?? -1e9;
+    };
+    return data.cells
+      .filter((c) => (!defect || c.defect === defect) && (showFragile || !c.fragile))
+      .sort((a, b) => key(b) - key(a));
+  }, [data, defect, showFragile, sortBy]);
+
+  if (err) return <div style={{ color: "oklch(0.68 0.17 25)" }}>Matrice non disponibile: {err}</div>;
+  if (!data) return <div style={{ color: "oklch(0.6 0.01 250)" }}>Calcolo della matrice…</div>;
+
+  const r = data.nonOriginalRatios;
+  const pct = (x?: number) => (x != null ? `${Math.round((1 - x) * 100)}%` : "—");
+  const cols = "1.3fr 1.1fr 0.55fr 0.6fr 0.7fr 0.95fr 0.9fr 0.75fr 0.9fr 0.8fr";
+  const head: CSSProperties = {
+    fontSize: "10.5px", fontWeight: 700, color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.04em",
+  };
+  const selectStyle: CSSProperties = { padding: "6px 8px", borderRadius: "8px", fontSize: "13px" };
+  const money = (v: number | null | undefined, sign = false) =>
+    v == null ? "—" : `${sign && v > 0 ? "+" : ""}${eur(v)}`;
+  const tone = (v: number | null | undefined) =>
+    v == null ? undefined : v > 0 ? "oklch(0.78 0.15 150)" : "oklch(0.68 0.17 25)";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", animation: "fadeIn 0.2s ease" }}>
+      <div>
+        <div style={{ fontSize: "22px", fontWeight: 700 }}>Riparazioni · dove conviene cacciare</div>
+        <div style={{ fontSize: "13px", color: "oklch(0.6 0.01 250)", marginTop: "6px", lineHeight: 1.6, maxWidth: "900px" }}>
+          Per ogni modello e guasto, dagli annunci attivi con <b>solo quel guasto</b>: quanto si paga di solito,
+          quanto costa ripararlo, a quanto si rivende riparato e quante occasioni escono a settimana. Il potenziale
+          conta solo il quarto più economico degli annunci (il <b>prezzo buono</b>): alla mediana il mercato è già
+          giusto. Rivendita con ricambio aftermarket misurata sul mercato: schermo non originale −{pct(r.schermo?.ratio)}
+          ({r.schermo?.samples ?? 0} annunci), batteria non originale −{pct(r.batteria?.ratio)}
+          ({r.batteria?.samples ?? 0} annunci). Clic su una riga → gli annunci veri.
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+        <select value={defect} onChange={(e) => setDefect(e.target.value)} style={selectStyle}>
+          {DEFECT_FILTERS.map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
+        <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} style={selectStyle}>
+          <option value="potential">Ordina: potenziale €/settimana</option>
+          <option value="marginGood">Ordina: margine al prezzo buono</option>
+          <option value="roi">Ordina: ROI</option>
+          <option value="weekly">Ordina: annunci a settimana</option>
+        </select>
+        <label style={{ fontSize: "13px", display: "flex", gap: "6px", alignItems: "center" }}>
+          <input type="checkbox" checked={showFragile} onChange={(e) => setShowFragile(e.target.checked)} />
+          mostra anche le celle con meno di 5 annunci
+        </label>
+        <span style={{ fontSize: "12px", color: "oklch(0.55 0.01 250)" }}>{rows.length} righe</span>
+      </div>
+
+      <div style={{ border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflowX: "auto" }}>
+        <div style={{ minWidth: "1050px" }}>
+          <div
+            style={{
+              display: "grid", gridTemplateColumns: cols, gap: "10px", padding: "10px 16px",
+              background: "oklch(0.2 0.008 250)", ...head,
+            }}
+          >
+            <div>Modello</div>
+            <div>Guasto</div>
+            <div title="Annunci attivi con solo questo guasto">Annunci</div>
+            <div title={`Nuovi a settimana (ultimi ${data.windowDays} giorni)`}>/sett.</div>
+            <div title="Mediana dei sani tutti originali">Sano</div>
+            <div title="Mediana del prezzo chiesto · prezzo buono (25° percentile)">Acquisto</div>
+            <div title="Ricambio della colonna più conveniente + manodopera">Ricambio</div>
+            <div title="Rivendita del telefono riparato">Rivendita</div>
+            <div title="Margine alla mediana · al prezzo buono">Margine</div>
+            <div title="Margine al prezzo buono × occasioni buone a settimana">€/sett.</div>
+          </div>
+          {rows.map((c) => {
+            const b = c.best;
+            return (
+              <div
+                key={`${c.model}-${c.defect}`}
+                onClick={() => c.modelKey && props.onOpenCell(c)}
+                style={{
+                  display: "grid", gridTemplateColumns: cols, gap: "10px", padding: "9px 16px",
+                  alignItems: "center", fontSize: "13px", cursor: c.modelKey ? "pointer" : "default",
+                  borderTop: "1px solid oklch(0.24 0.008 250)", opacity: c.fragile ? 0.6 : 1,
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>{c.model}</div>
+                <div>{c.defectLabel}</div>
+                <div style={{ fontFamily: MONO }}>{c.listings}{c.fragile ? " ⚠️" : ""}</div>
+                <div style={{ fontFamily: MONO }}>{c.weekly}</div>
+                <div style={{ fontFamily: MONO }} title={`${c.healthySamples} sani originali`}>{eur(c.healthyMedian)}</div>
+                <div style={{ fontFamily: MONO }}>
+                  {eur(c.buyMedian)}
+                  <span style={{ color: "oklch(0.6 0.01 250)" }}> · {money(c.buyGood)}</span>
+                </div>
+                <div
+                  style={{ fontFamily: MONO }}
+                  title={
+                    b
+                      ? Object.entries(c.scenarios)
+                          .map(([k, s]) => `${k === "apple" ? "Apple" : `aftermarket (${s?.grade})`}: ${eur(s?.partCost ?? 0)} → margine ${eur(s?.margin ?? 0)}`)
+                          .join("\n")
+                      : "Nessun listino per questo ricambio: il costo lo conosci tu"
+                  }
+                >
+                  {b ? `${eur(b.partCost)} ${b.source === "apple" ? "Apple" : "after."}` : "—"}
+                </div>
+                <div style={{ fontFamily: MONO }}>{b ? eur(b.resale) : "—"}</div>
+                <div style={{ fontFamily: MONO }}>
+                  <span style={{ color: tone(b?.margin) }}>{money(b?.margin, true)}</span>
+                  <span style={{ color: tone(b?.marginAtGoodBuy) }}> · {money(b?.marginAtGoodBuy, true)}</span>
+                </div>
+                <div style={{ fontFamily: MONO, fontWeight: 700, color: tone(c.weeklyPotentialEur) }}>
+                  {c.weeklyPotentialEur != null ? eur(c.weeklyPotentialEur) : `−${eur(c.discountEur)}`}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div style={{ fontSize: "11.5px", color: "oklch(0.55 0.01 250)", lineHeight: 1.6 }}>
+        Per i guasti senza listino ricambi (Face ID, audio, ricarica, tasti) l&apos;ultima colonna mostra lo sconto
+        rispetto al sano. Manodopera e colonna dei ricambi si impostano in Impostazioni → Riparazioni.
+        I tempi di vendita del riparato arriveranno con i venduti (inventario notturno).
       </div>
     </div>
   );
@@ -2898,7 +3157,7 @@ function PipelineScreen(props: {
   summary: DealsSummary | null;
   onUpdate: (
     id: string,
-    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price">>,
+    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price" | "repair">>,
   ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -3048,6 +3307,42 @@ function PipelineScreen(props: {
         </div>
       )}
 
+      {summary && (summary.repairs ?? 0) > 0 && (
+        <div
+          style={{
+            background: "oklch(0.185 0.008 250)", border: "1px solid oklch(0.27 0.01 250)",
+            borderRadius: "12px", padding: "16px 20px", display: "flex", gap: "28px",
+            flexWrap: "wrap", alignItems: "center", fontSize: "13px",
+          }}
+        >
+          <div style={{ fontSize: "14px", fontWeight: 700 }}>🔧 Le tue riparazioni</div>
+          <div>
+            <div style={cardLabel}>Riuscite</div>
+            <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 700, marginTop: "4px" }}>
+              {summary.repairSuccessPct != null ? `${summary.repairSuccessPct}%` : "—"}
+              <span style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)", marginLeft: "6px" }}>
+                su {summary.repairs} ({summary.repairOutcomes?.parziale ?? 0} parziali,{" "}
+                {summary.repairOutcomes?.fallita ?? 0} fallite)
+              </span>
+            </div>
+          </div>
+          <div>
+            <div style={cardLabel}>Ricambi: reale − stima</div>
+            <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 700, marginTop: "4px" }}>
+              {summary.repairCostBiasEur != null
+                ? `${summary.repairCostBiasEur >= 0 ? "+" : ""}${eur(summary.repairCostBiasEur)}`
+                : "—"}
+            </div>
+          </div>
+          <div>
+            <div style={cardLabel}>Tempo medio</div>
+            <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 700, marginTop: "4px" }}>
+              {summary.avgRepairMinutes != null ? `${summary.avgRepairMinutes} min` : "—"}
+            </div>
+          </div>
+        </div>
+      )}
+
       {deals.length === 0 ? (
         <div
           style={{
@@ -3098,7 +3393,7 @@ function PipelineRow(props: {
   deal: Deal;
   onUpdate: (
     id: string,
-    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price">>,
+    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price" | "repair">>,
   ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -3138,8 +3433,10 @@ function PipelineRow(props: {
       : deal.profit >= 0
         ? "oklch(0.72 0.16 150)"
         : "oklch(0.68 0.19 25)";
+  const [repairOpen, setRepairOpen] = useState(false);
 
   return (
+    <div style={{ borderTop: "1px solid oklch(0.24 0.008 250)" }}>
     <div
       style={{
         display: "grid",
@@ -3147,7 +3444,6 @@ function PipelineRow(props: {
         gap: "12px",
         padding: "12px 16px",
         alignItems: "center",
-        borderTop: "1px solid oklch(0.24 0.008 250)",
       }}
     >
       <div style={{ minWidth: 0 }}>
@@ -3187,6 +3483,16 @@ function PipelineRow(props: {
         <div style={{ fontSize: "11px", color: "oklch(0.46 0.01 250)", fontFamily: MONO }}>
           {deal.category === "automobile" ? "🚗" : "📱"}{" "}
           {deal.estimatedMarginEur != null ? `stima +${eur(deal.estimatedMarginEur)}` : ""}
+          {" · "}
+          <span
+            onClick={() => setRepairOpen((v) => !v)}
+            style={{ color: "var(--accent-text)", cursor: "pointer" }}
+            title="Pezzi montati, costo reale, tempo ed esito"
+          >
+            🔧 {deal.repairOutcome
+              ? `${deal.repairOutcome}${deal.repairCost != null ? ` · ricambi ${eur(deal.repairCost)}` : ""}`
+              : "riparazione"} {repairOpen ? "▾" : "▸"}
+          </span>
           {deal.listing_url && (
             <>
               {" · "}
@@ -3240,6 +3546,107 @@ function PipelineRow(props: {
         }}
       >
         ×
+      </div>
+    </div>
+    {repairOpen && (
+      <RepairEditor deal={deal} onSave={(repair) => props.onUpdate(deal.id, { repair })} />
+    )}
+    </div>
+  );
+}
+
+const REPAIR_PARTS = ["schermo", "batteria", "scocca", "fotocamera", "face-id", "audio", "ricarica", "tasti", "altro"];
+
+/** Riparazione vera di un affare: pezzi (fonte + costo), minuti, esito. */
+function RepairEditor(props: { deal: Deal; onSave: (repair: DealRepair) => Promise<void> }) {
+  const { deal } = props;
+  const [parts, setParts] = useState<DealRepair["parts"]>(deal.repair?.parts ?? []);
+  const [minutes, setMinutes] = useState<string>(deal.repair?.minutes != null ? String(deal.repair.minutes) : "");
+  const [outcome, setOutcome] = useState<string>(deal.repair?.outcome ?? "");
+  const [saved, setSaved] = useState(false);
+  const est = deal.estimate;
+  const inp: CSSProperties = {
+    height: "30px", background: "oklch(0.16 0.008 250)", border: "1px solid oklch(0.30 0.01 250)",
+    borderRadius: "6px", color: "oklch(0.94 0.004 250)", padding: "0 8px", fontSize: "12.5px",
+  };
+  const setPart = (i: number, patch: Partial<DealRepair["parts"][number]>) =>
+    setParts((cur) => cur.map((p, k) => (k === i ? { ...p, ...patch } : p)));
+
+  return (
+    <div style={{ padding: "4px 16px 16px 16px", display: "flex", flexDirection: "column", gap: "10px", fontSize: "12.5px" }}>
+      {est && (
+        <div style={{ color: "oklch(0.62 0.01 250)" }}>
+          Stima all&apos;aggancio:{" "}
+          {est.repairItems?.length
+            ? est.repairItems.map((r) => `${r.part} ${eur(r.cost)} (${r.source ?? "?"})`).join(", ")
+            : "nessuna riparazione prevista"}
+          {est.resaleAfterRepair ? ` · rivendita riparato ≈ ${eur(est.resaleAfterRepair)}` : ""}
+          {est.marginEur != null ? ` · margine ${eur(est.marginEur)}` : ""}
+        </div>
+      )}
+      {parts.map((p, i) => (
+        <div key={i} style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          <select value={p.part} onChange={(e) => setPart(i, { part: e.target.value })} style={inp}>
+            {REPAIR_PARTS.map((x) => <option key={x} value={x}>{x}</option>)}
+          </select>
+          <select
+            value={p.source}
+            onChange={(e) => setPart(i, { source: e.target.value as DealRepair["parts"][number]["source"] })}
+            style={inp}
+          >
+            <option value="aftermarket">aftermarket</option>
+            <option value="apple">originale Apple</option>
+            <option value="usato">usato / da donatore</option>
+          </select>
+          <input
+            value={p.cost || ""}
+            placeholder="€ costo"
+            inputMode="decimal"
+            onChange={(e) => setPart(i, { cost: Number(e.target.value.replace(",", ".")) || 0 })}
+            style={{ ...inp, width: "90px", fontFamily: MONO }}
+          />
+          <span onClick={() => setParts((cur) => cur.filter((_, k) => k !== i))} style={{ cursor: "pointer" }} title="Togli">
+            ✕
+          </span>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+        <span
+          onClick={() => setParts((cur) => [...cur, { part: "schermo", source: "aftermarket", cost: 0 }])}
+          style={{ color: "var(--accent-text)", cursor: "pointer" }}
+        >
+          + pezzo
+        </span>
+        <input
+          value={minutes}
+          placeholder="minuti di lavoro"
+          inputMode="numeric"
+          onChange={(e) => setMinutes(e.target.value.replace(/\D/g, ""))}
+          style={{ ...inp, width: "130px" }}
+        />
+        <select value={outcome} onChange={(e) => setOutcome(e.target.value)} style={inp}>
+          <option value="">esito…</option>
+          <option value="riuscita">riuscita</option>
+          <option value="parziale">parziale</option>
+          <option value="fallita">fallita</option>
+        </select>
+        <button
+          onClick={async () => {
+            await props.onSave({
+              parts: parts.filter((p) => p.cost > 0),
+              minutes: minutes ? Number(minutes) : null,
+              outcome: (outcome || null) as DealRepair["outcome"],
+            });
+            setSaved(true);
+            setTimeout(() => setSaved(false), 1500);
+          }}
+          style={{ ...inp, cursor: "pointer", background: "var(--accent)", color: "oklch(0.12 0.008 250)", fontWeight: 700 }}
+        >
+          {saved ? "Salvato ✓" : "Salva riparazione"}
+        </button>
+        <span style={{ color: "oklch(0.55 0.01 250)" }}>
+          I ricambi vanno qui (non nei costi extra): entrano nell&apos;investito e nel confronto con la stima.
+        </span>
       </div>
     </div>
   );
@@ -4343,6 +4750,10 @@ function SettingsScreen() {
           {field("Deal Score minimo", num(s.alert_min_score, (v) => setS({ ...s, alert_min_score: v })))}
           {field("Margine minimo", num(s.alert_min_margin_pct, (v) => setS({ ...s, alert_min_margin_pct: v }), "%"))}
           {field("Calo prezzo minimo", num(s.alert_min_drop_pct, (v) => setS({ ...s, alert_min_drop_pct: v }), "%"))}
+          {field(
+            "Riparazioni: margine netto minimo",
+            num(s.alert_min_repair_margin_eur ?? 60, (v) => setS({ ...s, alert_min_repair_margin_eur: v }), "€"),
+          )}
         </div>
       </div>
 

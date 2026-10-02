@@ -67,6 +67,9 @@ export type RepairQuote = {
 
 export type RepairInfo = {
   items: RepairQuote[];
+  /** Rivendita del telefono riparato (sano × sconto per ricambi non originali). */
+  resaleAfterRepair?: number | null;
+  resaleFactor?: number;
   total: number;
   netMarginEur: number | null;
   netMarginPct: number | null;
@@ -278,6 +281,10 @@ export type Deal = {
   extra_costs: { label: string; amount: number }[];
   sell_price: number | null;
   notes: string | null;
+  /** Stima del bot fotografata all'aggancio (migrazione 20). */
+  estimate: DealEstimate | null;
+  /** Riparazione vera: pezzi montati, minuti, esito. */
+  repair: DealRepair | null;
   created_at: string;
   updated_at: string;
   // calcolati dal backend
@@ -289,6 +296,11 @@ export type Deal = {
   estimateErrorEur: number | null;
   heldDays: number | null;
   roiPerDayPct: number | null;
+  repairCost: number | null;
+  repairCostEstimated: number | null;
+  repairCostErrorEur: number | null;
+  repairOutcome: RepairOutcome | null;
+  repairMinutes: number | null;
   // Tempo-in-stadio + allerta sugli affari fermi (con il deprezzamento
   // maturato sui pezzi già comprati).
   daysInStage: number | null;
@@ -300,6 +312,23 @@ export type Deal = {
     hint: string;
     carryLossEur: number | null;
   } | null;
+};
+
+export type RepairOutcome = "riuscita" | "parziale" | "fallita";
+
+export type DealEstimate = {
+  kind: "riparazione" | "rivendita";
+  marginEur: number | null;
+  repairItems?: { part: string; source: string | null; cost: number }[];
+  resaleAfterRepair?: number | null;
+  maxBid?: number | null;
+};
+
+export type DealRepair = {
+  parts: { part: string; source: "aftermarket" | "apple" | "usato"; cost: number }[];
+  minutes?: number | null;
+  outcome?: RepairOutcome | null;
+  notes?: string;
 };
 
 export type DealsSummary = {
@@ -320,6 +349,11 @@ export type DealsSummary = {
   staleDeals: number;
   staleCriticalDeals: number;
   staleCarryLossEur: number | null;
+  repairs?: number;
+  repairOutcomes?: Record<RepairOutcome, number>;
+  repairSuccessPct?: number | null;
+  repairCostBiasEur?: number | null;
+  avgRepairMinutes?: number | null;
 };
 
 export type SortMode = "score" | "recent" | "margin" | "roi";
@@ -341,6 +375,9 @@ export type OppFilters = {
   q?: string | null;
   view?: ViewMode;
   preset?: PresetMode | null;
+  /** Guasto NLP (es. "schermo-rotto"); onlyDefect = solo quel guasto. */
+  defect?: string | null;
+  onlyDefect?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -378,6 +415,10 @@ export async function fetchOpportunities(
   if (filters.q) p.set("q", filters.q);
   if (filters.view) p.set("view", filters.view);
   if (filters.preset) p.set("preset", filters.preset);
+  if (filters.defect) {
+    p.set("defect", filters.defect);
+    if (filters.onlyDefect) p.set("only_defect", "true");
+  }
   p.set("limit", String(filters.limit ?? 30));
   p.set("offset", String(filters.offset ?? 0));
 
@@ -386,6 +427,49 @@ export async function fetchOpportunities(
     signal,
   });
   if (!res.ok) throw new Error(`GET /api/opportunities failed (${res.status})`);
+  return res.json();
+}
+
+export type RepairScenario = {
+  partCost: number;
+  grade?: string;
+  resale: number;
+  resaleRatio: number;
+  margin: number;
+  marginAtGoodBuy: number | null;
+  roiPct: number | null;
+};
+
+export type RepairCell = {
+  model: string;
+  modelKey: string | null;
+  defect: string;
+  defectLabel: string;
+  part?: string;
+  listings: number;
+  weekly: number;
+  goodDealsWeekly: number;
+  fragile: boolean;
+  healthyMedian: number;
+  healthySamples: number;
+  buyMedian: number;
+  buyGood: number | null;
+  discountEur: number;
+  scenarios: { aftermarket?: RepairScenario; apple?: RepairScenario };
+  best: (RepairScenario & { source: "aftermarket" | "apple" }) | null;
+  weeklyPotentialEur: number | null;
+};
+
+export type RepairMatrix = {
+  cells: RepairCell[];
+  nonOriginalRatios: Record<string, { ratio: number; models: number; samples: number; measured: boolean }>;
+  windowDays: number;
+  computedAt: string;
+};
+
+export async function fetchRepairMatrix(signal?: AbortSignal): Promise<RepairMatrix> {
+  const res = await fetch(`${API_BASE_URL}/api/repair-matrix`, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`GET /api/repair-matrix failed (${res.status})`);
   return res.json();
 }
 
@@ -513,6 +597,7 @@ export async function createDeal(payload: {
   asking_price?: number;
   market_avg?: number;
   offer_price?: number;
+  estimate?: DealEstimate;
 }): Promise<Deal> {
   const res = await fetch(`${API_BASE_URL}/api/deals`, {
     method: "POST",
@@ -528,7 +613,7 @@ export async function updateDeal(
   patch: Partial<
     Pick<
       Deal,
-      "stage" | "offer_price" | "buy_price" | "sell_price" | "extra_costs" | "notes"
+      "stage" | "offer_price" | "buy_price" | "sell_price" | "extra_costs" | "notes" | "repair"
     >
   >,
 ): Promise<Deal> {
@@ -676,6 +761,7 @@ export type AppSettings = {
   alert_min_margin_pct: number;
   alert_min_drop_pct: number;
   alert_min_score: number;
+  alert_min_repair_margin_eur: number;
   target_margin_pct: Record<string, number>;
   apple_part_eur: Record<string, Record<string, number>>;
   repair_source: "aftermarket" | "apple";
