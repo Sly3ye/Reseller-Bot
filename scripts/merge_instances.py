@@ -97,10 +97,13 @@ def _remap_targets(
     src_targets = src.execute(
         "select id, category, query, strict_filters, is_active from target_models"
     ).fetchall()
-    tgt_by_key = {
-        (r["category"], r["query"]): r["id"]
-        for r in tgt.execute("select id, category, query from target_models").fetchall()
-    }
+    # Sul Mac lo stesso nome può comparire più volte (una riga per generazione,
+    # distinte da strict_filters): a parità di nome vince il target attivo.
+    tgt_by_key: dict[tuple[str, str], str] = {}
+    for r in tgt.execute(
+        "select id, category, query from target_models order by is_active asc"
+    ).fetchall():
+        tgt_by_key[(r["category"], r["query"])] = r["id"]
 
     mapping: dict[str, str] = {}
     inserted = 0
@@ -117,7 +120,7 @@ def _remap_targets(
                 """
                 insert into target_models (id, category, query, strict_filters, is_active)
                 values (%s, %s, %s, %s, %s)
-                on conflict (category, query) do nothing
+                on conflict do nothing
                 """,
                 (t["id"], t["category"], t["query"], _wrap(t["strict_filters"], True), t["is_active"]),
             )
@@ -150,17 +153,21 @@ def _merge_opportunities(
     placeholders = ", ".join(["%s"] * len(cols))
     insert_sql = (
         f"insert into {table} ({col_list}) values ({placeholders}) "  # noqa: S608
-        f"on conflict (listing_url) do nothing"
+        # Senza bersaglio: salta sia lo stesso listing_url sia lo stesso id. Un
+        # annuncio portato da un merge precedente e poi aggiornato a una
+        # ripubblicazione (URL nuovo) su una sola macchina ha id uguale e URL
+        # diverso: è già nel principale, non va toccato.
+        f"on conflict do nothing"
     )
 
     # In anteprima: quanti URL mancano DAVVERO nel target (l'insert vero li
     # deduplica con on conflict; prima l'anteprima contava tutto come nuovo).
     existing_urls: set[str] = set()
+    existing_ids: set[str] = set()
     if dry:
-        existing_urls = {
-            r["listing_url"]
-            for r in tgt.execute(f"select listing_url from {table}").fetchall()  # noqa: S608
-        }
+        for r in tgt.execute(f"select id, listing_url from {table}").fetchall():  # noqa: S608
+            existing_urls.add(r["listing_url"])
+            existing_ids.add(r["id"])
 
     src_ids: list[str] = []
     inserted = 0
@@ -174,7 +181,9 @@ def _merge_opportunities(
             row["target_id"] = mapped
         src_ids.append(row["id"])
         if dry:
-            inserted += row.get("listing_url") not in existing_urls
+            inserted += (
+                row.get("listing_url") not in existing_urls and row["id"] not in existing_ids
+            )
         else:
             params = [_wrap(row.get(c), c in json_cols) for c in cols]
             tgt_cur.execute(insert_sql, params)

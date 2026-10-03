@@ -84,6 +84,22 @@ docker compose exec -T backend python scripts/reparse_nlp.py --apply
 > Docker, salta i `docker compose exec` e usa `pg_dump/pg_restore/psql` diretti
 > verso `localhost:5432`.
 
+> **Merge eseguito il 2026-10-03 sul Mac** (dump del 2026-10-02): +44.860
+> annunci tech (6.934 → 51.794), +36 auto, +198 righe di storico, +17 target
+> (iPhone 8–12 e 18). Foto **non ancora** importate (passo 6 da fare quando
+> arriva l'archivio). Cosa è emerso:
+> - **Seed saltato**: sul Mac il vincolo è `unique (category, query,
+>   strict_filters)` (target BMW per generazione), non `(category, query)`;
+>   `seed_targets.py` va in errore. Non serviva: la flotta del Mac era già
+>   allineata (gen 13–17 + 2 BMW attivi).
+> - Lo script ora inserisce i target con `on conflict do nothing` e, a parità
+>   di nome, mappa sul target **attivo** (sul Mac "BMW 125i" esiste per due
+>   generazioni).
+> - 225 annunci tech + 3 auto avevano lo stesso id sui due DB ma `listing_url`
+>   diverso (portati dal merge di luglio, poi aggiornati a una ripubblicazione
+>   su una sola macchina): sono già nel principale, ora vengono saltati anche
+>   per id invece di far fallire tutto il merge.
+
 ## Dopo il merge
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure
   forzalo — `market_trends` (curve/momentum) si ricostruisce dai nuovi annunci.
