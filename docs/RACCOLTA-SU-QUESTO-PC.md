@@ -3,7 +3,7 @@
 Obiettivo: accendere il backend qui, con un DB **da zero**, e accumulare annunci
 in parallelo al Mac. I dati saranno **uniti** al DB principale più avanti
 (vedi [MERGE-DB.md](MERGE-DB.md)). Nessun dato va perso: gli ID sono UUID e i
-target si allineano per nome `(category, query)`.
+target si allineano per `(category, query, strict_filters)`.
 
 > **Un solo scraper alla volta è più pulito**, ma non obbligatorio: anche se sia
 > Mac che PC raccolgono, il merge deduplica gli annunci su `listing_url`.

@@ -3,30 +3,32 @@
 Contesto: il DB principale (con settimane di storico) vive su una macchina; una
 seconda istanza gira altrove e accumula dati in parallelo. Le due condividono lo
 stesso schema ma NON gli stessi UUID: ogni istanza genera i propri. Questo script
-porta nel TARGET (principale) solo ciÃ² che gli MANCA, senza toccare ciÃ² che ha giÃ .
+porta nel TARGET (principale) solo ciò che gli MANCA, senza toccare ciò che ha già.
 
 Cosa fa, in ordine:
-  1. TARGET_MODELS â€” rimappa i target per NOME ``(category, query)``, non per UUID.
+  1. TARGET_MODELS — rimappa i target per identità ``(category, query,
+     strict_filters)``, non per UUID; un target SOURCE senza filtri ripiega sul
+     target attivo con lo stesso nome (vedi ``scripts/target_identity.py``).
      I target presenti in SOURCE ma non nel TARGET vengono inseriti (mantenendo il
-     loro UUID) cosÃ¬ gli annunci collegati restano validi.
-  2. OPPORTUNITÃ€ (_tech e _auto) â€” inserisce solo gli annunci NUOVI, dedup su
-     ``listing_url`` (ON CONFLICT DO NOTHING: gli annunci giÃ  nel TARGET restano
+     loro UUID) così gli annunci collegati restano validi.
+  2. OPPORTUNITÀ (_tech e _auto) — inserisce solo gli annunci NUOVI, dedup su
+     ``listing_url`` (ON CONFLICT DO NOTHING: gli annunci già nel TARGET restano
      quelli del principale). ``target_id`` viene rimappato.
-  3. PRICE_HISTORY â€” porta lo storico prezzi dei soli annunci effettivamente
+  3. PRICE_HISTORY — porta lo storico prezzi dei soli annunci effettivamente
      inseriti (evita orfani).
 
 Cosa NON tocca (di proposito):
-  - Annunci giÃ  presenti nel TARGET (stesso ``listing_url``): non sovrascritti.
-  - ``market_trends``: aggregato RICALCOLABILE â†’ NON unito. Dopo il merge esegui
+  - Annunci già presenti nel TARGET (stesso ``listing_url``): non sovrascritti.
+  - ``market_trends``: aggregato RICALCOLABILE → NON unito. Dopo il merge esegui
     il batch notturno sul principale per rigenerarlo.
   - ``sent_alerts`` (dedup Telegram) e ``deals`` (pipeline): stato locale, ignorati.
 
-ProprietÃ : idempotente (rilanciarlo non duplica nulla) e atomico (una sola
+Proprietà: idempotente (rilanciarlo non duplica nulla) e atomico (una sola
 transazione sul TARGET: o va tutto, o niente).
 
 ------------------------------------------------------------------------------
 USO (sul principale, dopo aver ripristinato il dump del secondo PC in un DB
-temporaneo â€” es. ``reseller_pc``):
+temporaneo — es. ``reseller_pc``):
 
   # 1) SEMPRE un backup del principale prima di scrivere:
   pg_dump "$TARGET_DATABASE_URL" -Fc -f backup_principale_$(date +%F).dump
@@ -55,6 +57,9 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from scripts.target_identity import match_target  # noqa: E402
+
 OPP_TABLES = ("live_opportunities_tech", "live_opportunities_auto")
 
 
@@ -68,7 +73,7 @@ def _connect(url: str, name: str) -> psycopg.Connection:
 
 
 def _columns(conn: psycopg.Connection, table: str) -> dict[str, str]:
-    """Nome colonna â†’ data_type, dallo schema informativo (per intersezione e jsonb)."""
+    """Nome colonna → data_type, dallo schema informativo (per intersezione e jsonb)."""
     rows = conn.execute(
         """
         select column_name, data_type
@@ -90,30 +95,25 @@ def _wrap(value: object, is_json: bool) -> object:
 def _remap_targets(
     src: psycopg.Connection, tgt: psycopg.Connection, tgt_cur: psycopg.Cursor, dry: bool
 ) -> tuple[dict[str, str], int]:
-    """Costruisce src_target_id â†’ tgt_target_id per NOME (category, query).
+    """Costruisce src_target_id → tgt_target_id per identità
+    (category, query, strict_filters); vedi scripts/target_identity.py.
 
-    I target di SOURCE assenti nel TARGET vengono inseriti (stesso UUID) cosÃ¬ le
+    I target di SOURCE assenti nel TARGET vengono inseriti (stesso UUID) così le
     FK degli annunci restano valide. Ritorna (mappa, n_target_inseriti)."""
-    src_targets = src.execute(
-        "select id, category, query, strict_filters, is_active from target_models"
-    ).fetchall()
-    # Sul Mac lo stesso nome può comparire più volte (una riga per generazione,
-    # distinte da strict_filters): a parità di nome vince il target attivo.
-    tgt_by_key: dict[tuple[str, str], str] = {}
-    for r in tgt.execute(
-        "select id, category, query from target_models order by is_active asc"
-    ).fetchall():
-        tgt_by_key[(r["category"], r["query"])] = r["id"]
+    sql = "select id, category, query, strict_filters, is_active from target_models"
+    src_targets = src.execute(sql).fetchall()
+    tgt_targets = tgt.execute(sql).fetchall()
 
     mapping: dict[str, str] = {}
     inserted = 0
     for t in src_targets:
-        key = (t["category"], t["query"])
-        if key in tgt_by_key:
-            mapping[t["id"]] = tgt_by_key[key]
+        found = match_target(t, tgt_targets)
+        if found is not None:
+            mapping[t["id"]] = found
             continue
-        # Target sconosciuto al principale: portalo (stesso UUID â†’ nessuna collisione).
+        # Target sconosciuto al principale: portalo (stesso UUID → nessuna collisione).
         mapping[t["id"]] = t["id"]
+        tgt_targets.append(t)  # due righe SOURCE uguali → stesso target
         inserted += 1
         if not dry:
             tgt_cur.execute(
@@ -255,7 +255,7 @@ def main() -> None:
     tgt_cur = tgt.cursor()
     try:
         target_map, new_targets = _remap_targets(src, tgt, tgt_cur, dry)
-        print(f"target_models: {len(target_map)} mappati per nome, {new_targets} nuovi da portare")
+        print(f"target_models: {len(target_map)} mappati, {new_targets} nuovi da portare")
 
         grand_new = 0
         all_valid_ids: set[str] = set()
@@ -263,7 +263,7 @@ def main() -> None:
             cand, ins, valid = _merge_opportunities(src, tgt, tgt_cur, table, target_map, dry)
             all_valid_ids |= valid
             shown = ins
-            print(f"{table}: {cand} candidati â†’ {shown} {'inseriti' if not dry else 'nuovi (stima)'}")
+            print(f"{table}: {cand} candidati → {shown} {'inseriti' if not dry else 'nuovi (stima)'}")
             grand_new += shown
 
         hist = _merge_price_history(src, tgt_cur, all_valid_ids, dry)
@@ -271,7 +271,7 @@ def main() -> None:
 
         if dry:
             tgt.rollback()
-            print("\nAnteprima completata: NIENTE Ã¨ stato scritto. Rilancia con --yes per applicare.")
+            print("\nAnteprima completata: NIENTE è stato scritto. Rilancia con --yes per applicare.")
         else:
             tgt.commit()
             print(f"\nMerge COMPLETATO: {grand_new} annunci nuovi + {hist} righe di storico + "

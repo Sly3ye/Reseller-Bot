@@ -6,14 +6,14 @@ Target attivi desiderati:
   - Auto: solo BMW 123d e BMW 125i.
 
 Cosa fa:
-  1. Upsert (is_active=true) di tutti i target desiderati su (category, query).
+  1. Upsert (is_active=true) di tutti i target desiderati su
+     (category, query, strict_filters): un target per generazione.
   2. Disattiva (is_active=false) qualunque altro target attivo NON in questa
      lista — così i seed pilota (es. 'Golf GTI', 'iPhone 14' extra) non restano
      accesi a far scrapare cose che non vuoi. NON cancella nulla: solo spegne.
 
-Le stesse `query` deterministiche servono anche al merge: il DB principale, se
-seedato con gli stessi nomi, si allinea per (category, query). Vedi
-scripts/merge_instances.py.
+Le stesse identità deterministiche servono anche al merge: i target si
+allineano per (category, query, strict_filters). Vedi scripts/merge_instances.py.
 
 Esegui (con lo stack Docker su):
   docker compose exec backend python scripts/seed_targets.py
@@ -28,13 +28,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from backend.core.config import settings  # noqa: E402
 from scripts.seed_iphone_targets import build_iphone_targets  # noqa: E402
+from scripts.target_identity import target_key  # noqa: E402
 
-# --- Auto: solo i due BMW richiesti. Filtri vuoti = cattura ampia (l'auto è
-# rimandata; qui si accumula soltanto). Se sul Mac hai usato query diverse,
-# allinea questi nomi PRIMA di raccogliere, così il merge combacia. ---
+# --- Auto: solo i due BMW richiesti, ognuno sulla sua generazione (fasce
+# d'anno). Gli altri target BMW per generazione restano nel DB, spenti. ---
 CAR_TARGETS: list[dict] = [
-    {"category": "automobile", "query": "BMW 123d", "strict_filters": {}, "is_active": True},
-    {"category": "automobile", "query": "BMW 125i", "strict_filters": {}, "is_active": True},
+    {"category": "automobile", "query": "BMW 123d",
+     "strict_filters": {"min_year": 2007, "max_year": 2013}, "is_active": True},
+    {"category": "automobile", "query": "BMW 125i",
+     "strict_filters": {"min_year": 2012, "max_year": 2019}, "is_active": True},
 ]
 
 
@@ -47,7 +49,7 @@ def desired_targets() -> list[dict]:
 
 def main() -> None:
     targets = desired_targets()
-    wanted_keys = {(t["category"], t["query"]) for t in targets}
+    wanted_keys = {target_key(t) for t in targets}
 
     from backend.core.database import get_db
 
@@ -55,7 +57,9 @@ def main() -> None:
 
     # 1) Upsert dei desiderati (attivi).
     try:
-        db.table("target_models").upsert(targets, on_conflict="category,query").execute()
+        db.table("target_models").upsert(
+            targets, on_conflict="category,query,strict_filters"
+        ).execute()
     except Exception as exc:  # noqa: BLE001
         if "target_models" in str(exc):
             print(
@@ -66,11 +70,10 @@ def main() -> None:
         raise
 
     # 2) Disattiva ogni altro target attualmente attivo non richiesto.
-    existing = db.table("target_models").select("id, category, query, is_active").execute().data or []
+    existing = db.table("target_models").select("id, category, query, strict_filters, is_active").execute().data or []
     turned_off = 0
     for row in existing:
-        key = (row["category"], row["query"])
-        if key not in wanted_keys and row.get("is_active"):
+        if target_key(row) not in wanted_keys and row.get("is_active"):
             db.table("target_models").update({"is_active": False}).eq("id", row["id"]).execute()
             turned_off += 1
 

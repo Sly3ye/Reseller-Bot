@@ -62,7 +62,8 @@ create table if not exists public.target_models (
   is_active      boolean not null default true,
   last_scanned   timestamptz,
   created_at     timestamptz not null default now(),
-  constraint uq_target_models_identity unique (category, query)
+  -- Un target per generazione: stesso modello, filtri diversi (migrazione 29).
+  constraint uq_target_models_identity unique (category, query, strict_filters)
 );
 
 -- ---------------------------------------------------------- market_trends
@@ -252,7 +253,7 @@ values
    '{"min_year": 2017, "max_year": 2020, "max_km": 100000, "transmission": "automatic"}'::jsonb,
    true),
   ('smartphone', 'iPhone 14', '{}'::jsonb, true)
-on conflict (category, query) do nothing;
+on conflict (category, query, strict_filters) do nothing;
 
 -- =====================================================================
 -- FINE SCHEMA CONSOLIDATO

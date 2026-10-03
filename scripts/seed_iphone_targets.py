@@ -5,7 +5,7 @@ Genera un target per ogni modello della gamma (ogni generazione × variante:
 base/mini/Plus/Air/Pro/Pro Max, più i modelli storici e SE). Il resolver di variante
 canonica segmenta poi per (modello, memoria) in lettura; qui bastano le query.
 
-Idempotente: upsert su (category, query). NON tocca i target auto.
+Idempotente: upsert su (category, query, strict_filters). NON tocca i target auto.
 NON disattiva target esistenti fuori dalla gamma (solo aggiunge/aggiorna).
 
 Esegui dalla root:
@@ -96,7 +96,7 @@ def main() -> None:
     try:
         result = (
             db.table("target_models")
-            .upsert(targets, on_conflict="category,query")
+            .upsert(targets, on_conflict="category,query,strict_filters")
             .execute()
         )
     except Exception as exc:
