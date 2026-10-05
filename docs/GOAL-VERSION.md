@@ -240,7 +240,7 @@ avere 30 affari veri.
 - spegnere le auto complete in produzione. Rimandato per scelta: si decide con i
   numeri della riga "Richieste oggi" (vedi MERGE-DB, passaggio del 5/10).
 
-**P1, fatto** (commit `7bd66d3`, `86077fb`, `90edfa4` e il successivo):
+**P1, fatto** (commit `7bd66d3`, `86077fb`, `90edfa4`, `97f1a10`, `cfe4bc6`):
 - testa della coda ogni 60 s, che salva senza foto e notifica nello stesso giro;
 - ricontrollo degli affari con la metrica dell'emivita; i candidati si
   registrano anche senza Telegram;
@@ -251,7 +251,15 @@ avere 30 affari veri.
   si incolla al venditore.
 
 Primo giro reale sul PC, alle 12:50: +8 iPhone e +100 auto alla prima lettura
-della testa, 5 auto registrate come affare e messe in ricontrollo.
+della testa.
+
+Due correzioni dai primi dati:
+- **Subito indicizza a ondate** (~ogni 10 minuti). Un'ondata di auto supera
+  spesso la pagina 1, quindi la testa legge anche la 2 e la 3 quando la 1 è
+  tutta nuova.
+- **Gli alert auto senza criteri del compratore erano ~2.500 al giorno**
+  (47 in 27 minuti). Ora serve almeno un criterio e un margine oltre l'errore
+  tipico del modello.
 
 **P1, manca:**
 - quote giornaliere per job: si fissano dopo una settimana di `request_log`,
@@ -259,6 +267,22 @@ della testa, 5 auto registrate come affare e messe in ricontrollo.
 - antiripubblicazione con pHash per gli annunci salvati dalla testa. La foto
   arriva dopo, quindi per ora vale solo il controllo venditore + variante +
   prezzo.
+
+**P2, iniziato il 5/10:**
+- `listing_events` (migrazione 26). I trigger nel DB registrano comparso,
+  prezzo, sparito, ricomparso, ripubblicato e fuso su ogni percorso di
+  scrittura; l'applicazione registra i riposizionamenti. Storia di partenza:
+  105k comparse.
+- Segnali dell'annuncio nel dettaglio: riposizionato N volte, ripubblicato,
+  ribassato più volte, fermo da settimane (§1.5).
+- Profitto atteso per ora (§1.1), con l'ordinamento "€/ora" e i tempi
+  modificabili in Impostazioni.
+- Rinviati:
+  - valore donatore: i listini aftermarket sono bassi e il valore di una
+    parte originale usata non è verificabile;
+  - lato vendita: servono i venduti dei telefoni, che sul DB del PC sono
+    ancora 0;
+  - `market_daily` e `price_models`: si ricostruiscono dagli eventi.
 
 ### Come si sa che ci siamo
 
