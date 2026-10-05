@@ -179,6 +179,30 @@ def _field_writeback(
     return update
 
 
+def ai_queue(table: str, limit: int) -> list[dict[str, Any]]:
+    """Annunci da analizzare, PRIMA i candidati (Goal Version §4.7): segnalati
+    come affare, salvati o in pipeline; poi i più recenti. Prima l'ordine era
+    casuale su ~49.000 attivi: un affare poteva aspettare giorni l'analisi."""
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            f"""
+            select t.id, t.title, t.description, t.storage_gb, t.color, t.battery_pct,
+                   t.defects_noted, t.features, t.variant_key
+            from public.{table} t
+            where t.status in ('nuovo', 'visto') and t.ai_analysis is null and t.description is not null
+            order by (t.triage = 'salvato'
+                      or exists (select 1 from public.sent_alerts s where s.listing_id = t.id)
+                      or exists (select 1 from public.deals d where d.listing_id = t.id)) desc nulls last,
+                     t.found_at desc
+            limit %s
+            """,
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 async def enrich_missing(limit: int = 30, category: str = "smartphone") -> dict[str, int]:
     """Analizza in blocco gli annunci attivi CON descrizione e SENZA ai_analysis.
 
@@ -189,30 +213,15 @@ async def enrich_missing(limit: int = 30, category: str = "smartphone") -> dict[
     Sequenziale (l'LLM è lento e locale): pensato per un giro schedulato che
     consuma il backlog un po' alla volta. No-op se l'AI è disabilitata.
     """
-    if not settings.ai_enabled:
+    if not settings.ai_enabled or category == "automobile":   # le auto non hanno ai_analysis
         return {"processed": 0, "ok": 0, "fields_filled": 0}
 
     from backend.core.database import get_db  # noqa: PLC0415 (lazy by design)
 
-    table = (
-        "live_opportunities_auto" if category == "automobile" else "live_opportunities_tech"
-    )
+    table = "live_opportunities_tech"
     db = get_db()
     try:
-        rows = (
-            db.table(table)
-            .select(
-                "id, title, description, storage_gb, color, battery_pct, "
-                "defects_noted, features, variant_key"
-            )
-            .in_("status", ["nuovo", "visto"])
-            .is_("ai_analysis", "null")
-            .not_.is_("description", "null")
-            .limit(limit)
-            .execute()
-            .data
-            or []
-        )
+        rows = await asyncio.to_thread(ai_queue, table, limit)
     except Exception:
         logger.warning("enrich_missing: query non riuscita")
         return {"processed": 0, "ok": 0, "fields_filled": 0}
