@@ -27,6 +27,7 @@ from backend.core.database import Client
 from backend.core.database import get_db, has_column
 from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
+from backend.services import car_costs
 from backend.services.scoring import car_risk_assessment, evaluate_opportunity, risk_assessment
 from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summary
 from backend.services.valuation import SortedPrices, car_expected_price, evaluate_value, fit_car_price_model
@@ -368,6 +369,18 @@ def _seller_profiles(
     return profiles
 
 
+def _car_acquisition(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    """Costi d'acquisto (passaggio & co.). kW dal campo di Subito; se manca,
+    dal testo ("218cv") o, ultima spiaggia, la potenza tipica della variante."""
+    kw = row.get("power_kw")
+    estimated = False
+    if not kw:
+        kw = car_costs.kw_from_text(f"{row.get('title') or ''} {row.get('description') or ''}")
+        kw = kw or ctx.get("variant_kw", {}).get(row.get("variant_key") or "")
+        estimated = bool(kw)
+    return car_costs.acquisition_costs(kw, estimated)
+
+
 def car_attributes(row: dict[str, Any]) -> dict[str, Any]:
     """Attributi di un'auto per il modello di prezzo: kW, coupé/cabrio,
     diesel, automatico (dai campi strutturati, o dal testo se mancano)."""
@@ -379,6 +392,21 @@ def car_attributes(row: dict[str, Any]) -> dict[str, Any]:
         "diesel": "diesel" in (row.get("fuel") or "").lower(),
         "automatic": (row.get("transmission") or "").lower().startswith(("autom", "sequen")),
     }
+
+
+def _variant_median_kw(db: Client, table: str) -> dict[str, int]:
+    """Potenza mediana per variante (per stimare il passaggio se manca)."""
+    if not has_column(table, "power_kw"):
+        return {}
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            f"select variant_key, percentile_disc(0.5) within group (order by power_kw) as kw "
+            f"from public.{table} where power_kw is not null and status in ('nuovo','visto') "
+            f"group by variant_key having count(*) >= 3"
+        ).fetchall()
+    return {r["variant_key"]: int(r["kw"]) for r in rows if r["kw"]}
 
 
 def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
@@ -890,6 +918,7 @@ def _build_base_ctx(db: Client, target_cat: str, table: str) -> dict[str, Any]:
     )
     if target_cat == "automobile":
         ctx["car_models"] = _car_price_models(db, table)
+        ctx["variant_kw"] = _variant_median_kw(db, table)
     return ctx
 
 
@@ -1038,9 +1067,13 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             has_price_drop=shaped["priceDrop"] is not None,
             # Tetto d'acquisto sul realizzo reale (venduti sani) se disponibile,
             # al netto del deprezzamento maturato mentre resta invenduto.
-            resale_ref=sold_reference or market_avg,
+            # Auto: si rivende al prezzo atteso per anno/km/versione (valore
+            # equo del modello), non alla media di un pool misto.
+            resale_ref=(valuation["fairValue"] if ctx["target_cat"] == "automobile"
+                        else sold_reference or market_avg),
             carry_month_eur=carry_month,
             hold_days=hold_days,
+            acquisition=(_car_acquisition(row, ctx) if ctx["target_cat"] == "automobile" else None),
             non_original_ratios=ctx.get("non_original_ratios"),
         )
     )

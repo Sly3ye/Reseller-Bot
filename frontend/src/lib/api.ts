@@ -168,6 +168,12 @@ export type ApiOpportunity = {
   roiPerDayPct: number | null;
   maxBid: number | null;
   repairTrackRecord?: RepairTrackRecord | null;
+  /** Auto: costi d'acquisto (passaggio, agenzia, preparazione) e margine netto. */
+  acquisitionCosts?: {
+    kw: number | null; kwEstimated: boolean; ipt: number | null; iptProvincePct: number;
+    fees: number; agency: number; prep: number; transfer: number | null; total: number | null;
+  } | null;
+  netMarginAfterCostsEur?: number | null;
   // Costo di magazzino: deprezzamento maturato mentre resta invenduto,
   // già scontato dal maxBid.
   carryCost: {
@@ -871,6 +877,11 @@ export type AppSettings = {
   repair_source: "aftermarket" | "apple";
   apple_return_credit: boolean;
   repair_labor_eur: Record<string, number>;
+  // Auto: costi d'acquisto (passaggio di proprietà & co.)
+  car_ipt_province_pct?: number;
+  car_agency_eur?: number;
+  car_prep_eur?: number;
+  car_dealer?: boolean;
   telegram_chat_tech: string | null;
   telegram_chat_auto: string | null;
   telegram_chat_ops: string | null;

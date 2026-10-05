@@ -117,7 +117,12 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
   scheda il prezzo atteso con deprezzamento della generazione, o "valore equo
   non stimabile" spiegato. *Prima:* anno, km, cambio, alimentazione al posto di memoria/
   batteria/colore. Oggi km compare in coda a campi vuoti.
-- ◻️ 🟡 **Costo di acquisizione reale**: passaggio di proprietà (varia per kW e
+- ✅ 🟡 **Costo di acquisizione reale** (2026-10-05, `services/car_costs.py`): IPT da
+  kW e maggiorazione provinciale (max 30%, D.M. 435/1998), emolumenti ACI,
+  Motorizzazione, bolli; agenzia e preparazione dalle Impostazioni; scalati dal
+  tetto d'acquisto e nel "margine netto" della scheda. kW dal campo di Subito,
+  se mancano dal testo ("218cv") o dalla variante (segnati "stimati"). Senza
+  valore equo niente tetto (prima: media di un pool misto). *Prima:* passaggio di proprietà (varia per kW e
   provincia), eventuale revisione e gommatura → il margine "vero" di un'auto non
   è prezzo − prezzo. Va nel max bid come i ricambi Apple sul tech.
 - ◻️ 🟡 **Checklist di visione** per l'annuncio aperto: cosa chiedere/guardare

@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+import backend.services.car_costs as car_costs
 import backend.services.parts as parts
 import backend.services.scoring as scoring
 from backend.core.config import settings
@@ -41,6 +42,8 @@ def _defaults() -> dict[str, Any]:
         "repair_source": "aftermarket",
         "apple_return_credit": True,
         "repair_labor_eur": {"schermo": 0, "batteria": 0, "scocca": 0, "fotocamera": 0},
+        # Auto: costi d'acquisto nel margine e nel tetto (services/car_costs.py).
+        **copy.deepcopy(car_costs.CONFIG),
         "telegram_chat_tech": settings.telegram_chat_tech,
         "telegram_chat_auto": settings.telegram_chat_auto,
         "telegram_chat_ops": settings.telegram_chat_ops,
@@ -75,6 +78,7 @@ def get_all(force: bool = False) -> dict[str, Any]:
 
     scoring.apply_config(merged)
     parts.configure(merged)
+    car_costs.configure(merged)
 
     with _lock:
         _cache = merged

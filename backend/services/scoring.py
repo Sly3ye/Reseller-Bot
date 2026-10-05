@@ -368,8 +368,12 @@ def evaluate_opportunity(
     carry_month_eur: int | None = None,
     hold_days: int | None = None,
     non_original_ratios: dict[str, float] | None = None,
+    acquisition: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Valutazione completa di un'opportunità per l'API (score + trattativa).
+
+    ``acquisition`` (auto): costi d'acquisto (passaggio, agenzia, preparazione,
+    services/car_costs.py), scalati dal tetto e dal margine netto.
 
     ``resale_ref`` = prezzo di realizzo del funzionante (mediana venduti sani);
     se assente si ripiega su ``market_avg``. Serve al ``maxBid`` (tetto d'acquisto).
@@ -387,6 +391,10 @@ def evaluate_opportunity(
     penalty_total, penalty_breakdown = defect_penalty_eur(category, title, defects)
 
     resale = resale_ref if (resale_ref and resale_ref > 0) else market_avg
+    if category == "automobile" and not (resale_ref and resale_ref > 0):
+        # Auto senza valore equo affidabile: niente tetto né margine (la media
+        # di un pool che mescola anni e versioni sarebbe un numero inventato).
+        resale = None
 
     # Riparato con ricambi aftermarket: si rivende meno del sano tutto originale
     # (rapporto misurato sul mercato, services/repair_matrix.py). Con ricambio
@@ -399,7 +407,14 @@ def evaluate_opportunity(
     carry_total = 0
     if carry_month_eur and hold_days:
         carry_total = round(carry_month_eur * hold_days / 30)
-    bid = max_bid(category, resale, penalty_total, repair_total, carry_total)
+    acq_total = (acquisition or {}).get("total") or 0
+    bid = max_bid(category, resale, penalty_total, repair_total + acq_total, carry_total)
+    # Auto: margine netto = rivendita attesa − richiesto − costi d'acquisto.
+    car_net = (
+        round(resale - asking - acq_total, 2)
+        if category == "automobile" and acquisition and acquisition.get("total") is not None
+        and resale and asking else None
+    )
 
     # Margine netto post-riparazione (radar riparazioni): si rivende come SANO
     # riparato, quindi la base è il prezzo del sano (``resale``), non il valore
@@ -449,6 +464,8 @@ def evaluate_opportunity(
             category, market_avg, asking, penalty_total, repair_total
         ),
         "maxBid": bid,
+        "acquisitionCosts": acquisition,
+        "netMarginAfterCostsEur": car_net,
         # True = conviene comprarlo anche al prezzo richiesto (asking ≤ tetto).
         "buyAtAsking": (
             bool(bid is not None and asking is not None and asking <= bid)

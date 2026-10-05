@@ -2344,6 +2344,22 @@ function NegotiationAssistant(props: {
       color: "var(--accent-text)",
     });
   }
+  if (props.category === "automobile" && item.acquisitionCosts?.total != null) {
+    const a = item.acquisitionCosts;
+    stats.push({
+      label: "Margine netto (dopo passaggio e costi)",
+      value: item.netMarginAfterCostsEur != null
+        ? `${item.netMarginAfterCostsEur >= 0 ? "+" : ""}${eur(item.netMarginAfterCostsEur)}`
+        : "—",
+      hint:
+        `costi ${eur(a.total ?? 0)}: IPT ${eur(a.ipt ?? 0)} (${a.kw} kW${a.kwEstimated ? " stimati" : ""}, ` +
+        `+${a.iptProvincePct}% provincia) + diritti e bolli ${eur(a.fees)}` +
+        (a.agency ? ` + agenzia ${eur(a.agency)}` : "") +
+        (a.prep ? ` + preparazione ${eur(a.prep)}` : "") +
+        (item.maxBid != null ? ` · tetto d'acquisto ${eur(item.maxBid)}` : ""),
+      color: (item.netMarginAfterCostsEur ?? 0) > 0 ? "oklch(0.75 0.15 150)" : "oklch(0.68 0.17 25)",
+    });
+  }
   if (props.category === "automobile" && item.fairValue === null) {
     stats.push({
       label: "Valore equo",
@@ -4947,6 +4963,32 @@ function SettingsScreen() {
               `Manodopera ${part}`,
               num(v, (nv) => setS({ ...s, repair_labor_eur: { ...s.repair_labor_eur, [part]: nv } }), "€"),
             ),
+          )}
+        </div>
+      </div>
+
+      {/* Auto: costi d'acquisto nel margine netto e nel tetto */}
+      <div style={card}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Auto: costi d&apos;acquisto</div>
+        <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px", lineHeight: 1.6 }}>
+          Passaggio di proprietà: IPT 150,81 € fino a 53 kW, poi 3,5119 € per kW (D.M. 435/1998), più la
+          maggiorazione della provincia (massimo 30%: controlla la delibera della tua), emolumenti ACI 27 €,
+          Motorizzazione 10,20 €, bolli 64 €. Agenzia e preparazione sono le tue.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" }}>
+          {field("Maggiorazione IPT provincia", num(s.car_ipt_province_pct ?? 30, (nv) => setS({ ...s, car_ipt_province_pct: Math.min(30, Math.max(0, nv)) }), "%"))}
+          {field("Agenzia pratiche", num(s.car_agency_eur ?? 0, (nv) => setS({ ...s, car_agency_eur: nv }), "€"))}
+          {field("Preparazione (lavaggio, ritocchi, tagliando)", num(s.car_prep_eur ?? 0, (nv) => setS({ ...s, car_prep_eur: nv }), "€"))}
+          {field(
+            "Commerciante",
+            <label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "13px" }}>
+              <input
+                type="checkbox"
+                checked={s.car_dealer ?? false}
+                onChange={(e) => setS({ ...s, car_dealer: e.target.checked })}
+              />
+              emolumento ACI ridotto (13,50 €)
+            </label>,
           )}
         </div>
       </div>
