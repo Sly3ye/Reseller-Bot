@@ -47,6 +47,8 @@ def _defaults() -> dict[str, Any]:
         **copy.deepcopy(car_costs.CONFIG),
         # Auto: criteri degli alert Telegram (services/car_alerts.py).
         **copy.deepcopy(car_alerts.DEFAULTS),
+        # Comune di casa: distanza degli annunci e raggio degli alert.
+        "home_town": "",
         "telegram_chat_tech": settings.telegram_chat_tech,
         "telegram_chat_auto": settings.telegram_chat_auto,
         "telegram_chat_ops": settings.telegram_chat_ops,

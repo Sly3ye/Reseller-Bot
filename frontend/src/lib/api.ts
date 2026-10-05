@@ -177,6 +177,9 @@ export type ApiOpportunity = {
     carry?: { days: number; depreciation: number; fixed: number; total: number } | null;
   } | null;
   netMarginAfterCostsEur?: number | null;
+  /** Distanza in linea d'aria dal comune di casa (Impostazioni). */
+  distanceKm?: number | null;
+  province?: string | null;
   // Costo di magazzino: deprezzamento maturato mentre resta invenduto,
   // già scontato dal maxBid.
   carryCost: {
@@ -358,6 +361,8 @@ export type DealEstimate = {
   repairItems?: { part: string; source: string | null; cost: number }[];
   resaleAfterRepair?: number | null;
   maxBid?: number | null;
+  /** Auto: costi d'acquisto stimati all'aggancio (passaggio, magazzino...). */
+  acquisition?: ApiOpportunity["acquisitionCosts"];
 };
 
 export type DealRepair = {
@@ -397,7 +402,7 @@ export type DealsSummary = {
   };
 };
 
-export type SortMode = "score" | "recent" | "margin" | "roi";
+export type SortMode = "score" | "recent" | "margin" | "roi" | "distance";
 export type ViewMode = "attivi" | "salvati" | "tutti";
 export type PresetMode = "compra_ora" | "motivati" | "riparabili";
 
@@ -988,6 +993,8 @@ export type AppSettings = {
   car_alert_max_price?: number;
   car_alert_brands?: string[];
   car_alert_zones?: string[];
+  car_alert_radius_km?: number;
+  home_town?: string;
   telegram_chat_tech: string | null;
   telegram_chat_auto: string | null;
   telegram_chat_ops: string | null;

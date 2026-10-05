@@ -96,7 +96,9 @@ def get_existing_opportunities(
     with_published = has_column(table, "published_at", client)
     can_raw = has_column(table, "raw_image_urls", client)
     can_car = table.endswith("_auto") and has_column(table, "car_model", client)
-    cols = "id, listing_url, asking_price, image_urls" + (", car_model" if can_car else "")
+    can_geo = has_column(table, "geo_lat", client)
+    cols = ("id, listing_url, asking_price, image_urls" + (", car_model" if can_car else "")
+            + (", geo_lat" if can_geo else ""))
     rows = (
         client.table(table)
         .select(cols + (", published_at" if with_published else ""))
@@ -116,6 +118,7 @@ def get_existing_opportunities(
             # Auto salvata prima della migrazione 23: i dati strutturati si
             # riempiono la prima volta che l'annuncio viene rivisto.
             "missing_car": can_car and not row.get("car_model"),
+            "missing_geo": can_geo and row.get("geo_lat") is None,
         }
     return result
 
@@ -161,6 +164,7 @@ def _opportunity_payload(
         "color": meta.get("color"),
         "variant_key": variant["variant_key"],
         "condition_tier": variant["condition_tier"],
+        **{k: meta.get(k) for k in GEO_FIELDS},
     }
     if category == "automobile":
         payload.update(
@@ -291,6 +295,8 @@ def apply_price_updates(
             patch["raw_image_urls"] = listing.metadata["raw_images"]
         # Righe salvate prima della migrazione 19: la data di pubblicazione
         # arriva la prima volta che l'annuncio viene rivisto.
+        if row.get("missing_geo") and (listing.metadata or {}).get("geo_lat") is not None:
+            patch.update({k: listing.metadata.get(k) for k in GEO_FIELDS})
         if row.get("missing_car") and (listing.metadata or {}).get("car_model"):
             patch.update({k: listing.metadata.get(k) for k in CAR_FIELDS})
         published = (listing.metadata or {}).get("published_at")
@@ -361,6 +367,8 @@ ACTIVE_STATUSES = ("nuovo", "visto")
 # Dati strutturati delle auto (migrazione 23), dallo scraper ai record.
 CAR_FIELDS = ("car_brand", "car_model", "car_version", "power_kw", "body_type",
               "doors", "register_month", "emission_class")
+# Posizione (migrazione 24), entrambe le categorie.
+GEO_FIELDS = ("geo_lat", "geo_lon", "province", "region")
 
 
 def find_republished(

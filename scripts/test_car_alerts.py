@@ -35,6 +35,9 @@ ck("marca con spazio ('Alfa Romeo')", matches(car, {**cfg, "car_alert_brands": [
 ck("marca diversa", matches(car, {**cfg, "car_alert_brands": ["BMW"]}), False)
 ck("zona per provincia", matches(car, {**cfg, "car_alert_zones": ["milano"]}), True)
 ck("zona fuori", matches(car, {**cfg, "car_alert_zones": ["Roma"]}), False)
+ck("entro il raggio", matches({**car, "distanceKm": 30}, {**cfg, "car_alert_radius_km": 50}), True)
+ck("fuori raggio", matches({**car, "distanceKm": 80}, {**cfg, "car_alert_radius_km": 50}), False)
+ck("raggio senza distanza nota", matches(car, {**cfg, "car_alert_radius_km": 50}), False)
 ck("ordine per margine", [c["netMarginAfterCostsEur"] for c in select_car_alerts(
     [car, {**car, "netMarginAfterCostsEur": 3000}], cfg)], [3000, 1500])
 

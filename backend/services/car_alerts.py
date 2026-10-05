@@ -23,6 +23,7 @@ DEFAULTS: dict[str, Any] = {
     "car_alert_max_price": 0,
     "car_alert_brands": [],
     "car_alert_zones": [],
+    "car_alert_radius_km": 0,   # 0 = nessun limite; serve il comune di casa
 }
 
 
@@ -45,8 +46,12 @@ def matches(item: dict[str, Any], cfg: dict[str, Any]) -> bool:
     brands = [_norm(b) for b in cfg.get("car_alert_brands") or [] if b]
     if brands and not any((item.get("variantKey") or "").startswith(b + "-") for b in brands):
         return False
+    radius = float(cfg.get("car_alert_radius_km") or 0)
+    if radius and (item.get("distanceKm") is None or item["distanceKm"] > radius):
+        return False
     zones = [_norm(z) for z in cfg.get("car_alert_zones") or [] if z]
-    if zones and not any(z in _norm(item.get("location")) for z in zones):
+    where = "-".join(_norm(item.get(k)) for k in ("location", "province", "region"))
+    if zones and not any(z in where for z in zones):
         return False
     return True
 

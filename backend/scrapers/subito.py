@@ -451,6 +451,7 @@ class SubitoScraper(BaseScraper):
                 "fuel": self._feature(features, "/fuel"),
                 # Auto: marca/modello(generazione)/versione, kW, carrozzeria...
                 **self._car_fields(features),
+                **self._geo_fields(ad),
                 # Variante tech (None per le auto): segmentazione di mercato.
                 "storage_gb": nlp["storage_gb"],
                 "battery_pct": nlp["battery_pct"],
@@ -589,6 +590,18 @@ class SubitoScraper(BaseScraper):
                 digits = re.sub(r"\D", "", raw.split(",")[0])
                 return int(digits) if digits else None
         return None
+
+    @staticmethod
+    def _geo_fields(ad: dict) -> dict[str, Any]:
+        """Comune con coordinate, provincia (sigla) e regione (migrazione 24)."""
+        geo = ad.get("geo") or {}
+        town = geo.get("town") or {}
+        return {
+            "geo_lat": town.get("lat"),
+            "geo_lon": town.get("lon"),
+            "province": (geo.get("city") or {}).get("short_name"),
+            "region": (geo.get("region") or {}).get("value"),
+        }
 
     def _parse_location(self, ad: dict) -> str | None:
         geo = ad.get("geo") or {}

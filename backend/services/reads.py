@@ -369,6 +369,44 @@ def _seller_profiles(
     return profiles
 
 
+def _haversine_km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    import math  # noqa: PLC0415
+
+    lat1, lon1, lat2, lon2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2
+    return round(2 * 6371 * math.asin(math.sqrt(h)), 1)
+
+
+_home_cache: dict[str, tuple[float, float] | None] = {}
+
+
+def home_coords(town: str | None) -> tuple[float, float] | None:
+    """Coordinate del comune di casa, dagli annunci già raccolti in quel comune
+    (Subito dà lat/lon per comune): nessun servizio di geocodifica esterno."""
+    if not town or not town.strip():
+        return None
+    key = town.strip().lower()
+    if key in _home_cache:
+        return _home_cache[key]
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    coords = None
+    for table in ("live_opportunities_auto", "live_opportunities_tech"):
+        if not has_column(table, "geo_lat"):
+            continue
+        with _get_pool().connection() as conn:
+            row = conn.execute(
+                f"select geo_lat, geo_lon from public.{table} where lower(location) = %s "
+                f"and geo_lat is not null limit 1", (key,),
+            ).fetchone()
+        if row:
+            coords = (float(row["geo_lat"]), float(row["geo_lon"]))
+            break
+    if coords:
+        _home_cache[key] = coords
+    return coords
+
+
 def _car_acquisition(row: dict[str, Any], ctx: dict[str, Any],
                      expected: float | None = None, model_label: str | None = None) -> dict[str, Any]:
     """Costi d'acquisto (passaggio & co.) + magazzino. kW dal campo di Subito;
@@ -878,6 +916,7 @@ def _build_enrich_ctx(
     settings_store.get_all()
 
     row_ctx = {
+        "home": home_coords(settings_store.get_all().get("home_town")),
         "price_history": _latest_price_history(db, [r["id"] for r in rows]),
         "price_watch": _price_watch(db, [r["id"] for r in rows]),
         "seller_profiles": _seller_profiles(db, table, rows),
@@ -985,6 +1024,13 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     seller_id = row.get("seller_id")
     profile = ctx["seller_profiles"].get(seller_id) if seller_id else None
     shaped["sellerProfile"] = profile
+    # Distanza da casa (Impostazioni → comune di casa), in linea d'aria.
+    home = ctx.get("home")
+    shaped["distanceKm"] = (
+        _haversine_km(home, (row["geo_lat"], row["geo_lon"]))
+        if home and row.get("geo_lat") is not None and row.get("geo_lon") is not None else None
+    )
+    shaped["province"] = row.get("province")
     shaped["sellerActiveCount"] = profile["active"] if profile else None
 
     shaped["expectedPrice"] = None
@@ -1423,11 +1469,17 @@ def list_opportunities(
 
     if sort == "recent":
         items.sort(key=lambda it: it.get("foundAt") or "", reverse=True)
+    elif sort == "margin" and table.endswith("_auto"):
+        # Auto: margine netto in euro dopo passaggio, costi e magazzino.
+        items.sort(key=lambda it: it.get("netMarginAfterCostsEur")
+                   if it.get("netMarginAfterCostsEur") is not None else -1e9, reverse=True)
     elif sort == "margin":
         items.sort(
             key=lambda it: it["marginPct"] if it.get("marginPct") is not None else -1e9,
             reverse=True,
         )
+    elif sort == "distance":
+        items.sort(key=lambda it: it["distanceKm"] if it.get("distanceKm") is not None else 1e9)
     elif sort == "roi":
         items.sort(
             key=lambda it: it["roiPerDayPct"] if it.get("roiPerDayPct") is not None else -1e9,

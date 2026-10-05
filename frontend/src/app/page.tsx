@@ -299,11 +299,14 @@ export default function FlipRadar() {
               }
             : {
                 kind: "rivendita",
+                // Auto: il margine netto dopo passaggio, costi e magazzino.
                 marginEur:
-                  item.marketAvg != null && item.askingPrice != null
+                  item.netMarginAfterCostsEur ??
+                  (item.marketAvg != null && item.askingPrice != null
                     ? item.marketAvg - item.askingPrice
-                    : null,
+                    : null),
                 maxBid: item.maxBid,
+                acquisition: item.acquisitionCosts ?? null,
               },
         });
         setPipelineIds((cur) => new Set(cur).add(item.id));
@@ -1186,7 +1189,7 @@ function SniperScreen(props: {
               gap: "2px",
             }}
           >
-            {(["score", "roi", "recent", "margin"] as SortMode[]).map((mode) => (
+            {(["score", "roi", "recent", "margin", "distance"] as SortMode[]).map((mode) => (
               <div
                 key={mode}
                 onClick={() => props.onSortChange(mode)}
@@ -1201,7 +1204,8 @@ function SniperScreen(props: {
                   color: props.sortMode === mode ? "oklch(0.12 0.008 250)" : "oklch(0.62 0.01 250)",
                 }}
               >
-                {mode === "score" ? "Deal Score" : mode === "roi" ? "ROI/gg" : mode === "recent" ? "Recenti" : "Margine"}
+                {mode === "score" ? "Deal Score" : mode === "roi" ? "ROI/gg" : mode === "recent" ? "Recenti"
+                  : mode === "distance" ? "Più vicini" : "Margine"}
               </div>
             ))}
           </div>
@@ -1891,13 +1895,15 @@ function SniperRow(props: {
                     item.km != null ? `${Math.round(item.km / 1000)}k km` : null,
                     item.transmission,
                     item.fuel,
-                    locationLabel,
+                    locationLabel + (item.province ? ` (${item.province})` : ""),
+                    item.distanceKm != null ? `${Math.round(item.distanceKm)} km da te` : null,
                   ]
                 : [
                     item.storageGb ? `${item.storageGb} GB` : null,
                     item.color,
                     item.batteryPct ? `🔋${item.batteryPct}%` : null,
-                    locationLabel,
+                    locationLabel + (item.province ? ` (${item.province})` : ""),
+                    item.distanceKm != null ? `${Math.round(item.distanceKm)} km da te` : null,
                   ]
               )
                 .filter(Boolean)
@@ -3598,7 +3604,7 @@ function PipelineScreen(props: {
   summary: DealsSummary | null;
   onUpdate: (
     id: string,
-    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price" | "repair">>,
+    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price" | "repair" | "extra_costs">>,
   ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -3835,7 +3841,7 @@ function PipelineRow(props: {
   deal: Deal;
   onUpdate: (
     id: string,
-    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price" | "repair">>,
+    patch: Partial<Pick<Deal, "stage" | "buy_price" | "sell_price" | "repair" | "extra_costs">>,
   ) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
@@ -3876,6 +3882,7 @@ function PipelineRow(props: {
         ? "oklch(0.72 0.16 150)"
         : "oklch(0.68 0.19 25)";
   const [repairOpen, setRepairOpen] = useState(false);
+  const [costsOpen, setCostsOpen] = useState(false);
 
   return (
     <div style={{ borderTop: "1px solid oklch(0.24 0.008 250)" }}>
@@ -3935,6 +3942,14 @@ function PipelineRow(props: {
               ? `${deal.repairOutcome}${deal.repairCost != null ? ` · ricambi ${eur(deal.repairCost)}` : ""}`
               : "riparazione"} {repairOpen ? "▾" : "▸"}
           </span>
+          {" · "}
+          <span
+            onClick={() => setCostsOpen((v) => !v)}
+            style={{ color: "var(--accent-text)", cursor: "pointer" }}
+            title="Costi oltre al prezzo d'acquisto (passaggio, meccanico, spedizione...)"
+          >
+            💶 {deal.extraCostsTotal ? `costi ${eur(deal.extraCostsTotal)}` : "costi"} {costsOpen ? "▾" : "▸"}
+          </span>
           {deal.listing_url && (
             <>
               {" · "}
@@ -3993,6 +4008,9 @@ function PipelineRow(props: {
     {repairOpen && (
       <RepairEditor deal={deal} onSave={(repair) => props.onUpdate(deal.id, { repair })} />
     )}
+    {costsOpen && (
+      <CostsEditor deal={deal} onSave={(extra_costs) => props.onUpdate(deal.id, { extra_costs })} />
+    )}
     </div>
   );
 }
@@ -4000,6 +4018,65 @@ function PipelineRow(props: {
 const REPAIR_PARTS = ["schermo", "batteria", "scocca", "fotocamera", "face-id", "audio", "ricarica", "tasti", "altro"];
 
 /** Riparazione vera di un affare: pezzi (fonte + costo), minuti, esito. */
+// Voci di costo preimpostate per verticale: un clic e si scrive solo l'importo.
+const COST_PRESETS: Record<Deal["category"], string[]> = {
+  automobile: ["Passaggio di proprietà", "Meccanico", "Gomme", "Tagliando", "Revisione",
+               "Preparazione / lavaggio", "Carburante e trasferta"],
+  smartphone: ["Spedizione", "Pellicola / cover", "Ricambio extra"],
+};
+
+function CostsEditor(props: { deal: Deal; onSave: (costs: Deal["extra_costs"]) => Promise<void> }) {
+  const { deal } = props;
+  const [costs, setCosts] = useState<Deal["extra_costs"]>(deal.extra_costs ?? []);
+  const [saved, setSaved] = useState(false);
+  const inp: CSSProperties = {
+    height: "30px", background: "oklch(0.16 0.008 250)", border: "1px solid oklch(0.30 0.01 250)",
+    borderRadius: "6px", color: "oklch(0.94 0.004 250)", padding: "0 8px", fontSize: "12.5px",
+  };
+  // Passaggio: precompilato dalla stima fotografata all'aggancio, se c'è.
+  const transferEst = deal.estimate?.acquisition?.transfer ?? null;
+  const add = (label: string) =>
+    setCosts((cur) => [...cur, { label, amount: label.startsWith("Passaggio") && transferEst ? Math.round(transferEst) : 0 }]);
+  const total = costs.reduce((a, c) => a + (Number(c.amount) || 0), 0);
+  return (
+    <div style={{ padding: "4px 16px 16px 16px", display: "flex", flexDirection: "column", gap: "10px", fontSize: "12.5px" }}>
+      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+        {COST_PRESETS[deal.category].map((label) => (
+          <button key={label} onClick={() => add(label)}
+                  style={{ ...inp, cursor: "pointer", background: "oklch(0.22 0.01 250)" }}>
+            + {label}
+          </button>
+        ))}
+        <button onClick={() => add("Altro")} style={{ ...inp, cursor: "pointer" }}>+ Altro</button>
+      </div>
+      {costs.map((c, i) => (
+        <div key={i} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <input value={c.label} style={{ ...inp, flex: 1 }}
+                 onChange={(e) => setCosts((cur) => cur.map((x, k) => (k === i ? { ...x, label: e.target.value } : x)))} />
+          <input type="number" value={c.amount} style={{ ...inp, width: "110px" }}
+                 onChange={(e) => setCosts((cur) => cur.map((x, k) => (k === i ? { ...x, amount: Number(e.target.value) } : x)))} />
+          <span>€</span>
+          <span onClick={() => setCosts((cur) => cur.filter((_, k) => k !== i))}
+                style={{ cursor: "pointer", color: "oklch(0.55 0.01 250)" }}>×</span>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+        <button
+          onClick={async () => { await props.onSave(costs); setSaved(true); setTimeout(() => setSaved(false), 1500); }}
+          style={{ ...inp, cursor: "pointer", background: "var(--accent)", color: "oklch(0.12 0.008 250)", fontWeight: 700 }}
+        >
+          Salva costi
+        </button>
+        <span style={{ fontFamily: MONO }}>totale {eur(total)}</span>
+        {transferEst != null && (
+          <span style={{ color: "oklch(0.6 0.01 250)" }}>passaggio stimato all&apos;aggancio {eur(transferEst)}</span>
+        )}
+        {saved && <span style={{ color: "oklch(0.78 0.15 150)" }}>salvato ✓</span>}
+      </div>
+    </div>
+  );
+}
+
 function RepairEditor(props: { deal: Deal; onSave: (repair: DealRepair) => Promise<void> }) {
   const { deal } = props;
   const [parts, setParts] = useState<DealRepair["parts"]>(deal.repair?.parts ?? []);
@@ -5288,6 +5365,17 @@ function SettingsScreen() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" }}>
           {field("Margine netto minimo", num(s.car_alert_min_net_margin_eur ?? 800, (nv) => setS({ ...s, car_alert_min_net_margin_eur: nv }), "€"))}
           {field("Budget massimo (0 = nessuno)", num(s.car_alert_max_price ?? 0, (nv) => setS({ ...s, car_alert_max_price: nv }), "€"))}
+          {field("Raggio da casa (0 = ovunque)", num(s.car_alert_radius_km ?? 0, (nv) => setS({ ...s, car_alert_radius_km: nv }), "km"))}
+          {field(
+            "Comune di casa",
+            <input
+              defaultValue={s.home_town ?? ""}
+              onBlur={(e) => setS({ ...s, home_town: e.target.value.trim() })}
+              placeholder="es. Monza"
+              title="Per la distanza degli annunci (ordina: Più vicini) e il raggio degli alert"
+              style={{ padding: "6px 8px", borderRadius: "8px", width: "100%" }}
+            />,
+          )}
           {field(
             "Marche",
             <input
