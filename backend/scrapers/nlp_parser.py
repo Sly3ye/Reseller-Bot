@@ -166,6 +166,13 @@ _ACCESSORY_KEYWORDS = (
     "powerbank", "auricolari", "cuffie", "airpods", "supporto auto",
     "porta cellulare", "flip cover", "custodia a libro", "retro cover",
     "guscio", "borsa porta cellulare",
+    # visti passare il 5/10 come "affari" da migliaia di euro: "MOFT Kit per
+    # iPhone", "Portafoglio MagSafe per iPhone", "2 Custodie iPhone", "Master
+    # Grip per iPhone", "Batteria originale Apple per iPhone", "Mini iPhone
+    # 17 Pro Max" (giocattolo: il modello "mini" si scrive DOPO "iphone")
+    "custodie", "kit", "portafoglio", "magsafe", "grip", "supporto",
+    "gimbal", "stabilizzatore", "batteria originale", "batteria compatibile",
+    "batteria di ricambio", "mini",
     # memorie esterne "per iPhone" (SSD/chiavette): non sono telefoni
     "ssd", "flashpod", "chiavetta", "hard disk", "memoria esterna",
     # ricambi (pezzi singoli): stessa regola posizionale — "Display iPhone 15"
@@ -198,12 +205,30 @@ def _is_accessory_listing(title: str | None) -> bool:
     """
     if not title:
         return False
-    norm = _normalize(title)
+    from backend.services.variants import normalize_iphone  # noqa: PLC0415 (import circolare)
+
+    # Refusi riportati a "iphone" prima di confrontare le posizioni: "I-phone
+    # 12 mini" e "Iphon 13 mini" sono telefoni, non accessori senza iPhone.
+    norm = normalize_iphone(_normalize(title))
+    if _is_fake(norm):
+        return True
     match = _ACCESSORY_RE.search(norm)
     if match is None:
         return False
     iphone_pos = norm.find("iphone")
     return iphone_pos == -1 or match.start() < iphone_pos
+
+
+# Cloni e repliche dichiarati nel titolo, in qualunque posizione ("iphone 17
+# promax 2 Tb clone"): non sono iPhone. Salvo la negazione subito prima ("non
+# è una replica", "no clone"), che invece rassicura su un telefono vero.
+_FAKE_RE = re.compile(r"\b(?:clone|clonato|replica|fake|imitazione)\b")
+_FAKE_NEGATION_RE = re.compile(r"\b(?:non|no|nessun\w*|niente)\b[^.!?,;]{0,12}$")
+
+
+def _is_fake(norm: str) -> bool:
+    match = _FAKE_RE.search(norm)
+    return match is not None and not _FAKE_NEGATION_RE.search(norm[:match.start()])
 
 
 # ----------------------------------------------------------------- colore (tech)

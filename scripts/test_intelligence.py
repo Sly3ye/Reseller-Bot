@@ -130,6 +130,21 @@ def test_nlp_auto():
     check("exclude_iqr", r["exclude_from_iqr"], True)
 
 
+def test_accessori():
+    print("Accessori, ricambi e cloni (fuori dal feed iPhone):")
+    acc = nlp._is_accessory_listing
+    for title in ("Cover per iPhone 13", "MOFT Kit per iphone 18 pro max - 7 accessori",
+                  "Apple Portafoglio MagSafe FineWoven per iPhone", "2 Custodie iPhone 17 Pro Max",
+                  "Telesin Master Grip per iPhone 17 Pro", "Batteria originale Apple per iPhone 17 Pro Max",
+                  "Mini iPhone 17 pro max", "iphone 17 promax 2 Tb clone", "iPhone 16 Pro replica perfetta"):
+        check(f"escluso: {title}", acc(title), True)
+    for title in ("iPhone 13 con cover inclusa", "iPhone 13 mini 128GB", "iPhone 15 con MagSafe e custodia",
+                  "iPhone 15 Pro originale, non è una replica", "iPhone 14 display rotto",
+                  "iPhone 12 kit completo con scatola", "I-phone 12 mini 128 GB Colore blu",
+                  "Iphon 13 mini 128gb", "I PHONE 12 MINI"):
+        check(f"tenuto: {title}", acc(title), False)
+
+
 def test_scoring():
     print("Scoring:")
     ev = scoring.evaluate_opportunity(
@@ -197,6 +212,7 @@ def main() -> None:
     test_nlp_auto()
     test_car_risk()
     test_nlp_auto_signals()
+    test_accessori()
     test_scoring()
     print(f"\n=== {_passed} PASS / {_failed} FAIL ===")
     raise SystemExit(1 if _failed else 0)
