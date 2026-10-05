@@ -171,15 +171,26 @@ del 5/10; il segnale per spegnerla (`AUTO_FULL_CATEGORY=false` nel `.env`,
 poi `docker compose up -d collector`) è la riga "Richieste oggi" con blocchi,
 o pause del governatore nei log (`Governatore: … in pausa`).
 
-**Sul PC, dopo il dump:** via i container avviati a mano e la riga del `.env`
-che puntava a uno di loro; da lì solo dashboard.
+**Verifiche dei venduti a metà.** L'inventario iPhone del 5/10 ha trovato
+~3.600 candidati venduti. La loro coda (`verify_queue:smartphone` in
+`app_settings`) viaggia nel dump e il `collector` del Mac la riprende da solo
+entro 30 minuti. I venduti già verificati sul PC sono già marcati. In
+**Qualità del dato** la riga "possibili venduti da verificare" scende.
+
+**Sul PC, dopo il dump.** Dalle 14:02 del 5/10 raccoglie il `collector` di
+compose, avviato con `SCHEDULER_ENABLED=true` da riga di comando: il `.env` di
+root dice `false`. I container fatti a mano sono fermi. Da qui in poi il PC
+serve solo come dashboard.
 
 ```bash
-docker rm -f boh-collector boh-photos boh-head
-# nel .env di root del PC: togliere la riga COLLECTOR_URL=http://boh-collector:8000
-#                          (SCHEDULER_ENABLED=false resta)
+docker compose stop collector
+docker rm boh-collector boh-photos boh-head      # i vecchi container fatti a mano, già fermi
 docker compose up -d backend
 ```
+
+Sul Mac non servono né `SCHEDULER_SKIP` né `SCHEDULER_ONLY`: girano tutti i
+lavori, compresa la fetta auto, che sul PC il pomeriggio del 5/10 era spenta
+per dare la precedenza alle verifiche dei venduti iPhone.
 
 ## Dopo il merge
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure
