@@ -916,6 +916,11 @@ export type AppSettings = {
   car_agency_eur?: number;
   car_prep_eur?: number;
   car_dealer?: boolean;
+  // Auto: criteri degli alert Telegram
+  car_alert_min_net_margin_eur?: number;
+  car_alert_max_price?: number;
+  car_alert_brands?: string[];
+  car_alert_zones?: string[];
   telegram_chat_tech: string | null;
   telegram_chat_auto: string | null;
   telegram_chat_ops: string | null;

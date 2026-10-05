@@ -131,6 +131,12 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
 - ⚪ **Distanza dal venditore**: su un'auto andare a vedere costa mezza giornata;
   ordinare per vicinanza ha senso più che sul tech.
 
+- ✅ 🔴 **Alert sui criteri del compratore** (2026-10-05, `services/car_alerts.py`):
+  margine netto dopo i costi ≥ soglia (default 800 €), budget, marche, zone;
+  sempre valore equo affidabile, rischio non alto, auto sana; ribassi solo
+  sulle auto salvate; messaggio con margine netto, costi, tetto ed errore
+  della stima. Chat: `telegram_chat_auto` (Impostazioni).
+
 ## 3. Market Intelligence auto — *"cosa conviene / come si muove il mercato"*
 
 - 🔧 Le analitiche per modello **ora rispondono** (fallivano in silenzio), ma

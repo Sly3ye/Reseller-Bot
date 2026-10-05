@@ -5124,6 +5124,33 @@ function SettingsScreen() {
             </label>,
           )}
         </div>
+        <div style={{ fontSize: "14px", fontWeight: 700, marginTop: "6px" }}>Alert Telegram auto</div>
+        <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px" }}>
+          Solo auto sane con valore equo affidabile e rischio non alto. Marche e zone separate da virgola
+          (vuoto = tutte); la zona si confronta con la località dell&apos;annuncio (es. &quot;Milano, MB, Lombardia&quot;).
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" }}>
+          {field("Margine netto minimo", num(s.car_alert_min_net_margin_eur ?? 800, (nv) => setS({ ...s, car_alert_min_net_margin_eur: nv }), "€"))}
+          {field("Budget massimo (0 = nessuno)", num(s.car_alert_max_price ?? 0, (nv) => setS({ ...s, car_alert_max_price: nv }), "€"))}
+          {field(
+            "Marche",
+            <input
+              defaultValue={(s.car_alert_brands ?? []).join(", ")}
+              onBlur={(e) => setS({ ...s, car_alert_brands: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })}
+              placeholder="es. BMW, Audi, Volkswagen"
+              style={{ padding: "6px 8px", borderRadius: "8px", width: "100%" }}
+            />,
+          )}
+          {field(
+            "Zone",
+            <input
+              defaultValue={(s.car_alert_zones ?? []).join(", ")}
+              onBlur={(e) => setS({ ...s, car_alert_zones: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })}
+              placeholder="es. Milano, Monza, Bergamo"
+              style={{ padding: "6px 8px", borderRadius: "8px", width: "100%" }}
+            />,
+          )}
+        </div>
       </div>
 
       {/* Ricambi Apple per fascia: ripiego per i modelli senza listino */}

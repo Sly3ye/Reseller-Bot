@@ -15,6 +15,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+import backend.services.car_alerts as car_alerts
 import backend.services.car_costs as car_costs
 import backend.services.parts as parts
 import backend.services.scoring as scoring
@@ -44,6 +45,8 @@ def _defaults() -> dict[str, Any]:
         "repair_labor_eur": {"schermo": 0, "batteria": 0, "scocca": 0, "fotocamera": 0},
         # Auto: costi d'acquisto nel margine e nel tetto (services/car_costs.py).
         **copy.deepcopy(car_costs.CONFIG),
+        # Auto: criteri degli alert Telegram (services/car_alerts.py).
+        **copy.deepcopy(car_alerts.DEFAULTS),
         "telegram_chat_tech": settings.telegram_chat_tech,
         "telegram_chat_auto": settings.telegram_chat_auto,
         "telegram_chat_ops": settings.telegram_chat_ops,

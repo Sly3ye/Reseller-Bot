@@ -1023,6 +1023,14 @@ async def finish_run(
             drops = drops_by_cat.get(cat, [])
             try:
                 items = await asyncio.to_thread(enrich_for_alerts, cat, new_rows, db)
+                if cat == "automobile":
+                    # Auto: margine netto dopo i costi e criteri del compratore
+                    # (services/car_alerts.py), non classe affare + score.
+                    from backend.services.car_alerts import select_car_alerts  # noqa: PLC0415
+
+                    cars = select_car_alerts(items, settings_store.get_all())
+                    await notify_deals(db, cat, cars, drops, [])
+                    continue
                 # Mai un alert su una valutazione con meno di 6 campioni
                 # (mediana di 3 prezzi chiesti = rumore, non un affare).
                 items = [it for it in items if it.get("valuationConfidence") != "bassa"]

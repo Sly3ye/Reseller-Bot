@@ -162,6 +162,15 @@ def _fmt_smart_deal(item: dict[str, Any], category: str) -> str:
         )
         if detail:
             lines.append(f"🚗 {html.escape(detail)}")
+        # Il numero che conta per un flip: margine netto dopo passaggio e costi.
+        net = item.get("netMarginAfterCostsEur")
+        costs = (item.get("acquisitionCosts") or {}).get("total")
+        if net is not None:
+            lines.append(f"✅ <b>Margine netto {_fmt_eur(net)}</b> (passaggio e costi {_fmt_eur(costs)})"
+                         + (f" · tetto {_fmt_eur(item.get('maxBid'))}" if item.get("maxBid") else ""))
+        model = item.get("carModel") or {}
+        if model.get("errPct") is not None:
+            lines.append(f"📊 Stima da {model.get('n')} auto simili, errore tipico ±{model['errPct']}%")
     else:
         detail = " · ".join(
             x
@@ -414,6 +423,8 @@ async def notify_deals(
                 )
             )
             continue
+        if category == "automobile":
+            continue  # auto: ribassi solo sulle ⭐ salvate (mezzo milione di annunci = spam)
         if drop_pct < cfg["alert_min_drop_pct"]:
             continue
         to_send.append(
