@@ -1031,6 +1031,10 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         if home and row.get("geo_lat") is not None and row.get("geo_lon") is not None else None
     )
     shaped["province"] = row.get("province")
+    if ctx["target_cat"] == "automobile":
+        from backend.services.car_checklist import checklist  # noqa: PLC0415
+
+        shaped["checklist"] = checklist(row, row.get("features"), row.get("defects_noted"))
     shaped["sellerActiveCount"] = profile["active"] if profile else None
 
     shaped["expectedPrice"] = None

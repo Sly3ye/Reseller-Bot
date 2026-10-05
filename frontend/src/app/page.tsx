@@ -2476,6 +2476,21 @@ function NegotiationAssistant(props: {
         ))}
       </div>
 
+      {props.category === "automobile" && !!item.checklist?.length && (
+        <div style={{ background: "oklch(0.16 0.008 250)", border: "1px solid oklch(0.27 0.01 250)",
+                      borderRadius: "8px", padding: "10px 12px", fontSize: "12.5px", lineHeight: 1.6 }}>
+          <div style={{ fontSize: "10.5px", color: "oklch(0.46 0.01 250)", textTransform: "uppercase",
+                        letterSpacing: "0.04em", marginBottom: "4px" }}>
+            Prima di andare a vederla
+          </div>
+          {item.checklist.map((c) => (
+            <div key={c.what}>
+              ☐ <b>{c.what}</b> <span style={{ color: "oklch(0.6 0.01 250)" }}>— {c.why}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {item.ai && (
         <div
           style={{

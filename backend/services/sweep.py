@@ -225,7 +225,7 @@ async def run_sweep(
             )
 
     logger.info(
-        "Sweep %s: %d pagine, %d annunci iPhone (%d senza target), +%d nuovi, %d cali%s",
+        "Sweep %s: %d pagine, %d annunci tenuti (%d senza target), +%d nuovi, %d cali%s",
         category, scraper.last_search["pages"], totals["kept"], totals["unmatched"],
         totals["new"], totals["price_drops"],
         " — BUCO: non ricongiunto" if gap else "",
@@ -404,6 +404,7 @@ async def deep_backfill(
 # giorno). Un numero molto più alto indica un inventario anomalo: meglio
 # fermarsi che scaricare migliaia di pagine dallo stesso IP.
 MAX_VERIFY_PER_NIGHT = 3000
+BLIND_VERIFY_PER_NIGHT = 50
 
 
 async def reconcile_inventory(category: str = "smartphone") -> dict[str, Any]:
@@ -709,6 +710,12 @@ async def _reconcile(category: str) -> dict[str, Any]:
         {"id": r["id"], "listing_url": r["listing_url"]}
         for r in missing if r["id"] not in merged
     ]
+    # Righe vecchie senza "iphone" nel titolo (salvate dai vecchi target):
+    # l'inventario non può vederle e resterebbero attive per sempre. Qualcuna
+    # a notte si verifica pagina per pagina, finché non sono esaurite.
+    blind = [r for r in rows if r["listing_url"] not in seen and not mentions_iphone(r.get("title"))]
+    blind.sort(key=lambda r: str(r.get("updated_at") or ""))
+    candidates += [{"id": r["id"], "listing_url": r["listing_url"]} for r in blind[:BLIND_VERIFY_PER_NIGHT]]
     logger.info(
         "Inventario %s: %d attivi su Subito, %d attivi nel DB, %d candidati rimossi",
         category, len(seen), len(rows), len(candidates),

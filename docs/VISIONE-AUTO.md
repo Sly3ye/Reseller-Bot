@@ -125,10 +125,16 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
   valore equo niente tetto (prima: media di un pool misto). *Prima:* passaggio di proprietà (varia per kW e
   provincia), eventuale revisione e gommatura → il margine "vero" di un'auto non
   è prezzo − prezzo. Va nel max bid come i ricambi Apple sul tech.
-- ◻️ 🟡 **Checklist di visione** per l'annuncio aperto: cosa chiedere/guardare
+- ✅ 🟡 **Checklist di visione** (2026-10-05, `services/car_checklist.py`): regole
+  meccaniche generali dai dati dell'annuncio (PRA, km alla revisione,
+  spessimetro, distribuzione, FAP/EGR, frizione, cambio automatico, bombole,
+  capote, batteria, telaio). Niente difetti specifici del modello scritti a
+  memoria: arriveranno con fonti o AI. *Prima:* per l'annuncio aperto: cosa chiedere/guardare
   prima di muoversi (tagliandi, distribuzione, ruggine sui punti noti del
   modello, prova a freddo). Il valore dell'auto lo decide il sopralluogo.
-- ⚪ **Distanza dal venditore**: su un'auto andare a vedere costa mezza giornata;
+- ✅ ⚪ **Distanza dal venditore** (2026-10-05): coordinate del comune da Subito
+  (migrazione 24), comune di casa nelle Impostazioni, "km da te", ordinamento
+  "Più vicini", raggio negli alert. *Prima:*: su un'auto andare a vedere costa mezza giornata;
   ordinare per vicinanza ha senso più che sul tech.
 
 - ✅ 🔴 **Alert sui criteri del compratore** (2026-10-05, `services/car_alerts.py`):
@@ -142,7 +148,9 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
 - 🔧 Le analitiche per modello **ora rispondono** (fallivano in silenzio), ma
   restano tarate sul tech: "premio memoria" e "impatto condizione" non hanno
   senso qui.
-- ◻️ 🔴 **Curva prezzo/km e prezzo/anno per generazione**: l'equivalente auto
+- ✅ 🔴 **Curva prezzo/km e prezzo/anno per generazione** (2026-10-05): schermata
+  Mercato auto (quanto pesano anno, km, kW, coupé, diesel, automatico per
+  generazione) + calcolatore "Quanto vale?". *Prima:*: l'equivalente auto
   della curva di deprezzamento iPhone, e la base del valore equo.
 - ✅ 🔴 **Dove cacciare** (2026-10-05, `services/car_hunt.py`, schermata omonima): per
   modello@generazione attive, nuove/sparite a settimana, prezzo tipico, errore
@@ -193,7 +201,8 @@ tutto un altro set:
 ## 6. Pipeline P&L auto
 
 - ✅ Funziona già (stadi, costi accessori, profitto netto, affari fermi).
-- ◻️ 🟡 **Costi accessori preimpostati per l'auto**: passaggio, meccanico,
+- ✅ 🟡 **Costi accessori preimpostati per l'auto** (2026-10-05): editor costi in
+  pipeline con voci per verticale, passaggio precompilato dalla stima. *Prima:*: passaggio, meccanico,
   gommatura, tagliando, lavaggio/dettaglio — oggi vanno scritti a mano ogni volta.
 
 ## 7. Copertura e raccolta

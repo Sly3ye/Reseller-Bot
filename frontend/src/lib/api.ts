@@ -179,6 +179,8 @@ export type ApiOpportunity = {
   netMarginAfterCostsEur?: number | null;
   /** Distanza in linea d'aria dal comune di casa (Impostazioni). */
   distanceKm?: number | null;
+  /** Auto: cosa controllare prima di comprarla (regole generali). */
+  checklist?: { what: string; why: string }[];
   province?: string | null;
   // Costo di magazzino: deprezzamento maturato mentre resta invenduto,
   // già scontato dal maxBid.
