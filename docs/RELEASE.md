@@ -38,7 +38,7 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | A2 | Copertura ≥ 95% della ricerca che Subito dichiara (annunci letti / dichiarati, dall'inventario) | ✅ 99,95% (51.643 letti su 51.669, inventario del 2026-10-02, completo) · da mantenere ogni notte |
 | A3 | Zero annunci persi tra un giro e l'altro (`gaps` = 0 per 14 giorni di fila) | 🔧 da osservare |
 | A4 | Venduti/rimossi rilevati ogni notte (inventario + verifica) | ✅ codice: esito sempre registrato, allarme se interrotto/incompleto, recupero automatico se il PC era spento all'1:30 · 🔧 primi dati con l'inventario di oggi |
-| A5 | Gira da solo 30 giorni senza interventi, su UNA macchina sempre accesa | ◻️ oggi PC + Mac separati |
+| A5 | Gira da solo 30 giorni senza interventi, su UNA macchina sempre accesa | 🔧 dal 2026-10-06 raccoglie solo il **Mac** (`collector`, DB unico, foto unite, password DB non di default); il PC fa solo da dashboard · da fare sul Mac: niente sospensione in carica (`sudo pmset -c sleep 0`), Docker Desktop all'accesso, coperchio aperto · conta dei 30 giorni dal 6/10 |
 
 ### B. Qualità del dato — sapere cosa c'è nell'annuncio
 
@@ -116,7 +116,7 @@ Ancora da fare per la v1:
 | G13 | **Latenza annuncio → alert** misurata (p50/p95): nel business dei rotti vince chi arriva primo | ✅ misura nel cruscotto (scoperta, tardivi oltre 2h, alert) · ✅ dal 5/10 testa della coda ogni 60 s (alert nello stesso giro, foto dal CDN) ed emivita degli affari (quanto restano online dopo l'alert) · 🔧 alert solo con Telegram configurato: pulsanti di prova in Impostazioni |
 | G14 | **Prezzo di realizzo ≠ prezzo chiesto**: fattore di trattativa dalle proprie compravendite, applicato a rivendita e tetto | ◻️ si attiva con la pipeline (come E3) |
 | G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | ✅ campione e celle fragili nella matrice, confidenza sul valore equo; margini della matrice col sano a parità di memoria (scheda e tetto lo erano già: valore equo per variante modello+memoria) |
-| G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ✅ merge del 2026-10-03 sul Mac (51.794 annunci tech); foto ancora da importare · dopo A5 non servirà più |
+| G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ✅ ultimo merge il 2026-10-06 sul Mac (dump PC principale + vecchio Mac, foto comprese); con una sola macchina non servono altri merge |
 
 ## Distanza
 
