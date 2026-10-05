@@ -32,7 +32,7 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | # | Criterio | Stato |
 |---|---|---|
 | A1 | Nessun servizio a pagamento; ritmo sotto la soglia di blocco, stop automatico sui 403 | ✅ |
-| A2 | Copertura ≥ 95% della ricerca che Subito dichiara (annunci letti / dichiarati, dall'inventario) | 🔧 primo inventario completo in corso; prima la misura divideva gli iPhone tenuti per tutti i risultati (cover e Samsung inclusi) |
+| A2 | Copertura ≥ 95% della ricerca che Subito dichiara (annunci letti / dichiarati, dall'inventario) | ✅ 99,95% (51.643 letti su 51.669, inventario del 2026-10-02, completo) · da mantenere ogni notte |
 | A3 | Zero annunci persi tra un giro e l'altro (`gaps` = 0 per 14 giorni di fila) | 🔧 da osservare |
 | A4 | Venduti/rimossi rilevati ogni notte (inventario + verifica) | ✅ codice: esito sempre registrato, allarme se interrotto/incompleto, recupero automatico se il PC era spento all'1:30 · 🔧 primi dati con l'inventario di oggi |
 | A5 | Gira da solo 30 giorni senza interventi, su UNA macchina sempre accesa | ◻️ oggi PC + Mac separati |
@@ -113,7 +113,7 @@ Ancora da fare per la v1:
 | G13 | **Latenza annuncio → alert** misurata (p50/p95): nel business dei rotti vince chi arriva primo | ✅ misura nel cruscotto (scoperta, tardivi oltre 2h, alert) · 🔧 significativa dopo un giorno di raccolta continua; alert solo con Telegram configurato |
 | G14 | **Prezzo di realizzo ≠ prezzo chiesto**: fattore di trattativa dalle proprie compravendite, applicato a rivendita e tetto | ◻️ si attiva con la pipeline (come E3) |
 | G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | 🔧 campione e celle fragili nella matrice, confidenza sul valore equo; sconto a parità di memoria misurato e mostrato (es. iPhone 13 schermo: 80 € → 58 €) · ◻️ usarlo anche nel margine e nel tetto d'acquisto |
-| G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ◻️ superata da A5 (una sola macchina) |
+| G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ✅ merge del 2026-10-03 sul Mac (51.794 annunci tech); foto ancora da importare · dopo A5 non servirà più |
 
 ## Distanza
 
