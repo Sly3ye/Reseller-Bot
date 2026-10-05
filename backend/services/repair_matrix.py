@@ -215,10 +215,17 @@ def get_repair_matrix(force: bool = False) -> dict[str, Any]:
         base_prices = healthy_orig.get(model, [])
         if len(base_prices) < MIN_HEALTHY:
             continue
-        healthy = statistics.median(base_prices)
+        healthy_raw = statistics.median(base_prices)
+        breakdown = _storage_breakdown(model, items, healthy_by_storage)
+        # Rivendita = sano con lo STESSO mix di memoria dei rotti (G15): la
+        # mediana per modello mescola 64 e 256 GB e gonfiava il margine quando
+        # i rotti hanno meno memoria dei sani. Senza abbastanza dati per
+        # taglio resta la mediana per modello.
+        same = breakdown["discountSameStorageEur"]
         buy_prices = [i["price"] for i in items]
         buy = statistics.median(buy_prices)
         buy_good = _p25(buy_prices)
+        healthy = buy + same if same is not None else healthy_raw
         weekly = round(born_recent.get((model, code), 0) / (WINDOW_DAYS / 7), 1)
 
         cell: dict[str, Any] = {
@@ -229,11 +236,14 @@ def get_repair_matrix(force: bool = False) -> dict[str, Any]:
             "listings": len(items),
             "weekly": weekly,
             "fragile": len(items) < FRAGILE_N,
-            "healthyMedian": round(healthy),
+            "healthyMedian": round(healthy_raw),
+            # Il prezzo del sano usato nei conti (a parità di memoria se possibile).
+            "healthyRef": round(healthy),
+            "healthyRefSameStorage": same is not None,
             "healthySamples": len(base_prices),
             "buyMedian": round(buy),
             "buyGood": round(buy_good) if buy_good is not None else None,
-            "discountEur": round(healthy - buy),
+            "discountEur": round(healthy_raw - buy),
             "scenarios": {},
             "best": None,
         }
@@ -282,7 +292,7 @@ def get_repair_matrix(force: bool = False) -> dict[str, Any]:
         cell["weeklyPotentialEur"] = (
             round(max(good_margin, 0) * weekly / 4) if good_margin is not None else None
         )
-        cell.update(_storage_breakdown(model, items, healthy_by_storage))
+        cell.update(breakdown)
         cells.append(cell)
 
     cells.sort(key=lambda c: (c["fragile"], c["weeklyPotentialEur"] is None,

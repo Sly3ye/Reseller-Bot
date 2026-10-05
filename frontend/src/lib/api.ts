@@ -482,6 +482,9 @@ export type RepairCell = {
   byStorage?: { storage: number; listings: number; healthySamples: number;
     buyMedian: number; healthyMedian: number; discountEur: number }[];
   discountSameStorageEur?: number | null;
+  /** Prezzo del sano usato nei conti (a parità di memoria dei rotti se possibile). */
+  healthyRef?: number;
+  healthyRefSameStorage?: boolean;
 };
 
 export type RepairMatrix = {

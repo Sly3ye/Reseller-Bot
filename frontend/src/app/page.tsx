@@ -2741,7 +2741,18 @@ function RepairMatrixScreen(props: { onOpenCell: (cell: RepairCell) => void }) {
                 <div>{c.defectLabel}</div>
                 <div style={{ fontFamily: MONO }}>{c.listings}{c.fragile ? " ⚠️" : ""}</div>
                 <div style={{ fontFamily: MONO }}>{c.weekly}</div>
-                <div style={{ fontFamily: MONO }} title={`${c.healthySamples} sani originali`}>{eur(c.healthyMedian)}</div>
+                <div
+                  style={{ fontFamily: MONO }}
+                  title={
+                    `${c.healthySamples} sani originali, mediana ${eur(c.healthyMedian)}` +
+                    (c.healthyRefSameStorage
+                      ? `\nNei conti ${eur(c.healthyRef ?? c.healthyMedian)}: sano con lo stesso mix di memoria dei rotti`
+                      : "")
+                  }
+                >
+                  {eur(c.healthyRef ?? c.healthyMedian)}
+                  {c.healthyRefSameStorage && <span style={{ color: "oklch(0.6 0.01 250)" }}> ⚖️</span>}
+                </div>
                 <div style={{ fontFamily: MONO }}>
                   {eur(c.buyMedian)}
                   <span style={{ color: "oklch(0.6 0.01 250)" }}> · {money(c.buyGood)}</span>
@@ -2772,7 +2783,7 @@ function RepairMatrixScreen(props: { onOpenCell: (cell: RepairCell) => void }) {
                           .join("\n")
                       }
                     >
-                      ⚖️ −{eur(c.discountEur - c.discountSameStorageEur)} a pari memoria
+                      ⚖️ già −{eur(c.discountEur - c.discountSameStorageEur)} per la memoria
                     </div>
                   )}
                 </div>

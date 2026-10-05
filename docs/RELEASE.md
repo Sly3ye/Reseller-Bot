@@ -112,7 +112,7 @@ Ancora da fare per la v1:
 | G12 | **Ripubblicazioni validate** su un campione etichettato (precisione/richiamo di pHash e venditore+variante), come per i guasti | ◻️ |
 | G13 | **Latenza annuncio → alert** misurata (p50/p95): nel business dei rotti vince chi arriva primo | ✅ misura nel cruscotto (scoperta, tardivi oltre 2h, alert) · 🔧 significativa dopo un giorno di raccolta continua; alert solo con Telegram configurato |
 | G14 | **Prezzo di realizzo ≠ prezzo chiesto**: fattore di trattativa dalle proprie compravendite, applicato a rivendita e tetto | ◻️ si attiva con la pipeline (come E3) |
-| G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | 🔧 campione e celle fragili nella matrice, confidenza sul valore equo; sconto a parità di memoria misurato e mostrato (es. iPhone 13 schermo: 80 € → 58 €) · ◻️ usarlo anche nel margine e nel tetto d'acquisto |
+| G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | ✅ campione e celle fragili nella matrice, confidenza sul valore equo; margini della matrice col sano a parità di memoria (scheda e tetto lo erano già: valore equo per variante modello+memoria) |
 | G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ✅ merge del 2026-10-03 sul Mac (51.794 annunci tech); foto ancora da importare · dopo A5 non servirà più |
 
 ## Distanza
