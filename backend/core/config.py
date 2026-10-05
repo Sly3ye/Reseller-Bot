@@ -81,6 +81,8 @@ class Settings:
     collector_url: str = os.getenv("COLLECTOR_URL", "")
     # Testa della coda: ogni quanti secondi leggere la pagina 1 (0 = spenta).
     head_poll_seconds: int = int(os.getenv("HEAD_POLL_SECONDS", "60"))
+    # Annunci spariti da più di tanti giorni: via descrizione e venditore (0 = mai).
+    retention_days: int = int(os.getenv("RETENTION_DAYS", "90"))
     ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
 

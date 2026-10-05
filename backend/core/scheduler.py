@@ -16,6 +16,7 @@ from backend.services.repair_feedback import refresh as refresh_repair_feedback
 from backend.services.deal_watch import watch_deals
 from backend.services.drift import drift_check
 from backend.services.request_budget import flush_request_counts
+from backend.services.retention import apply_retention
 from backend.services.telegram_bot import poll_telegram
 from backend.services.garbage_collector import run_garbage_collector
 from backend.services.sweep import (
@@ -231,6 +232,17 @@ def create_scheduler() -> AsyncIOScheduler:
             trigger=IntervalTrigger(seconds=30),
             id="telegram_bot",
             name="Bot Telegram (azioni sugli alert → pipeline)",
+            replace_existing=True,
+        )
+
+    # Conservazione: via descrizione e venditore dagli annunci spariti da
+    # RETENTION_DAYS (services/retention.py), dopo gli inventari della notte.
+    if settings.retention_days > 0:
+        scheduler.add_job(
+            apply_retention,
+            trigger=CronTrigger(hour=5, minute=15, timezone=SCHEDULER_TIMEZONE),
+            id="retention",
+            name=f"Conservazione dati (spariti da {settings.retention_days} giorni)",
             replace_existing=True,
         )
 
