@@ -35,13 +35,14 @@ def main() -> int:
     after: Counter = Counter()
     changes = []
     for r in rows:
+        km = normalize_km(r["km"], r["year"])
         res = resolve_variant(
             "automobile", r["title"],
-            {"year": r["year"], "defects_noted": r["defects_noted"] or [], "features": r["features"] or []},
+            {"year": r["year"], "km": km, "defects_noted": r["defects_noted"] or [],
+             "features": r["features"] or []},
             query=r["query"], strict_filters=r["strict_filters"], description=r["description"],
         )
         after[res["variant_key"]] += 1
-        km = normalize_km(r["km"], r["year"])
         if res["variant_key"] != r["variant_key"] or km != r["km"]:
             changes.append((res["variant_key"], km, r["id"]))
 

@@ -31,7 +31,8 @@ from backend.services.scoring import evaluate_opportunity, risk_assessment
 from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summary
 from backend.services.valuation import car_expected_price, evaluate_value, fit_car_price_model
 from backend.services.variants import (
-    AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_model_label, iphone_model_key, is_healthy, model_text,
+    AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_generation_label, car_model_label, iphone_model_key,
+    is_healthy, model_text,
     year_fits_generation,
 )
 
@@ -686,7 +687,8 @@ def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
     conteggi, dai listing attivi — popola i menu a tendina della dashboard."""
     rows = (
         db.table(table)
-        .select(_cols(table, "variant_key", "storage_gb", "color", "condition_tier"))
+        .select(_cols(table, "variant_key", "storage_gb", "color", "condition_tier",
+                      "year", "transmission", "fuel"))
         .in_("status", list(_ACTIVE_STATUSES))
         .execute()
         .data
@@ -696,7 +698,22 @@ def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
     storages: Counter = Counter()
     colors: Counter = Counter()
     conditions: Counter = Counter()
+    # Auto: generazione (dalla variante), cambio, alimentazione, anni.
+    generations: Counter = Counter()
+    transmissions: Counter = Counter()
+    fuels: Counter = Counter()
+    years: list[int] = []
     for r in rows:
+        vk = r.get("variant_key") or ""
+        if CAR_GEN_SEP in vk:
+            label = f"{car_model_label(_model_key(vk)) or _model_key(vk)} {car_generation_label(vk)}"
+            generations[vk, label] += 1
+        if r.get("transmission"):
+            transmissions[r["transmission"]] += 1
+        if r.get("fuel"):
+            fuels[r["fuel"]] += 1
+        if r.get("year"):
+            years.append(int(r["year"]))
         mk = _model_key(r.get("variant_key"))
         if mk:
             models[mk] += 1
@@ -720,6 +737,13 @@ def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
             {"value": k, "count": c}
             for k, c in sorted(conditions.items(), key=lambda x: -x[1])
         ],
+        "generations": [
+            {"value": vk, "label": label, "count": c}
+            for (vk, label), c in sorted(generations.items(), key=lambda x: -x[1])
+        ],
+        "transmissions": [{"value": k, "count": c} for k, c in transmissions.most_common()],
+        "fuels": [{"value": k, "count": c} for k, c in fuels.most_common()],
+        "yearRange": [min(years), max(years)] if years else None,
     }
 
 
@@ -1029,6 +1053,12 @@ def list_opportunities(
     preset: str | None = None,
     defect: str | None = None,
     only_defect: bool = False,
+    min_year: int | None = None,
+    max_year: int | None = None,
+    max_km: int | None = None,
+    transmission: str | None = None,
+    fuel: str | None = None,
+    generation: str | None = None,
     limit: int = 30,
     offset: int = 0,
     client: Client | None = None,
@@ -1061,6 +1091,21 @@ def list_opportunities(
             return False
         if max_price is not None and (price is None or price > max_price):
             return False
+        # Filtri auto (anno, km, cambio, alimentazione, generazione).
+        if table.endswith("_auto"):
+            year, km = row.get("year"), row.get("km")
+            if min_year is not None and (not year or year < min_year):
+                return False
+            if max_year is not None and (not year or year > max_year):
+                return False
+            if max_km is not None and (km is None or km > max_km):
+                return False
+            if transmission and (row.get("transmission") or "") != transmission:
+                return False
+            if fuel and (row.get("fuel") or "") != fuel:
+                return False
+            if generation and row.get("variant_key") != generation:
+                return False
         # Guasto (dalla matrice riparazioni): l'annuncio lo dichiara; con
         # only_defect è l'UNICO guasto funzionale (segni estetici ammessi).
         if defect:

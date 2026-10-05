@@ -150,7 +150,14 @@ export type ApiOpportunity = {
   defectPenaltyEur: number | null;
   suggestedOffer: number | null;
   // Analitiche operative (compravendita)
-  fairValueSource: "km" | "venduti" | "listati" | null;
+  fairValueSource: "eta-km" | "venduti" | "listati" | null;
+  /** Auto: errore tipico del modello età+km della generazione (%). */
+  fairValueErrPct?: number | null;
+  /** Auto: il modello di prezzo della generazione (campione, deprezzamento). */
+  carModel?: {
+    n: number; errPct: number; perYearPct: number; per10kKmPct: number;
+    yearRange: [number, number]; kmRange: [number, number];
+  } | null;
   valuationSamples: number | null;
   valuationConfidence: "alta" | "media" | "bassa" | null;
   roiPerDayPct: number | null;
@@ -400,6 +407,17 @@ export type OppFilters = {
   onlyDefect?: boolean;
   limit?: number;
   offset?: number;
+} & CarFilters;
+
+/** Filtri del verticale auto (ignorati sugli iPhone). */
+export type CarFilters = {
+  minYear?: number | null;
+  maxYear?: number | null;
+  maxKm?: number | null;
+  transmission?: string | null;
+  fuel?: string | null;
+  /** Variante modello@generazione, es. "bmw-125i@f2x". */
+  generation?: string | null;
 };
 
 export type OpportunityFacets = {
@@ -407,6 +425,11 @@ export type OpportunityFacets = {
   storages: { value: number; count: number }[];
   colors: { value: string; count: number }[];
   conditions: { value: string; count: number }[];
+  // Solo auto
+  generations?: { value: string; label: string; count: number }[];
+  transmissions?: { value: string; count: number }[];
+  fuels?: { value: string; count: number }[];
+  yearRange?: [number, number] | null;
 };
 
 export type OpportunitiesPage = {
@@ -435,6 +458,12 @@ export async function fetchOpportunities(
   if (filters.q) p.set("q", filters.q);
   if (filters.view) p.set("view", filters.view);
   if (filters.preset) p.set("preset", filters.preset);
+  if (filters.minYear != null) p.set("min_year", String(filters.minYear));
+  if (filters.maxYear != null) p.set("max_year", String(filters.maxYear));
+  if (filters.maxKm != null) p.set("max_km", String(filters.maxKm));
+  if (filters.transmission) p.set("transmission", filters.transmission);
+  if (filters.fuel) p.set("fuel", filters.fuel);
+  if (filters.generation) p.set("generation", filters.generation);
   if (filters.defect) {
     p.set("defect", filters.defect);
     if (filters.onlyDefect) p.set("only_defect", "true");

@@ -65,6 +65,9 @@ class Settings:
     # AI locale (Ollama) per l'analisi semantica delle descrizioni. Dal backend
     # in Docker, Ollama sul Mac/host si raggiunge via host.docker.internal.
     ai_enabled: bool = os.getenv("AI_ENABLED", "true").lower() in ("1", "true", "yes")
+    # false = solo dashboard/API, nessun job (raccolta, inventario, foto...):
+    # per una seconda macchina che non deve far divergere il DB principale.
+    scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() in ("1", "true", "yes")
     ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
 

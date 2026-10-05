@@ -14,6 +14,7 @@ TESTS = ["intelligence", "variants", "republish", "survival", "valuation",
          "repair_feedback", "depreciation"]
 
 env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+sys.stdout.reconfigure(encoding="utf-8")
 failed = []
 for name in TESTS:
     proc = subprocess.run([sys.executable, str(ROOT / "scripts" / f"test_{name}.py")],

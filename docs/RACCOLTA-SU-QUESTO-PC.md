@@ -49,6 +49,13 @@ auto ogni ~30. Da qui in poi il DB si riempie.
   Il pannello **Automations** mostra salute scraper e copertura; **Tempo di
   vendita** e **Market Intelligence** matureranno con i dati.
 
+## Solo dashboard, senza raccolta
+Con `SCHEDULER_ENABLED=false` nel `.env` di root il backend serve dashboard e
+API ma non avvia nessun job (sweep, inventario, foto): serve quando la
+macchina principale è un'altra e questo DB non deve divergere. Dal
+2026-10-05 questo PC è così; per tornare a raccogliere: `true` e
+`docker compose up -d backend`.
+
 ## Sicurezza: password del DB
 Le porte di DB (5432) e API (8000) ascoltano solo su `127.0.0.1`: dalla rete
 non si raggiungono. La password del DB va comunque cambiata da quella di

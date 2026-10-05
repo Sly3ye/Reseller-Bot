@@ -82,10 +82,13 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
 - ✅ Feed, card, espansa, triage (salva/scarta), viste e paginazione: **condivisi
   col tech**, funzionano già.
 - ✅ **Il feed auto non va più in errore** (le query chiedevano colonne tech).
-- ◻️ 🔴 **Filtri nativi auto**: anno (da/a), km (fasce), cambio, alimentazione,
+- ✅ 🔴 **Filtri nativi auto** (2026-10-05): modello+generazione, anno (da/a),
+  km massimi, cambio, alimentazione, con conteggi dai facet. *Prima:* anno (da/a), km (fasce), cambio, alimentazione,
   generazione. Oggi la barra filtri è quella tech (memoria, colore, batteria):
   su un'auto è inutilizzabile.
-- ◻️ 🔴 **Card auto**: anno, km, cambio, alimentazione al posto di memoria/
+- ✅ 🔴 **Card auto** (2026-10-05): anno · km · cambio · alimentazione; nella
+  scheda il prezzo atteso con deprezzamento della generazione, o "valore equo
+  non stimabile" spiegato. *Prima:* anno, km, cambio, alimentazione al posto di memoria/
   batteria/colore. Oggi km compare in coda a campi vuoti.
 - ◻️ 🟡 **Costo di acquisizione reale**: passaggio di proprietà (varia per kW e
   provincia), eventuale revisione e gommatura → il margine "vero" di un'auto non

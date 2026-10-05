@@ -1,5 +1,5 @@
 {
-  "_note": "Generazioni per modello auto: la variante canonica e' (modello, generazione). Anni = anni di produzione del modello in quella generazione. Fonte: conoscenza generale dei listini BMW, NON verificata su documenti ufficiali: correggere qui se un dato risulta sbagliato. 'codes' = sigle che, se scritte nell'annuncio, decidono la generazione anche contro l'anno. 'exclude' = parole che indicano un altro modello (es. X1 23d). 'exclude' vale ovunque nel titolo; 'parts_prefix' solo se il titolo COMINCIA cosi' (un ricambio, non l'auto).",
+  "_note": "Generazioni per modello auto: la variante canonica e' (modello, generazione). Anni = anni di produzione del modello in quella generazione. Fonte: conoscenza generale dei listini BMW, NON verificata su documenti ufficiali: correggere qui se un dato risulta sbagliato. 'codes' = sigle che, se scritte nell'annuncio, decidono la generazione anche contro l'anno. 'exclude' = parole che indicano un altro modello (es. X1 23d). 'exclude' vale ovunque nel titolo; 'parts_prefix' solo se il titolo COMINCIA cosi' (un ricambio, non l'auto). 'parts_anywhere_without_km': parole da ricambio che valgono ovunque nel titolo quando l'annuncio non dichiara i km (un'auto intera li dichiara).",
   "models": {
     "bmw-123d": {
       "label": "BMW 123d",
@@ -62,19 +62,50 @@
     }
   },
   "parts_prefix": [
-    "motore",
+    "ammortizzatori",
+    "assetto",
     "cambio",
+    "catalizzatore",
     "centralina",
     "cerchi",
     "cerchio",
+    "cofano",
+    "dischi",
     "fari",
     "faro",
-    "paraurti",
-    "sedili",
-    "volante",
-    "turbina",
+    "filtro",
+    "gomme",
     "iniettori",
+    "kat",
+    "kit",
+    "motore",
+    "paraurti",
+    "pastiglie",
+    "pezzi",
+    "pneumatici",
+    "portiera",
     "ricambi",
+    "scarico",
+    "sedili",
+    "specchietto",
+    "terminale",
+    "turbina",
+    "volante"
+  ],
+  "parts_anywhere_without_km": [
+    "kat",
+    "catalizzatore",
+    "scarico",
+    "terminale",
+    "ricambio",
+    "ricambi",
+    "centralina",
+    "cerchi",
+    "kit",
+    "assetto",
+    "turbina",
+    "volano",
+    "iniettori",
     "pezzi"
   ]
 }

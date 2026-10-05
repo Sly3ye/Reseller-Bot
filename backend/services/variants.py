@@ -315,6 +315,21 @@ def car_generation_years(variant_key: str | None) -> tuple[int, int] | None:
     return None
 
 
+def car_generation_label(variant_key: str | None) -> str | None:
+    """Etichetta della generazione di una variante auto ("F20/F21"), o None."""
+    if not variant_key or CAR_GEN_SEP not in variant_key:
+        return None
+    model_slug, code = variant_key.split(CAR_GEN_SEP, 1)
+    if code == CAR_GEN_UNKNOWN:
+        return "generazione incerta"
+    if code == CAR_EXCLUDED:
+        return "altro modello / ricambio"
+    for g in (_car_table()["models"].get(model_slug) or {}).get("generations", []):
+        if g["code"] == code:
+            return g["label"]
+    return code
+
+
 def year_fits_generation(variant_key: str | None, year: int | None) -> bool:
     """L'anno dichiarato è plausibile per la generazione (±1 per immatricolazioni
     tardive)? Un "125i F20 del 2025" ha un anno sbagliato: niente stima."""
@@ -324,13 +339,17 @@ def year_fits_generation(variant_key: str | None, year: int | None) -> bool:
     return years[0] - 1 <= int(year) <= years[1] + 1
 
 
-def _car_excluded(model_slug: str, title: str) -> bool:
+def _car_excluded(model_slug: str, title: str, km: int | None = None) -> bool:
     """Titolo di un altro modello ("Bmw X1 123d") o di un ricambio ("Motore
-    BMW 123D"): non è l'auto cercata e non deve entrare nei prezzi."""
+    BMW 123D", "Kat. 200 celle ... 125i f20"): non è l'auto cercata e non deve
+    entrare nei prezzi. Senza km dichiarati basta una parola da ricambio in
+    qualunque punto del titolo."""
     table = _car_table()
     low = _slug(title).replace("-", " ")
     words = low.split()
     if words and words[0] in table.get("parts_prefix", []):
+        return True
+    if km is None and set(words) & set(table.get("parts_anywhere_without_km", [])):
         return True
     model = table["models"].get(model_slug) or {}
     return any(re.search(rf"\b{re.escape(w)}\b", low) for w in model.get("exclude", []))
@@ -340,11 +359,12 @@ def _car_variant(query: str | None,
                  strict_filters: dict[str, Any] | None,
                  title: str | None = None,
                  year: int | None = None,
-                 description: str | None = None) -> tuple[str, str]:
+                 description: str | None = None,
+                 km: int | None = None) -> tuple[str, str]:
     base = _slug(query or "auto")
     label_base = car_model_label(base) or (query or "Auto")
     if title is not None and car_model_label(base):
-        if _car_excluded(base, title):
+        if _car_excluded(base, title, km):
             return f"{base}{CAR_GEN_SEP}{CAR_EXCLUDED}", f"{label_base} (altro modello o ricambio)"
         code, gen_label = car_generation(base, year, f"{title} {description or ''}")
         return f"{base}{CAR_GEN_SEP}{code}", f"{label_base} {gen_label}"
@@ -380,7 +400,8 @@ def resolve_variant(
     tier = condition_tier(category, meta.get("defects_noted"), meta.get("features"))
 
     if category == "automobile":
-        key, label = _car_variant(query, strict_filters, title, meta.get("year"), description)
+        key, label = _car_variant(query, strict_filters, title, meta.get("year"), description,
+                                  meta.get("km"))
         return {"variant_key": key, "variant_label": label, "condition_tier": tier}
 
     # tech

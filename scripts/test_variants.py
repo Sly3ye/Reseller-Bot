@@ -107,6 +107,14 @@ ck("sigla in descrizione", car("BMW 125i", "BMW 125i coupé", 2012, "E82 N52 6 c
 ck("anno fuori tabella → incerta", car("BMW 125i", "BMW 125i Sport 224cv", 2022)["variant_key"], "bmw-125i@nd")
 ck("X1 23d = altro modello", car("BMW 123d", "Bmw x1 123d del 2023", 2023)["variant_key"], "bmw-123d@escluso")
 ck("ricambio = escluso", car("BMW 123d", "Motore km0 semicompleto BMW 123D")["variant_key"], "bmw-123d@escluso")
+ck("catalizzatore senza km = ricambio",
+   v.resolve_variant("automobile", "Kat. 200 celle supersprint bmw 125i f20 USATO",
+                     {"year": 2018, "km": None, "defects_noted": [], "features": []}, query="BMW 125i")["variant_key"],
+   "bmw-125i@escluso")
+ck("auto con km e 'usato' nel titolo resta auto",
+   v.resolve_variant("automobile", "BMW 125i usato garantito",
+                     {"year": 2016, "km": 90000, "defects_noted": [], "features": []}, query="BMW 125i")["variant_key"],
+   "bmw-125i@f2x")
 ck("'cambio manuale' nel titolo dell'auto non esclude",
    car("BMW 123d", "BMW 123d cambio manuale", 2009)["variant_key"], "bmw-123d@e8x")
 ck("etichetta", car("BMW 125i", "BMW 125i", 2016)["variant_label"], "BMW 125i F20/F21")

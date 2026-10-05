@@ -46,6 +46,9 @@ services:
       # URL da cui il browser carica le immagini: in produzione = dominio/IP del VPS.
       PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:8000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # false su una seconda macchina: dashboard e API sì, raccolta no (vedi
+      # RACCOLTA-SU-QUESTO-PC.md). Il DB principale resta uno solo.
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
     volumes:
       - media:/data/media
       # Esito dell'ultimo backup (servizio `backup`), per cruscotto e allarme.

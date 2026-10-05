@@ -33,6 +33,7 @@ import {
   type Category,
   type Deal,
   type DealStage,
+  type CarFilters,
   type DealsSummary,
   type DepreciationCurve,
   type DepreciationData,
@@ -122,6 +123,8 @@ export default function FlipRadar() {
   const [fMaxDays, setFMaxDays] = useState<number | null>(null);
   // Guasto (dalla matrice Riparazioni): annunci con SOLO quel guasto.
   const [fDefect, setFDefect] = useState<{ code: string; label: string } | null>(null);
+  // Filtri auto (anno, km, cambio, alimentazione, generazione).
+  const [fCar, setFCar] = useState<CarFilters>({});
   const [page, setPage] = useState(0);
 
   const [opportunities, setOpportunities] = useState<ApiOpportunity[]>([]);
@@ -188,6 +191,7 @@ export default function FlipRadar() {
         preset,
         defect: fDefect?.code ?? null,
         onlyDefect: !!fDefect,
+        ...(category === "automobile" ? fCar : {}),
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
       },
@@ -212,7 +216,7 @@ export default function FlipRadar() {
   }, [
     category, sortMode, fModel, fStorage, fColor, fCondition,
     fMinPrice, fMaxPrice, fMinDays, fMaxDays,
-    marginFilter, search, view, preset, page, fDefect,
+    marginFilter, search, view, preset, page, fDefect, fCar,
   ]);
 
   useEffect(() => {
@@ -338,6 +342,7 @@ export default function FlipRadar() {
   const resetFilters = useCallback(() => {
     setFModel(null);
     setFDefect(null);
+    setFCar({});
     setFStorage(null);
     setFColor(null);
     setFCondition(null);
@@ -794,6 +799,8 @@ export default function FlipRadar() {
               onModelChange={p0(setFModel)}
               fStorage={fStorage}
               onStorageChange={p0(setFStorage)}
+              carFilters={fCar}
+              onCarFiltersChange={p0(setFCar)}
               fColor={fColor}
               onColorChange={p0(setFColor)}
               fCondition={fCondition}
@@ -1034,6 +1041,8 @@ function SniperScreen(props: {
   onModelChange: (v: string | null) => void;
   fStorage: number | null;
   onStorageChange: (v: number | null) => void;
+  carFilters: CarFilters;
+  onCarFiltersChange: (v: CarFilters) => void;
   fColor: string | null;
   onColorChange: (v: string | null) => void;
   fCondition: string | null;
@@ -1234,8 +1243,11 @@ function SniperScreen(props: {
       {/* Barra filtri: modello/memoria/colore/condizione (iPhone, da facets) +
           prezzo/giorni online (entrambe le categorie). */}
       {(() => {
+        const car = props.carFilters;
+        const setCar = (patch: Partial<CarFilters>) => props.onCarFiltersChange({ ...car, ...patch });
         const anyFacetFilter =
-          props.fModel || props.fStorage !== null || props.fColor || props.fCondition;
+          props.fModel || props.fStorage !== null || props.fColor || props.fCondition ||
+          Object.values(car).some((v) => v !== null && v !== undefined && v !== "");
         const anyRangeFilter =
           props.fMinPrice !== null || props.fMaxPrice !== null ||
           props.fMinDays !== null || props.fMaxDays !== null;
@@ -1272,6 +1284,45 @@ function SniperScreen(props: {
                 />
               </>
             )}
+            {!props.isTech && (
+              <>
+                <FacetSelect
+                  label="Modello e generazione"
+                  value={car.generation ?? null}
+                  onChange={(v) => setCar({ generation: v })}
+                  options={(props.facets.generations ?? []).map((g) => ({
+                    value: g.value, label: `${g.label} (${g.count})`,
+                  }))}
+                />
+                <NumberRangeField
+                  label="Anno"
+                  min={car.minYear ?? null}
+                  max={car.maxYear ?? null}
+                  onMinChange={(v) => setCar({ minYear: v })}
+                  onMaxChange={(v) => setCar({ maxYear: v })}
+                />
+                <FacetSelect
+                  label="Km massimi"
+                  value={car.maxKm != null ? String(car.maxKm) : null}
+                  onChange={(v) => setCar({ maxKm: v === null ? null : Number(v) })}
+                  options={[50000, 100000, 150000, 200000, 250000].map((k) => ({
+                    value: String(k), label: `fino a ${k / 1000}k km`,
+                  }))}
+                />
+                <FacetSelect
+                  label="Cambio"
+                  value={car.transmission ?? null}
+                  onChange={(v) => setCar({ transmission: v })}
+                  options={(props.facets.transmissions ?? []).map((t) => ({ value: t.value, label: `${t.value} (${t.count})` }))}
+                />
+                <FacetSelect
+                  label="Alimentazione"
+                  value={car.fuel ?? null}
+                  onChange={(v) => setCar({ fuel: v })}
+                  options={(props.facets.fuels ?? []).map((f) => ({ value: f.value, label: `${f.value} (${f.count})` }))}
+                />
+              </>
+            )}
             <NumberRangeField
               label="Prezzo €"
               min={props.fMinPrice}
@@ -1291,6 +1342,7 @@ function SniperScreen(props: {
               <button
                 onClick={() => {
                   props.onModelChange(null);
+                  props.onCarFiltersChange({});
                   props.onStorageChange(null);
                   props.onColorChange(null);
                   props.onConditionChange(null);
@@ -1785,13 +1837,21 @@ function SniperRow(props: {
                 flex: "1 1 120px",
               }}
             >
-              {[
-                item.storageGb ? `${item.storageGb} GB` : null,
-                item.color,
-                item.batteryPct ? `🔋${item.batteryPct}%` : null,
-                item.km ? `${Math.round(item.km / 1000)}k km` : null,
-                locationLabel,
-              ]
+              {(props.category === "automobile"
+                ? [
+                    item.year ? String(item.year) : null,
+                    item.km != null ? `${Math.round(item.km / 1000)}k km` : null,
+                    item.transmission,
+                    item.fuel,
+                    locationLabel,
+                  ]
+                : [
+                    item.storageGb ? `${item.storageGb} GB` : null,
+                    item.color,
+                    item.batteryPct ? `🔋${item.batteryPct}%` : null,
+                    locationLabel,
+                  ]
+              )
                 .filter(Boolean)
                 .join(" · ")}
             </div>
@@ -2071,17 +2131,19 @@ function NegotiationAssistant(props: {
 
   const sourceLabel: Record<string, string> = {
     venduti: "dai venduti",
-    km: "prezzo~km",
+    "eta-km": "anno+km della generazione",
     listati: "dai listati",
   };
 
   const stats: { label: string; value: string; hint?: string; color?: string }[] = [];
   if (item.fairValue !== null) {
     const base = item.fairValueSource ? sourceLabel[item.fairValueSource] : null;
-    const conf = item.valuationConfidence
-      ? `affidabilità ${item.valuationConfidence}` +
-        (item.valuationSamples ? ` (${item.valuationSamples} campioni)` : "")
-      : null;
+    const conf = item.carModel
+      ? `${item.carModel.n} auto simili, errore tipico ±${item.carModel.errPct}%`
+      : item.valuationConfidence
+        ? `affidabilità ${item.valuationConfidence}` +
+          (item.valuationSamples ? ` (${item.valuationSamples} campioni)` : "")
+        : null;
     const parts = [
       item.marginVsFairPct !== null
         ? `${item.marginVsFairPct >= 0 ? "+" : ""}${item.marginVsFairPct}% vs richiesto`
@@ -2248,14 +2310,28 @@ function NegotiationAssistant(props: {
     });
   }
   if (props.category === "automobile" && item.expectedPrice !== null) {
+    const m = item.carModel;
     stats.push({
-      label: "Prezzo atteso per questi km",
+      label: "Prezzo atteso (sana, quest'anno e questi km)",
       value: eur(item.expectedPrice),
       hint:
-        item.marginVsExpected !== null
+        (item.marginVsExpected !== null
           ? `${item.marginVsExpected >= 0 ? "+" : ""}${eur(item.marginVsExpected)} vs richiesto`
-          : undefined,
+          : "") +
+        (m
+          ? ` · nella generazione ogni anno vale ${m.perYearPct}%, ogni 10.000 km ${m.per10kKmPct}%` +
+            ` (${m.n} auto ${m.yearRange[0]}–${m.yearRange[1]})`
+          : ""),
       color: "var(--accent-text)",
+    });
+  }
+  if (props.category === "automobile" && item.fairValue === null) {
+    stats.push({
+      label: "Valore equo",
+      value: "non stimabile",
+      hint:
+        "Troppo poche auto simili, prezzi troppo dispersi nella generazione, generazione " +
+        "incerta o anno/km mancanti: meglio nessun numero che uno inventato.",
     });
   }
 

@@ -55,17 +55,21 @@ async def lifespan(app: FastAPI):
     # Correzioni dalle tue riparazioni (E3) pronte prima della prima stima.
     await asyncio.to_thread(repair_feedback.refresh)
     scheduler = create_scheduler()
-    scheduler.start()
     app.state.scheduler = scheduler
-    logger.info(
-        "Scheduler started with jobs: %s",
-        [job.id for job in scheduler.get_jobs()],
-    )
+    if settings.scheduler_enabled:
+        scheduler.start()
+        logger.info(
+            "Scheduler started with jobs: %s",
+            [job.id for job in scheduler.get_jobs()],
+        )
+    else:
+        logger.warning("SCHEDULER_ENABLED=false: nessuna raccolta, solo dashboard e API")
     try:
         yield
     finally:
-        scheduler.shutdown(wait=False)
-        logger.info("Scheduler stopped")
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
+            logger.info("Scheduler stopped")
 
 
 app = FastAPI(title="Reseller SaaS Backend", version="0.1.0", lifespan=lifespan)
