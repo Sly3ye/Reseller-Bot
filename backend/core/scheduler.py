@@ -16,7 +16,7 @@ from backend.services.repair_feedback import refresh as refresh_repair_feedback
 from backend.services.deal_watch import watch_deals
 from backend.services.drift import drift_check
 from backend.services.request_budget import flush_request_counts
-from backend.services.retention import apply_retention
+from backend.services.retention import nightly_housekeeping
 from backend.services.telegram_bot import poll_telegram
 from backend.services.garbage_collector import run_garbage_collector
 from backend.services.sweep import (
@@ -247,16 +247,16 @@ def create_scheduler() -> AsyncIOScheduler:
             replace_existing=True,
         )
 
-    # Conservazione: via descrizione e venditore dagli annunci spariti da
-    # RETENTION_DAYS (services/retention.py), dopo gli inventari della notte.
-    if settings.retention_days > 0:
-        scheduler.add_job(
-            apply_retention,
-            trigger=CronTrigger(hour=5, minute=15, timezone=SCHEDULER_TIMEZONE),
-            id="retention",
-            name=f"Conservazione dati (spariti da {settings.retention_days} giorni)",
-            replace_existing=True,
-        )
+    # Pulizie della notte, dopo gli inventari: conservazione (via descrizione e
+    # venditore dagli annunci spariti da RETENTION_DAYS) e ambito iPhone
+    # (fuori ambito in archivio). services/retention.py, services/scope.py.
+    scheduler.add_job(
+        nightly_housekeeping,
+        trigger=CronTrigger(hour=5, minute=15, timezone=SCHEDULER_TIMEZONE),
+        id="retention",
+        name="Pulizie della notte (conservazione dati, ambito iPhone)",
+        replace_existing=True,
+    )
 
     # Correzioni dalle riparazioni (E3): si ricalcolano anche a ogni riparazione
     # registrata; qui di notte, per sicurezza.

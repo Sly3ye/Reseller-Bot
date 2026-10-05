@@ -85,6 +85,9 @@ class Settings:
     head_poll_seconds: int = int(os.getenv("HEAD_POLL_SECONDS", "60"))
     # Annunci spariti da più di tanti giorni: via descrizione e venditore (0 = mai).
     retention_days: int = int(os.getenv("RETENTION_DAYS", "90"))
+    # iPhone: generazione minima trattata (raccolta, feed, statistiche). Sotto,
+    # poco giro e poco margine (scelta del 5/10).
+    iphone_min_gen: int = int(os.getenv("IPHONE_MIN_GEN", "12"))
     ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
 

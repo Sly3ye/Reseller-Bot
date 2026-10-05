@@ -224,6 +224,39 @@ def iphone_model_key(text: str | None) -> str | None:
     return f"iphone-{num}{suffix_slug}"
 
 
+# Ambito iPhone (5/10: "dal 12 in su"; sotto c'è poco giro e poco margine).
+# Generazione dalla chiave di modello: i modelli a lettere valgono come la loro
+# epoca (X/XR/XS = 10), l'SE (economico) sta fuori, l'Air (2025) = 17.
+_LETTER_GEN = {"x": 10, "xr": 10, "xs": 10, "se": 9, "air": 17}
+_GEN_NUM_RE = re.compile(r"^iphone-(\d{1,2})")
+_GEN_LETTER_RE = re.compile(r"^iphone-(xr|xs|x|se|air)(?![a-z])")
+
+
+def iphone_generation(model_key: str | None) -> int | None:
+    """"iphone-13-pro" → 13, "iphone-16e" → 16, "iphone-air" → 17, "iphone-xr"
+    → 10, "iphone-se" → 9; None se la chiave non dice il modello ("iphone",
+    "iphone-pro-max")."""
+    key = (model_key or "").lower()
+    m = _GEN_NUM_RE.match(key)
+    if m:
+        return int(m.group(1))
+    m = _GEN_LETTER_RE.match(key)
+    return _LETTER_GEN[m.group(1)] if m else None
+
+
+def iphone_min_gen() -> int:
+    from backend.core.config import settings  # noqa: PLC0415
+
+    return settings.iphone_min_gen
+
+
+def in_iphone_scope(model_key: str | None) -> bool | None:
+    """True/False se il modello è noto (generazione ≥ IPHONE_MIN_GEN), None se
+    non si sa (modello non riconosciuto: ci pensa l'AI dalla descrizione)."""
+    gen = iphone_generation(model_key)
+    return None if gen is None else gen >= iphone_min_gen()
+
+
 _IPHONE_WORD_RE = re.compile(r"iphone", re.IGNORECASE)
 
 

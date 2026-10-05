@@ -34,7 +34,7 @@ from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summar
 from backend.services.valuation import SortedPrices, car_expected_price, evaluate_value, fit_car_price_model
 from backend.services.variants import (
     AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_generation_label, car_is_coupe, car_model_label,
-    iphone_model_key,
+    in_iphone_scope, iphone_model_key,
     is_healthy, model_text, _slug,
     year_fits_generation,
 )
@@ -724,6 +724,13 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[floa
     return refs
 
 
+def tech_model_in_scope(model_key: str | None) -> bool:
+    """Modello iPhone canonico (il resolver lo riconosce) e nell'ambito."""
+    if not model_key or not model_key.startswith("iphone-"):
+        return False
+    return iphone_model_key(model_key.replace("-", " ")) == model_key and in_iphone_scope(model_key) is True
+
+
 def _model_key(variant_key: str | None) -> str | None:
     """Chiave modello = variante senza il suffisso memoria (iphone-13-pro-max-256
     → iphone-13-pro-max) o senza la generazione per le auto (bmw-125i@f2x →
@@ -872,7 +879,10 @@ def _compute_facets(db: Client, table: str) -> dict[str, Any]:
         if r.get("year"):
             years.append(int(r["year"]))
         mk = _model_key(r.get("variant_key"))
-        if mk:
+        # iPhone: nel filtro solo i modelli veri e nell'ambito. Prima ogni
+        # titolo non riconosciuto diventava una voce ("iphone-usati",
+        # "samsung-s26-ultra", "scatole-iphone": 809 voci su 859 il 5/10).
+        if mk and (CAR_GEN_SEP in (r.get("variant_key") or "") or tech_model_in_scope(mk)):
             models[mk] += 1
         if r.get("storage_gb"):
             storages[r["storage_gb"]] += 1
@@ -1329,6 +1339,10 @@ def _build_feed(
         # clamorosi. Scartati anche QUI, non solo allo scraping, così il filtro
         # vale subito su tutto lo storico già raccolto.
         rows = [r for r in rows if not _is_accessory_listing(r.get("title"))]
+        # Solo modelli riconosciuti e nell'ambito (iPhone 12 e successivi): un
+        # modello non riconosciuto non si valuta (lo legge l'AI dalla
+        # descrizione, poi rientra) e sotto il 12 c'è poco giro e poco margine.
+        rows = [r for r in rows if tech_model_in_scope(_model_key(r.get("variant_key")))]
     if not rows:
         return []
     ctx = _build_enrich_ctx(db, target_cat, table, rows)

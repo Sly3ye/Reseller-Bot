@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from backend.core.config import settings  # noqa: E402
 from scripts.seed_iphone_targets import build_iphone_targets  # noqa: E402
 
 # --- Auto: solo i due BMW richiesti. Filtri vuoti = cattura ampia (l'auto è
@@ -38,8 +39,9 @@ CAR_TARGETS: list[dict] = [
 
 
 def desired_targets() -> list[dict]:
-    # iPhone dalla gen 13 in su (query identiche a quelle canoniche del progetto).
-    iphones = build_iphone_targets(min_gen=13)
+    # iPhone nell'ambito (dal 12 in su, IPHONE_MIN_GEN; query identiche a quelle
+    # canoniche del progetto).
+    iphones = build_iphone_targets(min_gen=settings.iphone_min_gen)
     return iphones + CAR_TARGETS
 
 
@@ -73,7 +75,8 @@ def main() -> None:
             turned_off += 1
 
     iphone_n = len(targets) - len(CAR_TARGETS)
-    print(f"Flotta impostata: {iphone_n} target iPhone (gen 13+) + {len(CAR_TARGETS)} auto (BMW 123d/125i) attivi.")
+    print(f"Flotta impostata: {iphone_n} target iPhone (dal {settings.iphone_min_gen} in su) + "
+          f"{len(CAR_TARGETS)} auto (BMW 123d/125i) attivi.")
     if turned_off:
         print(f"Disattivati {turned_off} target non richiesti (es. seed pilota) — non cancellati.")
     print("\nTarget attivi:")

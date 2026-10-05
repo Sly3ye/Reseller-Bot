@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # Test che non richiedono DB né rete (gli altri script test_* toccano il DB).
 TESTS = ["intelligence", "variants", "republish", "survival", "valuation",
-         "repair_feedback", "depreciation", "car_costs", "car_alerts", "telegram_bot", "deal_watch", "governor", "time_value", "verify_queue", "goals"]
+         "repair_feedback", "depreciation", "car_costs", "car_alerts", "telegram_bot", "deal_watch", "governor", "time_value", "verify_queue", "goals", "scope"]
 
 env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
 sys.stdout.reconfigure(encoding="utf-8")

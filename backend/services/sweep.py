@@ -36,7 +36,9 @@ from backend.scrapers.base import ScrapedListing
 from backend.scrapers.subito import ScraperBlockedError, SubitoScraper, current_job
 from backend.services.republish import merge_into_old
 from backend.scrapers.nlp_parser import _is_accessory_listing
-from backend.services.variants import iphone_model_key, mentions_iphone, model_text, normalize_iphone
+from backend.services.variants import (
+    in_iphone_scope, iphone_model_key, mentions_iphone, model_text, normalize_iphone,
+)
 from backend.tasks import (
     FIRST_SCAN_LOOKBACK,
     SINCE_MARGIN,
@@ -104,9 +106,14 @@ def match_target(title: str | None, index: dict[str, Any]) -> dict[str, Any] | N
 def is_relevant(listing: ScrapedListing, category: str) -> bool:
     """La query ampia pesca anche Samsung, Apple Watch, autoradio "iOS"...:
     teniamo solo gli annunci con "iphone" nel titolo (refusi compresi:
-    "I phone 16 pro", "Iphon 13")."""
+    "I phone 16 pro", "Iphon 13") e, se il modello si riconosce, solo
+    nell'ambito (iPhone 12 e successivi, IPHONE_MIN_GEN). Modello non
+    riconosciuto: si tiene, lo legge l'AI dalla descrizione."""
     if category == "smartphone":
-        return mentions_iphone(listing.title)
+        if not mentions_iphone(listing.title):
+            return False
+        model = iphone_model_key(model_text(listing.title, listing.description))
+        return in_iphone_scope(model) is not False
     return True
 
 

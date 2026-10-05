@@ -49,3 +49,16 @@ def apply_retention(days: int | None = None) -> dict[str, Any]:
     if any(updated.values()):
         logger.info("Conservazione (%d giorni): descrizione e venditore tolti da %s", days, updated)
     return {"days": days, "updated": updated}
+
+
+def nightly_housekeeping() -> dict[str, Any]:
+    """Pulizie della notte: conservazione dei dati e ambito iPhone (gli annunci
+    che l'AI ha riconosciuto come modelli fuori ambito vanno in archivio)."""
+    from backend.services.scope import archive_out_of_scope  # noqa: PLC0415
+
+    out: dict[str, Any] = {"retention": apply_retention()}
+    try:
+        out["scope"] = archive_out_of_scope(apply=True)
+    except Exception:
+        logger.exception("Archivio fuori ambito non riuscito")
+    return out

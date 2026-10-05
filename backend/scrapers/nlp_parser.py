@@ -173,6 +173,13 @@ _ACCESSORY_KEYWORDS = (
     "custodie", "kit", "portafoglio", "magsafe", "grip", "supporto",
     "gimbal", "stabilizzatore", "batteria originale", "batteria compatibile",
     "batteria di ricambio", "mini",
+    # scatole vuote, controller da gioco
+    "scatola", "scatole", "box originale", "controller", "backbone",
+    # altri marchi PRIMA di "iphone" ("Samsung S26 Ultra ... iPhone"): non sono
+    # iPhone (comparto a parte, se mai). Dopo ("iPhone 13 o scambio Samsung")
+    # resta un iPhone.
+    "samsung", "galaxy", "xiaomi", "redmi", "huawei", "oppo", "realme", "motorola",
+    "google pixel", "pixel", "oneplus", "honor", "nokia", "poco",
     # memorie esterne "per iPhone" (SSD/chiavette): non sono telefoni
     "ssd", "flashpod", "chiavetta", "hard disk", "memoria esterna",
     # ricambi (pezzi singoli): stessa regola posizionale — "Display iPhone 15"
