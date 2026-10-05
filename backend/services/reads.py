@@ -442,7 +442,23 @@ def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
     for vk, pts in by_variant.items():
         fitted = fit_car_price_model(pts)
         if fitted:
-            models[vk] = fitted
+            models[vk] = {**fitted, "level": "generazione"}
+    # Coda lunga: generazioni con poche auto ripiegano sul modello intero
+    # (tutte le generazioni insieme: l'età e la potenza assorbono buona parte
+    # delle differenze), con il suo errore — più alto, e dichiarato.
+    by_family: dict[str, list[dict[str, Any]]] = {}
+    for vk, pts in by_variant.items():
+        by_family.setdefault(_model_key(vk) or vk, []).extend(pts)
+    family_models: dict[str, dict[str, Any]] = {}
+    for vk in by_variant:
+        if vk in models:
+            continue
+        fam = _model_key(vk) or vk
+        if fam not in family_models:
+            fitted = fit_car_price_model(by_family[fam])
+            family_models[fam] = {**fitted, "level": "modello"} if fitted else {}
+        if family_models[fam]:
+            models[vk] = family_models[fam]
     return models
 
 
@@ -980,7 +996,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     shaped["carModel"] = (
         {k: car_model.get(k) for k in ("n", "errPct", "perYearPct", "per10kKmPct", "yearRange",
                                        "kmRange", "kwRange", "per10pctKwPct", "coupePct",
-                                       "dieselPct", "automaticPct")}
+                                       "dieselPct", "automaticPct", "level")}
         if car_model else None
     )
 

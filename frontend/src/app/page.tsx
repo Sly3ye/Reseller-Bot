@@ -2182,7 +2182,7 @@ function NegotiationAssistant(props: {
   if (item.fairValue !== null) {
     const base = item.fairValueSource ? sourceLabel[item.fairValueSource] : null;
     const conf = item.carModel
-      ? `${item.carModel.n} auto simili, errore tipico ±${item.carModel.errPct}%`
+      ? `${item.carModel.n} auto ${item.carModel.level === "modello" ? "dello stesso modello (tutte le generazioni)" : "della stessa generazione"}, errore tipico ±${item.carModel.errPct}%`
       : item.valuationConfidence
         ? `affidabilità ${item.valuationConfidence}` +
           (item.valuationSamples ? ` (${item.valuationSamples} campioni)` : "")
@@ -5350,13 +5350,18 @@ function ScraperHealthPanel(props: { health: ScraperHealth }) {
         const rows = health.coverage[cat]?.targets ?? [];
         return rows.length ? <TargetCoverageTable key={cat} label={label} rows={rows} /> : null;
       })}
-      <DataQualityPanel />
+      <DataQualityPanel category="smartphone" />
+      <DataQualityPanel category="automobile" />
     </div>
   );
 }
 
 const QUALITY_FIELD_LABELS: Record<string, string> = {
   modelloRiconosciuto: "Modello riconosciuto",
+  datiStrutturati: "Marca/modello/versione",
+  potenza: "Potenza (kW)",
+  anno: "Anno",
+  km: "Km",
   memoria: "Memoria",
   colore: "Colore",
   batteria: "Batteria",
@@ -5367,11 +5372,11 @@ const QUALITY_FIELD_LABELS: Record<string, string> = {
 };
 
 /** Quanto fidarsi delle metriche: copertura vs Subito, campi estratti, raccolta. */
-function DataQualityPanel() {
+function DataQualityPanel(props: { category: Category }) {
   const [q, setQ] = useState<DataQuality | null>(null);
   useEffect(() => {
     const ctrl = new AbortController();
-    const load = () => fetchDataQuality("smartphone", ctrl.signal).then(setQ).catch(() => null);
+    const load = () => fetchDataQuality(props.category, ctrl.signal).then(setQ).catch(() => null);
     Promise.resolve().then(load);
     const poll = setInterval(load, 60000);
     return () => {
@@ -5395,7 +5400,9 @@ function DataQualityPanel() {
       }}
     >
       <div>
-        <div style={{ fontSize: "14px", fontWeight: 700 }}>Qualità del dato · iPhone</div>
+        <div style={{ fontSize: "14px", fontWeight: 700 }}>
+          Qualità del dato · {props.category === "automobile" ? "Auto" : "iPhone"}
+        </div>
         <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "2px", lineHeight: 1.6 }}>
           {q.activeListings.toLocaleString("it-IT")} annunci attivi in archivio
           {cov.subitoTotal != null && cov.seenLastInventory != null ? (
@@ -5476,7 +5483,32 @@ function DataQualityPanel() {
           </span>
         </div>
       ) : null}
-      {q.backup && <BackupLine b={q.backup} head={head} />}
+      {q.autoCycle && (
+        <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
+          <span style={head}>Inventario a rotazione</span>
+          <span>
+            fette fatte {q.autoCycle.walked.length}/{q.autoCycle.slices ?? "—"} del ciclo
+            {q.autoCycle.cycleStart ? ` iniziato ${relativeTime(q.autoCycle.cycleStart)}` : ""}
+          </span>
+          {q.autoCycle.subitoTotal != null && (
+            <span>{q.autoCycle.subitoTotal.toLocaleString("it-IT")} auto su Subito, {q.autoCycle.bands} fasce</span>
+          )}
+          {q.autoCycle.totalVariants != null && (
+            <span>generazioni stimabili {q.autoCycle.valuedVariants}/{q.autoCycle.totalVariants}</span>
+          )}
+          <span style={{ color: "oklch(0.6 0.01 250)" }}>
+            i venduti si contano a fine ciclo: prima sono 0 per costruzione
+          </span>
+        </div>
+      )}
+      {q.autoExcluded && (
+        <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
+          <span style={head}>Fuori dai prezzi</span>
+          <span>{q.autoExcluded.altroModelloORicambio.toLocaleString("it-IT")} ricambi / altro modello</span>
+          <span>{q.autoExcluded.generazioneIncerta.toLocaleString("it-IT")} generazione incerta</span>
+        </div>
+      )}
+      {props.category === "smartphone" && q.backup && <BackupLine b={q.backup} head={head} />}
     </div>
   );
 }

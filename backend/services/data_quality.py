@@ -32,6 +32,37 @@ def _pct(part: Any, total: Any) -> float | None:
     return round(part / total * 100, 1) if total else None
 
 
+def _auto_cycle() -> dict[str, Any] | None:
+    """Stato del ciclo d'inventario auto (services/sweep.reconcile_auto_inventory)
+    e copertura della stima (dalla matrice "dove cacciare", in cache)."""
+    from backend.core.database import get_db  # noqa: PLC0415
+
+    try:
+        rows = (get_db().table("app_settings").select("value")
+                .eq("key", "inventory_cycle:automobile").limit(1).execute().data)
+    except Exception:
+        rows = []
+    state = (rows[0]["value"] or {}) if rows else {}
+    out: dict[str, Any] = {
+        "slices": state.get("slices"),
+        "walked": sorted((state.get("walked") or {}).keys()),
+        "nextSlice": state.get("next"),
+        "cycleStart": state.get("cycleStart"),
+        "subitoTotal": state.get("subitoTotal"),
+        "bands": len(state.get("bands") or []),
+    }
+    try:
+        from backend.services.car_hunt import _cache  # noqa: PLC0415
+
+        hunt = (_cache.get("auto") or (0, {}))[1]
+        if hunt:
+            out["valuedVariants"] = hunt.get("valuedVariants")
+            out["totalVariants"] = hunt.get("totalVariants")
+    except Exception:
+        pass
+    return out if state or "valuedVariants" in out else None
+
+
 def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
     from backend.core.database import _get_pool, get_db, has_column  # noqa: PLC0415
     from backend.services.backup_status import get_backup_status  # noqa: PLC0415
@@ -45,10 +76,19 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
         "count(storage_gb) as storage, count(battery_pct) as battery,"
         if tech else "null as storage, null as battery,"
     )
+    # Auto: campi strutturati di Subito (migrazione 23) + anno/km.
+    car_struct = not tech and has_column(table, "car_model")
+    auto_cols = (
+        "count(car_model) as car_model, count(power_kw) as power_kw, count(year) as year_n, "
+        "count(km) as km_n, count(*) filter (where variant_key like '%%@escluso') as excluded, "
+        "count(*) filter (where variant_key like '%%@nd') as gen_unknown,"
+        if car_struct else ""
+    )
     sql = f"""
         select
           count(*) as active,
           {tech_cols}
+          {auto_cols}
           count(color) as color,
           {published} as published,
           count(*) filter (where image_urls <> '[]'::jsonb) as images,
@@ -145,6 +185,12 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
         "dataPubblicazione": _pct(agg["published"], active) if agg["published"] is not None else None,
         "foto": _pct(agg["images"], active),
         "modelloRiconosciuto": _pct(with_model, active),
+        **({
+            "datiStrutturati": _pct(agg["car_model"], active),
+            "potenza": _pct(agg["power_kw"], active),
+            "anno": _pct(agg["year_n"], active),
+            "km": _pct(agg["km_n"], active),
+        } if car_struct else {}),
         "target": _pct(agg["with_target"], active),
         "venditore": _pct(agg["with_seller"], active),
     }
@@ -180,6 +226,10 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
             "alertP95Min": _round(alert_latency["p95"]),
         },
         "backup": get_backup_status(),
+        # Auto: ciclo dell'inventario a rotazione e quante auto si sanno valutare.
+        "autoCycle": _auto_cycle() if not tech else None,
+        "autoExcluded": ({"altroModelloORicambio": agg["excluded"], "generazioneIncerta": agg["gen_unknown"]}
+                         if car_struct else None),
         # Annunci con galleria nota ma foto ancora da scaricare (photo_backfill).
         "photoQueue": photo_queue_size() if tech else None,
     }

@@ -161,6 +161,8 @@ export type ApiOpportunity = {
     per10kKmPct: number;
     /** Premio coupé/cabrio sulla berlina, se misurato. */
     coupePct?: number | null;
+    /** "generazione" = modello della sola generazione; "modello" = ripiego su tutte. */
+    level?: "generazione" | "modello";
     yearRange: [number, number]; kmRange: [number, number];
   } | null;
   valuationSamples: number | null;
@@ -872,6 +874,12 @@ export type DataQuality = {
     alertP50Min: number | null;
     alertP95Min: number | null;
   };
+  /** Auto: ciclo d'inventario a rotazione e generazioni valutabili. */
+  autoCycle?: {
+    slices: number | null; walked: string[]; nextSlice: number | null; cycleStart: string | null;
+    subitoTotal: number | null; bands: number; valuedVariants?: number; totalVariants?: number;
+  } | null;
+  autoExcluded?: { altroModelloORicambio: number; generazioneIncerta: number } | null;
   /** Annunci con foto ancora da scaricare (backfill dalla CDN). */
   photoQueue?: number | null;
   /** Esito del servizio `backup` (dump verificato + copia delle foto). */

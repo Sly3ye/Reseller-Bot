@@ -128,6 +128,7 @@ def _compute(min_margin_eur: int) -> dict[str, Any]:
             "valued": model is not None,
             "modelSamples": model["n"] if model else None,
             "errPct": model["errPct"] if model else None,
+            "modelLevel": model.get("level") if model else None,
             "deals": len(deals),
             "typicalDealMargin": typical,
             "dealsPerWeek": round(c["newDeals"] / weeks, 1),
