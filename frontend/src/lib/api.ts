@@ -174,6 +174,13 @@ export type ApiOpportunity = {
   valuationSamples: number | null;
   valuationConfidence: "alta" | "media" | "bassa" | null;
   roiPerDayPct: number | null;
+  /** Euro attesi per ora di lavoro: margine netto ÷ (viaggio + incontro +
+   *  riparazione + vendita), con le probabilità solo se misurate. */
+  profitPerHour?: {
+    eurPerHour: number; hours: number; marginEur: number; expectedEur: number;
+    minutes: { travel: number; meet: number; repair: number; sell: number; extra: number };
+    distanceKnown: boolean; pRepair: number | null; pAvailable: number | null;
+  } | null;
   maxBid: number | null;
   repairTrackRecord?: RepairTrackRecord | null;
   /** Auto: costi d'acquisto (passaggio, agenzia, preparazione) e margine netto. */
@@ -410,7 +417,7 @@ export type DealsSummary = {
   };
 };
 
-export type SortMode = "score" | "recent" | "margin" | "roi" | "distance";
+export type SortMode = "score" | "recent" | "margin" | "roi" | "distance" | "per_hour";
 export type ViewMode = "attivi" | "salvati" | "tutti";
 export type PresetMode = "compra_ora" | "motivati" | "riparabili";
 
@@ -1020,6 +1027,14 @@ export type AppSettings = {
   car_alert_zones?: string[];
   car_alert_radius_km?: number;
   home_town?: string;
+  // Tempi per il profitto per ora (ipotesi da tarare con i tuoi dati)
+  tv_speed_kmh?: number;
+  tv_meet_min?: number;
+  tv_sell_min?: number;
+  tv_repair_min?: Record<string, number>;
+  tv_unknown_distance_km?: number;
+  tv_car_extra_min?: number;
+  tv_arrange_min?: number;
   telegram_chat_tech: string | null;
   telegram_chat_auto: string | null;
   telegram_chat_ops: string | null;

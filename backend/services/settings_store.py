@@ -19,6 +19,7 @@ import backend.services.car_alerts as car_alerts
 import backend.services.car_costs as car_costs
 import backend.services.parts as parts
 import backend.services.scoring as scoring
+import backend.services.time_value as time_value
 from backend.core.config import settings
 from backend.core.database import get_db
 
@@ -49,6 +50,8 @@ def _defaults() -> dict[str, Any]:
         **copy.deepcopy(car_alerts.DEFAULTS),
         # Comune di casa: distanza degli annunci e raggio degli alert.
         "home_town": "",
+        # Tempi per il profitto per ora (services/time_value.py): ipotesi da tarare.
+        **copy.deepcopy(time_value.CONFIG),
         "telegram_chat_tech": settings.telegram_chat_tech,
         "telegram_chat_auto": settings.telegram_chat_auto,
         "telegram_chat_ops": settings.telegram_chat_ops,
@@ -84,6 +87,7 @@ def get_all(force: bool = False) -> dict[str, Any]:
     scoring.apply_config(merged)
     parts.configure(merged)
     car_costs.configure(merged)
+    time_value.configure(merged)
 
     with _lock:
         _cache = merged

@@ -1189,7 +1189,7 @@ function SniperScreen(props: {
               gap: "2px",
             }}
           >
-            {(["score", "roi", "recent", "margin", "distance"] as SortMode[]).map((mode) => (
+            {(["score", "per_hour", "roi", "recent", "margin", "distance"] as SortMode[]).map((mode) => (
               <div
                 key={mode}
                 onClick={() => props.onSortChange(mode)}
@@ -1205,7 +1205,7 @@ function SniperScreen(props: {
                 }}
               >
                 {mode === "score" ? "Deal Score" : mode === "roi" ? "ROI/gg" : mode === "recent" ? "Recenti"
-                  : mode === "distance" ? "Più vicini" : "Margine"}
+                  : mode === "distance" ? "Più vicini" : mode === "per_hour" ? "€/ora" : "Margine"}
               </div>
             ))}
           </div>
@@ -1897,6 +1897,8 @@ function SniperRow(props: {
                     item.fuel,
                     locationLabel + (item.province ? ` (${item.province})` : ""),
                     item.distanceKm != null ? `${Math.round(item.distanceKm)} km da te` : null,
+                    item.profitPerHour && item.profitPerHour.eurPerHour > 0
+                      ? `≈ ${Math.round(item.profitPerHour.eurPerHour)} €/h` : null,
                   ]
                 : [
                     item.storageGb ? `${item.storageGb} GB` : null,
@@ -1904,6 +1906,8 @@ function SniperRow(props: {
                     item.batteryPct ? `🔋${item.batteryPct}%` : null,
                     locationLabel + (item.province ? ` (${item.province})` : ""),
                     item.distanceKm != null ? `${Math.round(item.distanceKm)} km da te` : null,
+                    item.profitPerHour && item.profitPerHour.eurPerHour > 0
+                      ? `≈ ${Math.round(item.profitPerHour.eurPerHour)} €/h` : null,
                   ]
               )
                 .filter(Boolean)
@@ -2251,6 +2255,28 @@ function NegotiationAssistant(props: {
       value: eur(item.suggestedOffer),
       hint: "prezzo di apertura trattativa",
       color: "var(--accent-text)",
+    });
+  }
+  if (item.profitPerHour) {
+    const pph = item.profitPerHour;
+    const m = pph.minutes;
+    const parts = [
+      `viaggio ${m.travel} min${pph.distanceKnown ? "" : " (distanza ipotetica)"}`,
+      `incontro ${m.meet}`,
+      m.repair ? `riparazione ${m.repair}` : null,
+      `vendita ${m.sell}`,
+      m.extra ? `pratiche ${m.extra}` : null,
+    ].filter(Boolean);
+    const probs = [
+      pph.pRepair != null ? `riuscita ${Math.round(pph.pRepair * 100)}%` : null,
+      pph.pAvailable != null ? `ancora lì ${Math.round(pph.pAvailable * 100)}%` : null,
+    ].filter(Boolean);
+    stats.push({
+      label: "Profitto per ora di lavoro",
+      value: `${pph.eurPerHour >= 0 ? "" : "−"}${eur(Math.abs(pph.eurPerHour))}/h`,
+      hint: `${eur(pph.expectedEur)} in ${pph.hours.toLocaleString("it-IT")} h: ${parts.join(" · ")}`
+        + (probs.length ? ` · ${probs.join(" · ")}` : "") + " (tempi in Impostazioni)",
+      color: pph.eurPerHour >= 20 ? "oklch(0.75 0.15 150)" : undefined,
     });
   }
   if (item.roiPerDayPct !== null) {
@@ -5418,6 +5444,31 @@ function SettingsScreen() {
               style={{ padding: "6px 8px", borderRadius: "8px", width: "100%" }}
             />,
           )}
+        </div>
+      </div>
+
+      {/* Tempi del profitto per ora: €/ora = margine ÷ (viaggio + incontro + riparazione + vendita) */}
+      <div style={card}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Tempi (ordina: €/ora)</div>
+        <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px" }}>
+          Ipotesi di partenza: tarale sui tuoi tempi veri. Il viaggio usa la distanza dal comune di casa;
+          senza coordinate vale la distanza ipotetica. La riparazione somma i minuti dei pezzi da cambiare.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" }}>
+          {field("Velocità media", num(s.tv_speed_kmh ?? 50, (nv) => setS({ ...s, tv_speed_kmh: nv }), "km/h"))}
+          {field("Incontro e verifica", num(s.tv_meet_min ?? 20, (nv) => setS({ ...s, tv_meet_min: nv }), "min"))}
+          {field("Vendita (annuncio, messaggi, consegna)", num(s.tv_sell_min ?? 45, (nv) => setS({ ...s, tv_sell_min: nv }), "min"))}
+          {field("Distanza senza coordinate", num(s.tv_unknown_distance_km ?? 25, (nv) => setS({ ...s, tv_unknown_distance_km: nv }), "km"))}
+          {field("Auto: pratiche e prove in più", num(s.tv_car_extra_min ?? 240, (nv) => setS({ ...s, tv_car_extra_min: nv }), "min"))}
+          {(["schermo", "batteria", "scocca", "fotocamera"] as const).map((part) => (
+            <Fragment key={part}>
+              {field(
+                `Riparazione ${part}`,
+                num(s.tv_repair_min?.[part] ?? 0, (nv) =>
+                  setS({ ...s, tv_repair_min: { ...(s.tv_repair_min ?? {}), [part]: nv } }), "min"),
+              )}
+            </Fragment>
+          ))}
         </div>
       </div>
 

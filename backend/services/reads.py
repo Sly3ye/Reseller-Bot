@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 from backend.core.database import Client
 
 from backend.core.database import get_db, has_column
+from backend.services.time_value import profit_per_hour
 from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
 from backend.services import car_costs
@@ -985,6 +986,18 @@ def _build_base_ctx(db: Client, target_cat: str, table: str) -> dict[str, Any]:
     if target_cat == "automobile":
         ctx["car_models"] = _car_price_models(db, table)
         ctx["variant_kw"] = _variant_median_kw(db, table)
+    # Emivita misurata degli affari (deal_watch): P(ancora lì) nel profitto per
+    # ora, solo con abbastanza affari ricontrollati.
+    ctx["half_life_min"] = None
+    try:
+        from backend.services.deal_watch import deal_half_life  # noqa: PLC0415
+        from backend.services.time_value import MIN_HALF_LIFE_SAMPLE  # noqa: PLC0415
+
+        hl = deal_half_life(target_cat)
+        if hl and hl["n"] >= MIN_HALF_LIFE_SAMPLE and hl["halfLifeMin"]:
+            ctx["half_life_min"] = hl["halfLifeMin"]
+    except Exception:
+        logger.debug("Emivita non disponibile", exc_info=True)
     return ctx
 
 
@@ -1199,6 +1212,8 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
             seller_type=row.get("seller_type"),
             seller_sold_count=(profile or {}).get("sold"),
         )
+    # Euro attesi per ora di lavoro (viaggio, riparazione, vendita): §1.1.
+    shaped["profitPerHour"] = profit_per_hour(shaped, ctx["target_cat"], ctx.get("half_life_min"))
     return shaped
 
 
@@ -1487,6 +1502,9 @@ def list_opportunities(
         )
     elif sort == "distance":
         items.sort(key=lambda it: it["distanceKm"] if it.get("distanceKm") is not None else 1e9)
+    elif sort == "per_hour":
+        items.sort(key=lambda it: (it.get("profitPerHour") or {}).get("eurPerHour")
+                   if it.get("profitPerHour") else -1e9, reverse=True)
     elif sort == "roi":
         items.sort(
             key=lambda it: it["roiPerDayPct"] if it.get("roiPerDayPct") is not None else -1e9,

@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api", tags=["data"])
 Category = Literal["smartphone", "auto", "automobile"]
 
 
-Sort = Literal["score", "recent", "margin", "roi", "distance"]
+Sort = Literal["score", "recent", "margin", "roi", "distance", "per_hour"]
 View = Literal["attivi", "salvati", "tutti"]
 Preset = Literal["compra_ora", "motivati", "riparabili"]
 
