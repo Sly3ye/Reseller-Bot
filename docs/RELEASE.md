@@ -1,5 +1,8 @@
 # Versione release (v1.0) — definizione e distanza
 
+> **Nord strategico:** [GOAL-VERSION.md](GOAL-VERSION.md) (2026-10-05) — cosa serve
+> per battere il mercato e cosa tagliare. Questo documento resta la lista dei criteri.
+
 > Bozza del 2026-10-02, rivalutata lo stesso giorno dopo un audit completo
 > della gestione dati (sezione G). Serve da **punto di riferimento**: cosa deve fare il
 > programma per essere "pronto" per il business, e quanto manca. Si rivaluta
