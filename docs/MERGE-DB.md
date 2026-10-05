@@ -100,22 +100,38 @@ docker compose exec -T backend python scripts/reparse_nlp.py --apply
 >   su una sola macchina): sono già nel principale, ora vengono saltati anche
 >   per id invece di far fallire tutto il merge.
 
-## Prossimo passaggio (dal 2026-10-05 il PC è la macchina principale)
+## Passaggio del 2026-10-05 sera (PC → Mac, tutto sul Mac)
 
-Dal 2026-10-05 raccoglie il **PC** (iPhone + tutte le auto); il Mac è fermo.
-Quando la raccolta torna sul Mac **non** si fa il merge PC → Mac: il merge
-aggiunge solo gli annunci nuovi e perderebbe venduti, ribassi e foto che il
-PC ha registrato su annunci già presenti sul Mac. Si fa al contrario:
+Il 2026-10-05 il **PC** ha raccolto fino alle 18:00 (iPhone + tutte le auto:
+inventario, venduti, foto, dati strutturati delle auto); il Mac era fermo dal
+merge del 2026-10-03. Il merge normale PC → Mac **non basta**: aggiunge solo
+gli annunci nuovi e perderebbe venduti, ribassi, foto e dati auto registrati
+sul PC per annunci già presenti sul Mac. Si fa al contrario, tutto sul Mac:
 
-1. sul Mac: dump del suo DB (`reseller_mac_AAAA-MM-GG.dump`), portato sul PC;
-2. sul PC: merge **Mac → PC** (SOURCE = DB del Mac ripristinato in un DB
-   temporaneo, TARGET = DB del PC): entrano i pochi annunci che aveva solo il Mac;
-3. dump del PC + archivio foto, portati sul Mac;
-4. sul Mac: ripristino del dump del PC **come DB principale** (dopo un backup
-   del vecchio), estrazione delle foto, `git pull` e avvio.
-
-Da lì una sola macchina raccoglie: l'altra solo dashboard
-(`SCHEDULER_ENABLED=false`).
+```bash
+git pull
+# 1. Backup del DB attuale del Mac (diventerà la SORGENTE del merge)
+docker compose exec -T db pg_dump -U postgres -d reseller -Fc > backup_mac_$(date +%F).dump
+# 2. Il vecchio DB del Mac in un DB temporaneo
+docker compose exec -T db createdb -U postgres reseller_mac
+docker compose exec -T db pg_restore -U postgres --no-owner -d reseller_mac < backup_mac_AAAA-MM-GG.dump
+# 3. Il dump del PC DIVENTA il principale (sostituisce reseller)
+docker compose stop backend
+docker compose exec -T db dropdb -U postgres reseller
+docker compose exec -T db createdb -U postgres reseller
+docker compose exec -T db pg_restore -U postgres --no-owner -d reseller < reseller_pc_2026-10-05.dump
+docker compose up -d --build backend          # applica le migrazioni mancanti
+# 4. Merge vecchio Mac → nuovo principale: entrano gli annunci che aveva solo il Mac
+docker compose exec -T backend sh -c 'SOURCE_DATABASE_URL=${DATABASE_URL%/reseller}/reseller_mac TARGET_DATABASE_URL=$DATABASE_URL python scripts/merge_instances.py --dry-run'
+docker compose exec -T backend sh -c 'SOURCE_DATABASE_URL=${DATABASE_URL%/reseller}/reseller_mac TARGET_DATABASE_URL=$DATABASE_URL python scripts/merge_instances.py --yes'
+docker compose exec -T db dropdb -U postgres reseller_mac
+# 5. Foto (passo 6 sopra) e ricalcoli
+docker compose exec -T backend sh -c "mkdir -p /data/media && tar xzf - -C /data/media" < media_pc_2026-10-05.tar.gz
+docker compose exec -T backend python scripts/backfill_car_variants.py --apply
+```
+Nel `.env` di root del Mac: `SCHEDULER_ENABLED=true`, `AUTO_FULL_CATEGORY=true`;
+sul PC `SCHEDULER_ENABLED=false` (solo dashboard). Lo stato del ciclo
+d'inventario auto viaggia nel dump (`app_settings`): il Mac lo continua.
 
 ## Dopo il merge
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure
