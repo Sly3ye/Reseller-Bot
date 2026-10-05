@@ -160,7 +160,10 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
 - 🔧 Il Garbage Collector traccia già i rimossi anche per le auto → il pivot dei
   giorni di vendita funzionerà, ma con **dimensioni sbagliate** (colore/taglia
   invece di generazione/km/alimentazione).
-- ◻️ 🟡 **Costo di magazzino auto**: un'auto ferma costa **assicurazione, bollo,
+- ✅ 🟡 **Costo di magazzino auto** (2026-10-05, `car_costs.carry_costs`): deprezzamento
+  dal modello di prezzo (% annua della generazione) per i giorni di vendita
+  (dai venduti del modello, altrimenti Impostazioni: 45), più assicurazione,
+  posto e bollo pro rata; nel tetto e nel margine netto. *Prima:* un'auto ferma costa **assicurazione, bollo,
   posto auto e deprezzamento** — molto più di un iPhone. Va quantificato, come
   fatto sul tech.
 

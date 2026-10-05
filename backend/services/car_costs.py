@@ -36,6 +36,13 @@ CONFIG: dict[str, Any] = {
     "car_agency_eur": 0.0,          # agenzia pratiche auto, se la usi
     "car_prep_eur": 0.0,            # preparazione: lavaggio, piccoli ritocchi, tagliando
     "car_dealer": False,            # commerciante: emolumento ACI ridotto
+    # Magazzino: un'auto ferma costa ogni mese (deprezzamento misurato dal
+    # modello di prezzo + spese fisse). Giorni di vendita: dai venduti della
+    # generazione quando ci sono, altrimenti questo valore.
+    "car_hold_days": 45,
+    "car_insurance_month_eur": 0.0,
+    "car_parking_month_eur": 0.0,
+    "car_bollo_year_eur": 0.0,
 }
 
 
@@ -70,7 +77,24 @@ def kw_from_text(text: str | None) -> int | None:
     return None
 
 
-def acquisition_costs(kw: int | None, estimated: bool = False) -> dict[str, Any]:
+def carry_costs(expected_price: float | None, per_year_pct: float | None,
+                hold_days: float | None = None) -> dict[str, Any]:
+    """Costo di tenere l'auto in magazzino fino alla vendita: deprezzamento
+    (dal modello: ``per_year_pct`` = % di valore perso in un anno; se il
+    modello non misura l'età, 0) + assicurazione, posto, bollo pro rata."""
+    days = float(hold_days or CONFIG["car_hold_days"] or 0)
+    months = days / 30.4
+    dep = 0.0
+    if expected_price and per_year_pct and per_year_pct < 0:
+        dep = expected_price * (1 - (1 + per_year_pct / 100) ** (days / 365))
+    fixed = months * (float(CONFIG["car_insurance_month_eur"] or 0) + float(CONFIG["car_parking_month_eur"] or 0)
+                      + float(CONFIG["car_bollo_year_eur"] or 0) / 12)
+    return {"days": round(days), "depreciation": round(dep), "fixed": round(fixed),
+            "total": round(dep + fixed)}
+
+
+def acquisition_costs(kw: int | None, estimated: bool = False,
+                      carry: dict[str, Any] | None = None) -> dict[str, Any]:
     """Costi d'acquisto con il dettaglio. ``total`` None se i kW sono ignoti
     (l'IPT ne dipende: meglio nessuna cifra che una inventata).
     ``estimated``: kW non dal campo di Subito ma dal testo o dalla variante."""
@@ -88,5 +112,7 @@ def acquisition_costs(kw: int | None, estimated: bool = False) -> dict[str, Any]
         "agency": agency,
         "prep": prep,
         "transfer": round(ipt + fixed, 2) if ipt is not None else None,
-        "total": round(ipt + fixed + agency + prep, 2) if ipt is not None else None,
+        "carry": carry,
+        "total": (round(ipt + fixed + agency + prep + (carry or {}).get("total", 0), 2)
+                  if ipt is not None else None),
     }

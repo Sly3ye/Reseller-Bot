@@ -369,16 +369,21 @@ def _seller_profiles(
     return profiles
 
 
-def _car_acquisition(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
-    """Costi d'acquisto (passaggio & co.). kW dal campo di Subito; se manca,
-    dal testo ("218cv") o, ultima spiaggia, la potenza tipica della variante."""
+def _car_acquisition(row: dict[str, Any], ctx: dict[str, Any],
+                     expected: float | None = None, model_label: str | None = None) -> dict[str, Any]:
+    """Costi d'acquisto (passaggio & co.) + magazzino. kW dal campo di Subito;
+    se manca, dal testo ("218cv") o, ultima spiaggia, la potenza tipica della
+    variante. Giorni di vendita dai venduti del modello, se ci sono."""
     kw = row.get("power_kw")
     estimated = False
     if not kw:
         kw = car_costs.kw_from_text(f"{row.get('title') or ''} {row.get('description') or ''}")
         kw = kw or ctx.get("variant_kw", {}).get(row.get("variant_key") or "")
         estimated = bool(kw)
-    return car_costs.acquisition_costs(kw, estimated)
+    model = ctx["car_models"].get(row.get("variant_key") or "") or {}
+    carry = car_costs.carry_costs(expected, model.get("perYearPct"),
+                                  ctx.get("sold_days", {}).get(model_label))
+    return car_costs.acquisition_costs(kw, estimated, carry)
 
 
 def car_attributes(row: dict[str, Any]) -> dict[str, Any]:
@@ -1092,7 +1097,8 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
                         else sold_reference or market_avg),
             carry_month_eur=carry_month,
             hold_days=hold_days,
-            acquisition=(_car_acquisition(row, ctx) if ctx["target_cat"] == "automobile" else None),
+            acquisition=(_car_acquisition(row, ctx, valuation.get("fairValue"), model)
+                         if ctx["target_cat"] == "automobile" else None),
             non_original_ratios=ctx.get("non_original_ratios"),
         )
     )

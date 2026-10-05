@@ -100,7 +100,8 @@ def _compute(min_margin_eur: int) -> dict[str, Any]:
         if not expected:
             continue
         kw = r.get("power_kw") or car_costs.kw_from_text(r.get("title")) or variant_kw.get(vk)
-        costs = car_costs.acquisition_costs(kw)["total"]
+        carry = car_costs.carry_costs(expected, model.get("perYearPct"))
+        costs = car_costs.acquisition_costs(kw, carry=carry)["total"]
         if costs is None:
             continue
         net = expected - price - costs

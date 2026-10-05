@@ -2382,6 +2382,10 @@ function NegotiationAssistant(props: {
         `+${a.iptProvincePct}% provincia) + diritti e bolli ${eur(a.fees)}` +
         (a.agency ? ` + agenzia ${eur(a.agency)}` : "") +
         (a.prep ? ` + preparazione ${eur(a.prep)}` : "") +
+        (a.carry?.total
+          ? ` + magazzino ${eur(a.carry.total)} (${a.carry.days} gg: deprezzamento ${eur(a.carry.depreciation)}` +
+            (a.carry.fixed ? `, spese ${eur(a.carry.fixed)}` : "") + ")"
+          : "") +
         (item.maxBid != null ? ` · tetto d'acquisto ${eur(item.maxBid)}` : ""),
       color: (item.netMarginAfterCostsEur ?? 0) > 0 ? "oklch(0.75 0.15 150)" : "oklch(0.68 0.17 25)",
     });
@@ -5112,6 +5116,10 @@ function SettingsScreen() {
           {field("Maggiorazione IPT provincia", num(s.car_ipt_province_pct ?? 30, (nv) => setS({ ...s, car_ipt_province_pct: Math.min(30, Math.max(0, nv)) }), "%"))}
           {field("Agenzia pratiche", num(s.car_agency_eur ?? 0, (nv) => setS({ ...s, car_agency_eur: nv }), "€"))}
           {field("Preparazione (lavaggio, ritocchi, tagliando)", num(s.car_prep_eur ?? 0, (nv) => setS({ ...s, car_prep_eur: nv }), "€"))}
+          {field("Giorni di vendita attesi (senza dati)", num(s.car_hold_days ?? 45, (nv) => setS({ ...s, car_hold_days: nv }), "gg"))}
+          {field("Assicurazione al mese", num(s.car_insurance_month_eur ?? 0, (nv) => setS({ ...s, car_insurance_month_eur: nv }), "€"))}
+          {field("Posto auto al mese", num(s.car_parking_month_eur ?? 0, (nv) => setS({ ...s, car_parking_month_eur: nv }), "€"))}
+          {field("Bollo all'anno", num(s.car_bollo_year_eur ?? 0, (nv) => setS({ ...s, car_bollo_year_eur: nv }), "€"))}
           {field(
             "Commerciante",
             <label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "13px" }}>

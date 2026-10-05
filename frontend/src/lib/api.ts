@@ -174,6 +174,7 @@ export type ApiOpportunity = {
   acquisitionCosts?: {
     kw: number | null; kwEstimated: boolean; ipt: number | null; iptProvincePct: number;
     fees: number; agency: number; prep: number; transfer: number | null; total: number | null;
+    carry?: { days: number; depreciation: number; fixed: number; total: number } | null;
   } | null;
   netMarginAfterCostsEur?: number | null;
   // Costo di magazzino: deprezzamento maturato mentre resta invenduto,
@@ -924,6 +925,10 @@ export type AppSettings = {
   car_agency_eur?: number;
   car_prep_eur?: number;
   car_dealer?: boolean;
+  car_hold_days?: number;
+  car_insurance_month_eur?: number;
+  car_parking_month_eur?: number;
+  car_bollo_year_eur?: number;
   // Auto: criteri degli alert Telegram
   car_alert_min_net_margin_eur?: number;
   car_alert_max_price?: number;

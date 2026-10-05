@@ -40,6 +40,17 @@ cc.configure({"car_dealer": True})
 ck("commerciante: emolumento 13,50", cc.acquisition_costs(150)["fees"], 87.7)
 ck("kW ignoti: totale assente", cc.acquisition_costs(None)["total"], None)
 
+print("Magazzino:")
+cc.configure({"car_hold_days": 45, "car_insurance_month_eur": 0, "car_parking_month_eur": 0, "car_bollo_year_eur": 0,
+              "car_dealer": False, "car_agency_eur": 0, "car_prep_eur": 0})
+m = cc.carry_costs(10000, -10, 365)
+ck("un anno a -10%/anno = 1.000 di deprezzamento", m["depreciation"], 1000)
+ck("45 giorni di default", cc.carry_costs(10000, -10)["days"], 45)
+ck("senza effetto età: niente deprezzamento", cc.carry_costs(10000, None, 60)["depreciation"], 0)
+cc.configure({"car_insurance_month_eur": 50, "car_parking_month_eur": 50})
+ck("spese fisse 2 mesi (61 gg)", cc.carry_costs(10000, None, 61)["fixed"], 201)
+ck("magazzino nel totale", cc.acquisition_costs(150, carry={"total": 300})["total"], 786.02 + 300)
+
 print("Potenza dal testo:")
 ck("218cv -> 160 kW", cc.kw_from_text("Bmw 125i 218cv 3p"), 160)
 ck("150 kW", cc.kw_from_text("motore 150 kW / 204 Cv"), 150)
