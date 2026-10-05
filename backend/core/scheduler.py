@@ -7,7 +7,11 @@ from apscheduler.triggers.interval import IntervalTrigger
 from backend.core.config import settings
 from backend.services.ai_analysis import enrich_missing
 from backend.services.backup_status import check_backup
-from backend.services.photo_backfill import fill_missing_photos
+from backend.services.photo_backfill import (
+    complete_car_galleries,
+    fill_missing_car_photos,
+    fill_missing_photos,
+)
 from backend.services.repair_feedback import refresh as refresh_repair_feedback
 from backend.services.garbage_collector import run_garbage_collector
 from backend.services.sweep import (
@@ -87,6 +91,22 @@ def create_scheduler() -> AsyncIOScheduler:
     )
 
     if settings.auto_full_category:
+        # Foto auto: la prima di ogni auto (formato galleria) e la galleria
+        # completa per le occasioni (services/photo_backfill.py).
+        scheduler.add_job(
+            fill_missing_car_photos,
+            trigger=IntervalTrigger(minutes=2),
+            id="photo_backfill_auto",
+            name="Foto auto (prima foto di ogni auto)",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            complete_car_galleries,
+            trigger=IntervalTrigger(minutes=10),
+            id="car_galleries",
+            name="Foto auto (galleria completa di salvate, pipeline, affari)",
+            replace_existing=True,
+        )
         # Tutte le auto: inventario a rotazione (una fetta di fasce a notte)
         # al posto del Garbage Collector, che verificherebbe pagina per pagina
         # mezzo milione di annunci.
@@ -181,4 +201,9 @@ def create_scheduler() -> AsyncIOScheduler:
             replace_existing=True,
         )
 
+    if settings.scheduler_only:
+        keep = {j.strip() for j in settings.scheduler_only.split(",") if j.strip()}
+        for job in scheduler.get_jobs():
+            if job.id not in keep:
+                scheduler.remove_job(job.id)
     return scheduler

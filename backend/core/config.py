@@ -73,6 +73,9 @@ class Settings:
     # Spento finché il feed auto non filtra lato DB (537k annunci).
     auto_full_category: bool = os.getenv("AUTO_FULL_CATEGORY", "false").lower() in ("1", "true", "yes")
     auto_inventory_slices: int = int(os.getenv("AUTO_INVENTORY_SLICES", "4"))
+    # Solo questi job (id separati da virgola), es. un container che fa solo
+    # le foto mentre un altro raccoglie. Vuoto = tutti.
+    scheduler_only: str = os.getenv("SCHEDULER_ONLY", "")
     ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
 

@@ -653,8 +653,11 @@ class SubitoScraper(BaseScraper):
         client: httpx.AsyncClient,
         image_urls: list[str],
         listing_url: str,
+        start_index: int = 0,
     ) -> tuple[list[str], str | None]:
-        """Scarica e salva la galleria; ritorna (url_salvati, pHash prima foto)."""
+        """Scarica e salva la galleria; ritorna (url_salvati, pHash prima foto).
+        ``start_index``: numero del primo file (per completare una galleria di
+        cui la prima foto è già salvata, senza sovrascriverla)."""
         if not image_urls:
             return [], None
 
@@ -662,7 +665,7 @@ class SubitoScraper(BaseScraper):
         stored: list[str] = []
         image_hash: str | None = None
 
-        for index, image_url in enumerate(image_urls):
+        for index, image_url in enumerate(image_urls, start=start_index):
             try:
                 response = await client.get(image_url)
                 response.raise_for_status()
