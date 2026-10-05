@@ -100,6 +100,23 @@ docker compose exec -T backend python scripts/reparse_nlp.py --apply
 >   su una sola macchina): sono già nel principale, ora vengono saltati anche
 >   per id invece di far fallire tutto il merge.
 
+## Prossimo passaggio (dal 2026-10-05 il PC è la macchina principale)
+
+Dal 2026-10-05 raccoglie il **PC** (iPhone + tutte le auto); il Mac è fermo.
+Quando la raccolta torna sul Mac **non** si fa il merge PC → Mac: il merge
+aggiunge solo gli annunci nuovi e perderebbe venduti, ribassi e foto che il
+PC ha registrato su annunci già presenti sul Mac. Si fa al contrario:
+
+1. sul Mac: dump del suo DB (`reseller_mac_AAAA-MM-GG.dump`), portato sul PC;
+2. sul PC: merge **Mac → PC** (SOURCE = DB del Mac ripristinato in un DB
+   temporaneo, TARGET = DB del PC): entrano i pochi annunci che aveva solo il Mac;
+3. dump del PC + archivio foto, portati sul Mac;
+4. sul Mac: ripristino del dump del PC **come DB principale** (dopo un backup
+   del vecchio), estrazione delle foto, `git pull` e avvio.
+
+Da lì una sola macchina raccoglie: l'altra solo dashboard
+(`SCHEDULER_ENABLED=false`).
+
 ## Dopo il merge
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure
   forzalo — `market_trends` (curve/momentum) si ricostruisce dai nuovi annunci.
