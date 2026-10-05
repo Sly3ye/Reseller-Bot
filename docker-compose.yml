@@ -85,6 +85,9 @@ services:
       PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:8000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
       SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      # Facoltativi: solo questi lavori / tutti tranne questi (id separati da virgola).
+      SCHEDULER_ONLY: ${SCHEDULER_ONLY:-}
+      SCHEDULER_SKIP: ${SCHEDULER_SKIP:-}
       # Tutte le auto di Subito (vedi docs/VISIONE-AUTO.md, "Ambito").
       AUTO_FULL_CATEGORY: ${AUTO_FULL_CATEGORY:-false}
       AUTO_INVENTORY_SLICES: ${AUTO_INVENTORY_SLICES:-4}

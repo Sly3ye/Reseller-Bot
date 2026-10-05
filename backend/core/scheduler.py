@@ -20,6 +20,7 @@ from backend.services.retention import apply_retention
 from backend.services.telegram_bot import poll_telegram
 from backend.services.garbage_collector import run_garbage_collector
 from backend.services.sweep import (
+    drain_verify_queue,
     head_poll,
     inventory_watchdog,
     reconcile_auto_inventory,
@@ -198,6 +199,17 @@ def create_scheduler() -> AsyncIOScheduler:
                 replace_existing=True,
             )
 
+    # Verifiche dei venduti in coda (dall'inventario): riprese dopo riavvii,
+    # macchina spenta o blocchi; il pezzo fatto resta fatto.
+    scheduler.add_job(
+        drain_verify_queue,
+        trigger=IntervalTrigger(minutes=30),
+        kwargs={"category": "smartphone"},
+        id="verify_queue",
+        name="Verifiche venduti in coda (riprende da dove si era fermato)",
+        replace_existing=True,
+    )
+
     # Emivita degli affari: ricontrollo degli affari segnalati finché spariscono.
     scheduler.add_job(
         watch_deals,
@@ -272,5 +284,10 @@ def create_scheduler() -> AsyncIOScheduler:
         keep = {j.strip() for j in settings.scheduler_only.split(",") if j.strip()}
         for job in scheduler.get_jobs():
             if job.id not in keep:
+                scheduler.remove_job(job.id)
+    if settings.scheduler_skip:
+        skip = {j.strip() for j in settings.scheduler_skip.split(",") if j.strip()}
+        for job in scheduler.get_jobs():
+            if job.id in skip:
                 scheduler.remove_job(job.id)
     return scheduler

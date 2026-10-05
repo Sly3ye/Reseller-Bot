@@ -5788,6 +5788,11 @@ function DataQualityPanel(props: { category: Category }) {
         {!!q.photoQueue && (
           <span>{q.photoQueue.toLocaleString("it-IT")} annunci con foto in download</span>
         )}
+        {!!q.verifyQueue && (
+          <span title="Candidati venduti dall'inventario, verificati pagina per pagina: i rimossi si marcano a ogni pezzo">
+            {q.verifyQueue.toLocaleString("it-IT")} possibili venduti da verificare
+          </span>
+        )}
       </div>
       {q.latency && q.latency.published24h ? (
         <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>

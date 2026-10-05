@@ -76,6 +76,8 @@ class Settings:
     # Solo questi job (id separati da virgola), es. un container che fa solo
     # le foto mentre un altro raccoglie. Vuoto = tutti.
     scheduler_only: str = os.getenv("SCHEDULER_ONLY", "")
+    # Il contrario: lavori da NON avviare (es. "inventory_auto,inventory_watchdog_auto").
+    scheduler_skip: str = os.getenv("SCHEDULER_SKIP", "")
     # API senza scheduler: dove inoltrare i comandi della pagina Automations
     # (il processo che raccoglie, es. http://collector:8000 in compose).
     collector_url: str = os.getenv("COLLECTOR_URL", "")

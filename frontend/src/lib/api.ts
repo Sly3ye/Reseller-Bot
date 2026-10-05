@@ -957,6 +957,8 @@ export type DataQuality = {
   autoExcluded?: { altroModelloORicambio: number; generazioneIncerta: number } | null;
   /** Annunci con foto ancora da scaricare (backfill dalla CDN). */
   photoQueue?: number | null;
+  /** Candidati venduti in coda di verifica (pagina per pagina, a pezzi). */
+  verifyQueue?: number | null;
   /** Alert degli ultimi 7 giorni: consegnati, falliti (devono essere 0), mai
    *  inviati (Telegram non configurato: registrati solo per il ricontrollo). */
   alertDelivery7d?: { delivered: number; failed: number; not_sent: number } | null;

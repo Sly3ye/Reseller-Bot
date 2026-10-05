@@ -35,6 +35,7 @@ from backend.core.database import get_db, has_column
 from backend.scrapers.base import ScrapedListing
 from backend.scrapers.subito import ScraperBlockedError, SubitoScraper, current_job
 from backend.services.republish import merge_into_old
+from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.variants import iphone_model_key, mentions_iphone, model_text, normalize_iphone
 from backend.tasks import (
     FIRST_SCAN_LOOKBACK,
@@ -746,7 +747,7 @@ async def inventory_watchdog(category: str = "smartphone") -> dict[str, Any] | N
 
 async def _reconcile(category: str) -> dict[str, Any]:
     current_job.set(f"inventario_{category}")
-    from backend.services.garbage_collector import TABLES, verify_and_mark  # noqa: PLC0415
+    from backend.services.garbage_collector import TABLES  # noqa: PLC0415
 
     try:
         grand, seen = await walk_inventory(category, progress=logger.info)
@@ -777,12 +778,14 @@ async def _reconcile(category: str) -> dict[str, Any]:
             break
         start += 1000
 
-    # Solo ciò che l'inventario POTEVA vedere: iPhone nel titolo e prezzo sopra
-    # la soglia anti-spam. Il resto (vecchie righe rumorose) non si verifica.
+    # Solo ciò che l'inventario POTEVA vedere: iPhone nel titolo, prezzo sopra
+    # la soglia anti-spam e non un accessorio (select_ads li scarta prima di
+    # segnarli come visti: altrimenti si riverificherebbero ogni notte).
     missing = [
         r for r in rows
         if r["listing_url"] not in seen
         and mentions_iphone(r.get("title"))
+        and not _is_accessory_listing(r.get("title"))
         and (r.get("asking_price") or 0) >= anti_min
     ]
     # Ripubblicazioni: un "mancante" con un gemello nato dopo la sua sparizione
@@ -813,9 +816,90 @@ async def _reconcile(category: str) -> dict[str, Any]:
         )
         capped = len(candidates) - MAX_VERIFY_PER_NIGHT
         candidates = candidates[:MAX_VERIFY_PER_NIGHT]
-    result = await verify_and_mark(db, table, candidates)
+    # In coda nel DB e verificati a pezzi: ogni pezzo marca subito i rimossi,
+    # così un riavvio (o la macchina spenta) non butta ore di verifiche.
+    await asyncio.to_thread(save_verify_queue, db, category, candidates, "inventario")
+    result = await _drain_verify_queue(db, category)
     logger.info("Inventario %s: %d verificati, %d marcati rimossi",
                 category, result["checked"], result["removed"])
     return {"mode": "reconcile", "category": category, **grand,
             "republished_merged": len(merged), "candidates": len(candidates),
             "capped": capped, **result}
+
+
+# ----------------------------------------------- coda delle verifiche (venduti)
+
+# Pagine per pezzo: dopo ognuno i rimossi si marcano e la coda si accorcia.
+VERIFY_CHUNK = 50
+
+
+def _verify_queue_key(category: str) -> str:
+    return f"verify_queue:{category}"
+
+
+def save_verify_queue(db: Any, category: str, candidates: list[dict[str, Any]], source: str) -> None:
+    """Candidati venduti da verificare, in app_settings (sostituisce la coda)."""
+    items = [{"id": str(c["id"]), "listing_url": c["listing_url"]} for c in candidates]
+    _save_state(db, _verify_queue_key(category),
+                {"at": datetime.now(timezone.utc).isoformat(), "source": source, "items": items})
+
+
+def verify_queue_size(category: str) -> int:
+    from backend.core.database import get_db  # noqa: PLC0415
+
+    return len(_load_state(get_db(), _verify_queue_key(category)).get("items") or [])
+
+
+def _mark_removed_ids(table: str, ids: list[str]) -> int:
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            f"update public.{table} set status = 'venduto_rimosso', updated_at = now() "
+            "where id = any(%s::uuid[]) and status in ('nuovo', 'visto')",
+            (ids,),
+        )
+        return cur.rowcount
+
+
+async def _drain_verify_queue(db: Any, category: str) -> dict[str, int]:
+    """Verifica la coda a pezzi (senza lock: lo tiene chi chiama)."""
+    from backend.services.garbage_collector import TABLES, check_pages  # noqa: PLC0415
+
+    table = TABLES[category]
+    key = _verify_queue_key(category)
+    totals = {"checked": 0, "removed": 0}
+    while True:
+        state = await asyncio.to_thread(_load_state, db, key)
+        items = state.get("items") or []
+        if not items:
+            break
+        part = items[:VERIFY_CHUNK]
+        results, run = await check_pages(part)
+        removed = [listing_id for listing_id, gone in results.items() if gone]
+        if removed:
+            totals["removed"] += await asyncio.to_thread(_mark_removed_ids, table, removed)
+        totals["checked"] += len(results)
+        # Via dalla coda solo le pagine verificate davvero: i blocchi restano.
+        state["items"] = [it for it in items if it["id"] not in results]
+        await asyncio.to_thread(_save_state, db, key, state)
+        if run.get("aborted") or not results:
+            logger.warning("Verifiche %s ferme (blocchi): %d restano in coda", category, len(state["items"]))
+            break
+    return totals
+
+
+async def drain_verify_queue(category: str = "smartphone") -> dict[str, Any]:
+    """Job: riprende le verifiche lasciate in coda (riavvio, macchina spenta,
+    blocchi). Salta se l'inventario è in corso: le fa lui alla fine."""
+    lock = _inventory_lock(category)
+    if lock.locked():
+        return {"category": category, "skipped": "inventario in corso"}
+    async with lock:
+        if not verify_queue_size(category):
+            return {"category": category, "checked": 0, "removed": 0}
+        result = await _drain_verify_queue(get_db(), category)
+    if result["checked"]:
+        logger.info("Verifiche in coda %s: %d verificate, %d marcate rimosse",
+                    category, result["checked"], result["removed"])
+    return {"category": category, **result}

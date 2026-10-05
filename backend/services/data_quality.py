@@ -76,6 +76,7 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
     from backend.services.deal_watch import deal_half_life  # noqa: PLC0415
     from backend.services.drift import drift_state  # noqa: PLC0415
     from backend.services.request_budget import requests_today  # noqa: PLC0415
+    from backend.services.sweep import verify_queue_size  # noqa: PLC0415
     from backend.services.photo_backfill import queue_size as photo_queue_size  # noqa: PLC0415
     from backend.services.variants import iphone_model_key  # noqa: PLC0415
 
@@ -262,4 +263,6 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
                          if car_struct else None),
         # Annunci con galleria nota ma foto ancora da scaricare (photo_backfill).
         "photoQueue": photo_queue_size() if tech else None,
+        # Candidati venduti ancora da verificare pagina per pagina (coda nel DB).
+        "verifyQueue": _safe(lambda: verify_queue_size("smartphone")) if tech else None,
     }
