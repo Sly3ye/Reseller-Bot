@@ -67,6 +67,17 @@ current_job: ContextVar[str] = ContextVar("current_job", default="altro")
 _request_counts: dict[str, list[int]] = {}   # job → [richieste, blocchi]
 
 
+# Governatore del budget (Goal Version §2.2): questi lavori non si fermano
+# mai per prudenza (alert e ricontrollo degli affari valgono più di tutto il
+# resto); gli altri (inventari, verifiche, storico) aspettano quando la rete
+# è instabile o si è appena usciti da un blocco.
+HIGH_PRIORITY_JOBS = ("testa_", "ricontrollo_affari", "sweep_", "cecchino")
+
+
+def is_low_priority(job: str) -> bool:
+    return not job.startswith(HIGH_PRIORITY_JOBS)
+
+
 def take_request_counts() -> dict[str, list[int]]:
     """Conteggi accumulati dall'ultima chiamata (e azzera)."""
     out = {k: list(v) for k, v in _request_counts.items()}
@@ -86,6 +97,14 @@ class HadesPacer:
     """
 
     MAX_COOLDOWN_S = 4 * 3600
+    # Rete instabile = almeno ERROR_THRESHOLD errori di rete o 5xx in
+    # ERROR_WINDOW_S (come i reset TLS del 5/10 alle 11:05).
+    ERROR_WINDOW_S = 600
+    ERROR_THRESHOLD = 3
+    # Dopo la fine di un cooldown i lavori bassi aspettano ancora un po'.
+    POST_BLOCK_HOLD_S = 900
+    # Mai più di così in pausa di fila: niente lavori affamati per sempre.
+    MAX_HOLD_S = 1800
 
     def __init__(self) -> None:
         self.gap_s = settings.scraper_min_gap_s
@@ -93,17 +112,48 @@ class HadesPacer:
         self._blocked_until = 0.0
         self.consecutive_blocks = 0
         self.total_blocks = 0
+        self._errors: list[float] = []
         self._lock: asyncio.Lock | None = None
 
     def blocked_for(self) -> float:
         """Secondi di cooldown residui (0 = libero)."""
         return max(0.0, self._blocked_until - time.monotonic())
 
+    def on_error(self) -> None:
+        """Errore di rete o 5xx (non un blocco): conta per la rete instabile."""
+        now = time.monotonic()
+        self._errors = [t for t in self._errors if now - t < self.ERROR_WINDOW_S] + [now]
+
+    def low_priority_hold(self, now: float | None = None) -> float:
+        """Secondi di pausa che restano ai lavori a bassa priorità."""
+        now = time.monotonic() if now is None else now
+        recent = [t for t in self._errors if now - t < self.ERROR_WINDOW_S]
+        hold = 0.0
+        if len(recent) >= self.ERROR_THRESHOLD:
+            # Finché nella finestra restano almeno ERROR_THRESHOLD errori.
+            hold = recent[-self.ERROR_THRESHOLD] + self.ERROR_WINDOW_S - now
+        if self._blocked_until:
+            hold = max(hold, self._blocked_until + self.POST_BLOCK_HOLD_S - now)
+        return max(0.0, hold)
+
     async def wait_turn(self) -> None:
         if self.blocked_for():
             raise ScraperBlockedError(
                 f"cooldown anti-blocco attivo ancora {self.blocked_for():.0f}s"
             )
+        job = current_job.get()
+        if is_low_priority(job) and self.low_priority_hold() > 0:
+            waited = 0.0
+            logger.warning("Governatore: %s in pausa (rete instabile o blocco recente), %.0f s",
+                           job, self.low_priority_hold())
+            while (hold := self.low_priority_hold()) > 0 and waited < self.MAX_HOLD_S:
+                step = min(hold, self.MAX_HOLD_S - waited, 60.0)
+                await asyncio.sleep(step)
+                waited += step
+            if self.blocked_for():
+                raise ScraperBlockedError(
+                    f"cooldown anti-blocco attivo ancora {self.blocked_for():.0f}s"
+                )
         if self._lock is None:
             self._lock = asyncio.Lock()
         async with self._lock:
@@ -139,6 +189,8 @@ class HadesPacer:
             "blockedForS": round(self.blocked_for()),
             "consecutiveBlocks": self.consecutive_blocks,
             "totalBlocks": self.total_blocks,
+            "recentErrors": len([t for t in self._errors if time.monotonic() - t < self.ERROR_WINDOW_S]),
+            "lowPriorityHoldS": round(self.low_priority_hold()),
         }
 
 
@@ -401,11 +453,16 @@ class SubitoScraper(BaseScraper):
         """
         await pacer.wait_turn()
         async with self._make_api_client() as client:
-            response = await client.get(url, params=params)
+            try:
+                response = await client.get(url, params=params)
+            except CurlError:
+                pacer.on_error()
+                raise
             if response.status_code in BLOCK_STATUS:
                 pacer.on_block(response.status_code)
                 raise ScraperBlockedError(f"HTTP {response.status_code} da hades")
             if response.status_code in RETRYABLE_STATUS:
+                pacer.on_error()
                 raise RetryableHTTPError(f"HTTP {response.status_code} da hades")
             if response.status_code >= 400:
                 # altri 4xx/5xx: errore reale, non si ritenta (fuori dal retry set)

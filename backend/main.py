@@ -98,7 +98,9 @@ async def forward_automations(request: Request, call_next):
     """Con raccolta e API separate (compose: ``collector`` + ``backend``) lo
     scheduler gira nel raccoglitore: i comandi della pagina Automations si
     inoltrano lì. Registrato PRIMA del CORS, che così resta il più esterno."""
-    if request.url.path.startswith("/api/automations") and settings.collector_url:
+    # /health/scraper: il ritmo e i blocchi del pacer vivono nel processo che raccoglie.
+    forwarded = request.url.path.startswith("/api/automations") or request.url.path == "/health/scraper"
+    if forwarded and settings.collector_url:
         scheduler = getattr(app.state, "scheduler", None)
         if scheduler is None or not scheduler.running:
             url = settings.collector_url.rstrip("/") + request.url.path
