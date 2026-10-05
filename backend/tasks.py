@@ -12,7 +12,7 @@ from backend.core.database import Client
 
 from backend.core.database import get_db, has_column
 from backend.scrapers import ScrapedListing, SubitoScraper
-from backend.scrapers.subito import ScraperBlockedError, pacer
+from backend.scrapers.subito import ScraperBlockedError, current_job, pacer
 from backend.services.health import record_run
 from backend.services.republish import find_revivable
 from backend.core.config import settings
@@ -649,6 +649,7 @@ async def scrape_subito_and_save(
     3) Immagini SOLO per i nuovi (CDN diretta) + insert; esistenti → updated_at
        e price_history sui cali di prezzo.
     """
+    current_job.set("cecchino")
     scraper = SubitoScraper()
     max_results = max(1, pages) * SNIPER_BLOCK_SIZE
     anti_min, anti_max = anti_spam_bounds(category)
@@ -812,6 +813,7 @@ async def run_nightly_batch(
     Applica gli strict_filters del target durante lo scraping, così la media
     è calcolata SOLO sugli annunci di quella generazione/variante specifica.
     """
+    current_job.set("notturno")
     scraper = SubitoScraper()
     anti_min, anti_max = anti_spam_bounds(category)
     listings = await scraper.search_text(
@@ -994,28 +996,22 @@ def _parse_ts(value: Any) -> datetime | None:
 FIRST_SCAN_LOOKBACK = timedelta(hours=24)
 # Margine sul ricongiungimento: copre gli annunci pubblicati mentre la
 # scansione precedente era in corso e piccole differenze di orologio.
-# 2 ore e non 10 minuti: un annuncio può entrare nell'indice di ricerca molto
-# dopo la sua data di pubblicazione (moderazione) e finire DIETRO il segnalibro.
-# Costa ~2 pagine in più a giro.
-SINCE_MARGIN = timedelta(hours=2)
+# Margine dietro il segnalibro: il ritardo di indicizzazione misurato il
+# 2026-10-05 è ~6 minuti (l'annuncio più recente in pagina 1 ha 6 minuti).
+# 2 ore erano troppe: la data mostrata da Subito si RESETTA coi
+# riposizionamenti, quindi ogni giro rileggeva ore di annunci vecchi rimessi in
+# cima (lo sweep auto 20–30 pagine a giro, ~1.200 richieste al giorno). I rari
+# annunci moderati più tardi li recupera l'inventario notturno.
+SINCE_MARGIN = timedelta(minutes=20)
 
 
-async def finish_run(
-    label: str,
-    n_targets: int,
-    n_ok: int,
-    n_failed: int,
-    total_scraped: int,
-    total_new: int,
-    total_requests: int,
-    gaps: list[str],
-    blocked: bool,
+async def notify_new_rows(
     new_by_cat: dict[str, list[dict[str, Any]]],
     drops_by_cat: dict[str, list[dict[str, Any]]],
-) -> dict[str, Any]:
-    """Chiusura comune di un giro di raccolta (Sniper per target o ricerca
-    ampia): alert Telegram sulle novità, registrazione in scrape_runs e alert
-    di sistema sulle transizioni down/ripristino. Ritorna l'esito di salute."""
+) -> None:
+    """Alert sulle righe appena inserite e sui ribassi: usato a fine giro
+    (``finish_run``) e dalla testa della coda (``sweep.head_poll``), che
+    notifica entro secondi invece che a fine giro."""
     # Alert Telegram "intelligenti": una passata a fine giro per categoria.
     # Si arricchiscono le NUOVE righe con la stessa BI della dashboard e si
     # notifica SOLO ciò che è un vero affare (classe "affare" + Deal Score ≥
@@ -1064,6 +1060,26 @@ async def finish_run(
             except Exception:
                 # Le notifiche sono supplementari: mai far fallire il giro.
                 logger.exception("Alert intelligenti falliti (%s)", cat)
+
+
+
+async def finish_run(
+    label: str,
+    n_targets: int,
+    n_ok: int,
+    n_failed: int,
+    total_scraped: int,
+    total_new: int,
+    total_requests: int,
+    gaps: list[str],
+    blocked: bool,
+    new_by_cat: dict[str, list[dict[str, Any]]],
+    drops_by_cat: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Chiusura comune di un giro di raccolta (Sniper per target o ricerca
+    ampia): alert Telegram sulle novità, registrazione in scrape_runs e alert
+    di sistema sulle transizioni down/ripristino. Ritorna l'esito di salute."""
+    await notify_new_rows(new_by_cat, drops_by_cat)
 
     # Salute dello scraper: registra il giro e allerta sulle transizioni
     # down/ripristino (Akamai/Subito) — così non si blocca in silenzio.

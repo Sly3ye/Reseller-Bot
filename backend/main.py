@@ -4,8 +4,10 @@ import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+import httpx
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from backend.api.automations import router as automations_router
@@ -66,8 +68,10 @@ async def lifespan(app: FastAPI):
     # Correzioni dalle tue riparazioni (E3) pronte prima della prima stima.
     await asyncio.to_thread(repair_feedback.refresh)
     # Feed iPhone preparato in background: valutare ~47k annunci costa ~20 s e
-    # la prima apertura della dashboard non deve aspettarli.
-    asyncio.get_running_loop().run_in_executor(None, _prewarm_feed)
+    # la prima apertura della dashboard non deve aspettarli. Solo nel processo
+    # che serve la dashboard (il raccoglitore non la serve).
+    if not settings.scheduler_enabled:
+        asyncio.get_running_loop().run_in_executor(None, _prewarm_feed)
     scheduler = create_scheduler()
     app.state.scheduler = scheduler
     if settings.scheduler_enabled:
@@ -87,6 +91,31 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Reseller SaaS Backend", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def forward_automations(request: Request, call_next):
+    """Con raccolta e API separate (compose: ``collector`` + ``backend``) lo
+    scheduler gira nel raccoglitore: i comandi della pagina Automations si
+    inoltrano lì. Registrato PRIMA del CORS, che così resta il più esterno."""
+    if request.url.path.startswith("/api/automations") and settings.collector_url:
+        scheduler = getattr(app.state, "scheduler", None)
+        if scheduler is None or not scheduler.running:
+            url = settings.collector_url.rstrip("/") + request.url.path
+            if request.url.query:
+                url += "?" + request.url.query
+            try:
+                async with httpx.AsyncClient(timeout=20, trust_env=False) as client:
+                    r = await client.request(
+                        request.method, url, content=await request.body(),
+                        headers={"content-type": request.headers.get("content-type", "application/json")},
+                    )
+            except httpx.HTTPError:
+                return JSONResponse({"detail": "Raccoglitore non raggiungibile"}, status_code=503)
+            return Response(r.content, status_code=r.status_code,
+                            media_type=r.headers.get("content-type"))
+    return await call_next(request)
+
 
 app.add_middleware(
     CORSMiddleware,

@@ -76,6 +76,11 @@ class Settings:
     # Solo questi job (id separati da virgola), es. un container che fa solo
     # le foto mentre un altro raccoglie. Vuoto = tutti.
     scheduler_only: str = os.getenv("SCHEDULER_ONLY", "")
+    # API senza scheduler: dove inoltrare i comandi della pagina Automations
+    # (il processo che raccoglie, es. http://collector:8000 in compose).
+    collector_url: str = os.getenv("COLLECTOR_URL", "")
+    # Testa della coda: ogni quanti secondi leggere la pagina 1 (0 = spenta).
+    head_poll_seconds: int = int(os.getenv("HEAD_POLL_SECONDS", "60"))
     ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
 

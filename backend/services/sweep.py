@@ -33,7 +33,7 @@ from typing import Any
 
 from backend.core.database import get_db, has_column
 from backend.scrapers.base import ScrapedListing
-from backend.scrapers.subito import ScraperBlockedError, SubitoScraper
+from backend.scrapers.subito import ScraperBlockedError, SubitoScraper, current_job
 from backend.services.republish import merge_into_old
 from backend.services.variants import iphone_model_key, mentions_iphone, model_text, normalize_iphone
 from backend.tasks import (
@@ -187,6 +187,7 @@ async def run_sweep(
     category: str = "smartphone", max_pages: int = SWEEP_MAX_PAGES
 ) -> dict[str, Any]:
     """Giro schedulato: query ampia, all'indietro fino al giro precedente."""
+    current_job.set(f"sweep_{category}")
     query = SWEEP_QUERY[category]
     db = get_db()
     targets = await asyncio.to_thread(get_active_targets, category)
@@ -246,6 +247,63 @@ async def run_sweep(
         "status": health["status"],
         **{k: totals[k] for k in ("kept", "new", "updated", "price_drops", "unmatched")},
     }
+
+
+# ------------------------------------------------------- testa della coda
+
+# Quanti URL ricordare per categoria: la pagina 1 ne ha 100, così le letture
+# successive non chiedono al DB annunci già visti un minuto prima.
+_HEAD_SEEN_MAX = 5000
+_head_seen: dict[str, dict[str, None]] = {}
+
+
+async def head_poll(category: str = "smartphone") -> dict[str, Any]:
+    """Testa della coda (Goal Version §3): solo la pagina 1, ogni 30–60 s.
+
+    I nuovi davvero si salvano SUBITO senza foto (le scarica dopo il job
+    delle foto) e si notificano nello stesso giro: l'alert parte secondi dopo
+    l'indicizzazione invece che a fine sweep (in media 7,5 min di attesa per
+    gli iPhone, 15 per le auto) e senza aspettare il download delle gallerie.
+    Lo sweep resta come rete di sicurezza per ciò che la testa non vede.
+    """
+    from backend.tasks import notify_new_rows  # noqa: PLC0415
+
+    current_job.set(f"testa_{category}")
+    query = SWEEP_QUERY[category]
+    scraper = SubitoScraper(category_id=SWEEP_CATEGORY_ID.get(category))
+    anti_min, anti_max = anti_spam_bounds(category)
+    try:
+        payload = await scraper._fetch_page(query, SubitoScraper.PAGE_SIZE, 0, anti_min, anti_max)
+    except ScraperBlockedError as exc:
+        return {"mode": "head", "category": category, "blocked": True, "error": str(exc)[:120]}
+    except Exception as exc:  # noqa: BLE001 (rete giù: il prossimo giro riprova)
+        logger.warning("Testa %s: %s", category, str(exc)[:120])
+        return {"mode": "head", "category": category, "error": str(exc)[:120]}
+    listings = [
+        listing for listing in scraper.select_ads(payload.get("ads") or [], min_price=anti_min,
+                                                  max_price=anti_max)
+        if is_relevant(listing, category)
+    ]
+    seen = _head_seen.setdefault(category, {})
+    fresh = [listing for listing in listings if listing.url not in seen]
+    for listing in listings:
+        seen[listing.url] = None
+    while len(seen) > _HEAD_SEEN_MAX:
+        seen.pop(next(iter(seen)))
+    if not fresh:
+        return {"mode": "head", "category": category, "new": 0}
+    targets = await asyncio.to_thread(get_active_targets, category)
+    totals = await persist_by_target(
+        scraper, category, fresh, build_target_index(targets), download_images=False
+    )
+    if totals["inserted_rows"] or totals["drop_events"]:
+        await notify_new_rows(
+            {category: totals["inserted_rows"]} if totals["inserted_rows"] else {},
+            {category: totals["drop_events"]} if totals["drop_events"] else {},
+        )
+    if totals["new"]:
+        logger.info("Testa %s: +%d nuovi, notificati subito", category, totals["new"])
+    return {"mode": "head", "category": category, "new": totals["new"], "checked": len(fresh)}
 
 
 # ------------------------------------------------------------ deep backfill
@@ -395,6 +453,7 @@ async def deep_backfill(
     progress: Any = print,
 ) -> dict[str, Any]:
     """Recupero una tantum dell'intero stock attivo (vedi walk_inventory)."""
+    current_job.set("storico")
     grand, _ = await walk_inventory(category, min_price, progress)
     return grand
 
@@ -515,6 +574,7 @@ async def reconcile_auto_inventory(category: str = "automobile") -> dict[str, An
 
 
 async def _auto_slice(category: str) -> dict[str, Any]:
+    current_job.set(f"inventario_{category}")
     from backend.core.config import settings  # noqa: PLC0415
 
     db = get_db()
@@ -661,6 +721,7 @@ async def inventory_watchdog(category: str = "smartphone") -> dict[str, Any] | N
 
 
 async def _reconcile(category: str) -> dict[str, Any]:
+    current_job.set(f"inventario_{category}")
     from backend.services.garbage_collector import TABLES, verify_and_mark  # noqa: PLC0415
 
     try:

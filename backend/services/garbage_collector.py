@@ -29,7 +29,7 @@ from curl_cffi.requests.exceptions import CurlError
 
 from backend.core.config import settings
 from backend.core.database import get_db
-from backend.scrapers.subito import ScraperBlockedError, pacer
+from backend.scrapers.subito import ScraperBlockedError, current_job, pacer
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +140,7 @@ async def collect_table(db, table: str) -> dict[str, int]:
 
 async def verify_and_mark(db, table: str, rows: list[dict]) -> dict[str, int]:
     """Verifica le pagine di `rows` ({id, listing_url}) e marca le rimosse."""
+    current_job.set("verifiche")
     if not rows:
         return {"checked": 0, "removed": 0}
 

@@ -46,9 +46,11 @@ services:
       # URL da cui il browser carica le immagini: in produzione = dominio/IP del VPS.
       PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:8000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
-      # false su una seconda macchina: dashboard e API sì, raccolta no (vedi
-      # RACCOLTA-SU-QUESTO-PC.md). Il DB principale resta uno solo.
-      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      # Solo dashboard e API: la raccolta la fa il servizio `collector`.
+      # Si ricostruisce e riavvia senza interrompere inventari e alert.
+      SCHEDULER_ENABLED: "false"
+      # Sovrascrivibile dal .env di root (es. un raccoglitore avviato a mano).
+      COLLECTOR_URL: ${COLLECTOR_URL:-http://collector:8000}
       # Tutte le auto di Subito (vedi docs/VISIONE-AUTO.md, "Ambito").
       AUTO_FULL_CATEGORY: ${AUTO_FULL_CATEGORY:-false}
       AUTO_INVENTORY_SLICES: ${AUTO_INVENTORY_SLICES:-4}
@@ -60,6 +62,36 @@ services:
       # Solo da questa macchina: l'API non ha login. Per usarla da un altro
       # dispositivo serve prima un'autenticazione (o una VPN/tunnel).
       - "127.0.0.1:8000:8000"
+    # Per raggiungere Ollama (AI locale) in esecuzione sull'HOST via
+    # host.docker.internal, anche su Linux/VPS (su Docker Desktop è già presente).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Raccoglitore: scheduler (sweep, inventari, foto, alert, bot Telegram).
+  # Stessa immagine dell'API, nessuna porta esposta. Su una seconda macchina
+  # che non deve raccogliere: SCHEDULER_ENABLED=false nel .env di root.
+  collector:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - backend/.env        # Telegram + ritmo scraping (facoltativi)
+    environment:
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/reseller
+      MEDIA_ROOT: /data/media
+      # URL da cui il browser carica le immagini: in produzione = dominio/IP del VPS.
+      PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:8000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      SCHEDULER_ENABLED: ${SCHEDULER_ENABLED:-true}
+      # Tutte le auto di Subito (vedi docs/VISIONE-AUTO.md, "Ambito").
+      AUTO_FULL_CATEGORY: ${AUTO_FULL_CATEGORY:-false}
+      AUTO_INVENTORY_SLICES: ${AUTO_INVENTORY_SLICES:-4}
+    volumes:
+      - media:/data/media
+      # Esito dell'ultimo backup (servizio `backup`), per cruscotto e allarme.
+      - ./backups:/backups:ro
     # Per raggiungere Ollama (AI locale) in esecuzione sull'HOST via
     # host.docker.internal, anche su Linux/VPS (su Docker Desktop è già presente).
     extra_hosts:

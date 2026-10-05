@@ -24,6 +24,13 @@ logger = logging.getLogger(__name__)
 TABLES = {"smartphone": "live_opportunities_tech", "automobile": "live_opportunities_auto"}
 
 
+def _safe(fn: Any) -> Any:
+    try:
+        return fn()
+    except Exception:
+        return None
+
+
 def _round(value: Any) -> float | None:
     return round(float(value), 1) if value is not None else None
 
@@ -66,6 +73,7 @@ def _auto_cycle() -> dict[str, Any] | None:
 def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
     from backend.core.database import _get_pool, get_db, has_column  # noqa: PLC0415
     from backend.services.backup_status import get_backup_status  # noqa: PLC0415
+    from backend.services.request_budget import requests_today  # noqa: PLC0415
     from backend.services.photo_backfill import queue_size as photo_queue_size  # noqa: PLC0415
     from backend.services.variants import iphone_model_key  # noqa: PLC0415
 
@@ -226,6 +234,8 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
             "alertP95Min": _round(alert_latency["p95"]),
         },
         "backup": get_backup_status(),
+        # Richieste a Subito di oggi per lavoro (stesso IP: il budget conta).
+        "requestsToday": _safe(requests_today),
         # Auto: ciclo dell'inventario a rotazione e quante auto si sanno valutare.
         "autoCycle": _auto_cycle() if not tech else None,
         "autoExcluded": ({"altroModelloORicambio": agg["excluded"], "generazioneIncerta": agg["gen_unknown"]}

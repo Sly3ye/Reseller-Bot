@@ -13,8 +13,11 @@ from backend.services.photo_backfill import (
     fill_missing_photos,
 )
 from backend.services.repair_feedback import refresh as refresh_repair_feedback
+from backend.services.request_budget import flush_request_counts
+from backend.services.telegram_bot import poll_telegram
 from backend.services.garbage_collector import run_garbage_collector
 from backend.services.sweep import (
+    head_poll,
     inventory_watchdog,
     reconcile_auto_inventory,
     reconcile_inventory,
@@ -178,6 +181,38 @@ def create_scheduler() -> AsyncIOScheduler:
         name="Foto dell'archivio (download a lotti dalla CDN)",
         replace_existing=True,
     )
+
+    # Testa della coda: pagina 1 ogni HEAD_POLL_SECONDS → alert in secondi
+    # (Goal Version §3). Auto solo con la raccolta completa.
+    if settings.head_poll_seconds > 0:
+        for cat in ("smartphone", "automobile") if settings.auto_full_category else ("smartphone",):
+            scheduler.add_job(
+                head_poll,
+                trigger=IntervalTrigger(seconds=settings.head_poll_seconds),
+                kwargs={"category": cat},
+                id=f"head_{cat}",
+                name=f"Testa della coda {cat} (pagina 1 ogni {settings.head_poll_seconds} s)",
+                replace_existing=True,
+            )
+
+    # Budget di richieste per job → request_log (ogni 5 minuti).
+    scheduler.add_job(
+        flush_request_counts,
+        trigger=IntervalTrigger(minutes=5),
+        id="request_budget",
+        name="Budget richieste per job (request_log)",
+        replace_existing=True,
+    )
+
+    # Bottoni e risposte agli alert Telegram → pipeline (long polling 25 s).
+    if settings.telegram_bot_token:
+        scheduler.add_job(
+            poll_telegram,
+            trigger=IntervalTrigger(seconds=30),
+            id="telegram_bot",
+            name="Bot Telegram (azioni sugli alert → pipeline)",
+            replace_existing=True,
+        )
 
     # Correzioni dalle riparazioni (E3): si ricalcolano anche a ogni riparazione
     # registrata; qui di notte, per sicurezza.

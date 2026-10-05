@@ -58,53 +58,70 @@ async def notify_system_alert(text: str) -> bool:
     if not chat:
         return False
     async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-        return await _send_telegram(client, chat, text)
+        return await _send_telegram(client, chat, text) is not None
 
 
 # ------------------------------------------------------------------ invio
+
+# Telegram accetta didascalie di foto fino a 1.024 caratteri: oltre, rifiuta
+# l'intero messaggio. I nostri alert ricchi possono superarla.
+CAPTION_MAX = 1024
+
+
+def _public_photo(item: dict[str, Any]) -> str | None:
+    """Una foto che i server di Telegram possano scaricare: il link pubblico
+    del CDN di Subito. Le nostre copie su disco hanno URL locali
+    (``localhost``/LAN) irraggiungibili da Telegram: passarle faceva rifiutare
+    TUTTO l'alert (bug fino al 2026-10-05)."""
+    for url in [*(item.get("remoteImages") or []), *(item.get("images") or [])]:
+        u = str(url)
+        if u.startswith("https://") and not any(h in u for h in ("localhost", "127.0.0.1", "192.168.")):
+            return u
+    return None
+
 
 async def _send_telegram(
     client: httpx.AsyncClient,
     chat_id: str,
     text: str,
     photo_url: str | None = None,
-) -> bool:
-    """Invia un messaggio (con foto se disponibile). True se accettato."""
+    reply_markup: dict[str, Any] | None = None,
+) -> int | None:
+    """Invia un messaggio (con foto se possibile). Ritorna l'id del messaggio
+    o None se Telegram lo ha rifiutato. Se la foto non va (URL non
+    scaricabile, didascalia troppo lunga) ripiega sul solo testo: un alert
+    senza foto vale infinitamente più di un alert perso."""
     token = settings.telegram_bot_token
     if not token:
-        return False
+        return None
+    extra = {"reply_markup": reply_markup} if reply_markup else {}
     try:
-        if photo_url:
+        if photo_url and len(text) <= CAPTION_MAX:
             response = await client.post(
                 f"{TELEGRAM_API}/bot{token}/sendPhoto",
-                json={
-                    "chat_id": chat_id,
-                    "photo": photo_url,
-                    "caption": text,
-                    "parse_mode": "HTML",
-                },
+                json={"chat_id": chat_id, "photo": photo_url, "caption": text,
+                      "parse_mode": "HTML", **extra},
             )
-        else:
-            response = await client.post(
-                f"{TELEGRAM_API}/bot{token}/sendMessage",
-                json={
-                    "chat_id": chat_id,
-                    "text": text,
-                    "parse_mode": "HTML",
-                    "disable_web_page_preview": False,
-                },
-            )
+            if response.status_code == 200:
+                return (response.json().get("result") or {}).get("message_id")
+            logger.warning("Telegram ha rifiutato la foto (%s), invio solo testo: %s",
+                           response.status_code, response.text[:160])
+        response = await client.post(
+            f"{TELEGRAM_API}/bot{token}/sendMessage",
+            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML",
+                  "disable_web_page_preview": False, **extra},
+        )
         if response.status_code != 200:
             logger.warning(
                 "Telegram ha rifiutato la notifica (%s): %s",
                 response.status_code,
                 response.text[:200],
             )
-            return False
-        return True
+            return None
+        return (response.json().get("result") or {}).get("message_id")
     except httpx.HTTPError as exc:
         logger.warning("Invio Telegram fallito: %s", exc)
-        return False
+        return None
 
 
 # ------------------------------------------------------------- formatting
@@ -343,6 +360,32 @@ def _claim_alerts(
         return {(c["listing_id"], c["alert_type"]) for c in candidates}
 
 
+def action_keyboard(listing_id: str, category: str) -> dict[str, Any]:
+    """Bottoni sotto l'alert: registrare l'esito costa due tocchi, quindi si
+    fa davvero (Goal Version §1.6). Il callback lo gestisce
+    services/telegram_bot.py; ``t``/``a`` = verticale."""
+    cat = "a" if category == "automobile" else "t"
+    def btn(label: str, action: str) -> dict[str, str]:
+        return {"text": label, "callback_data": f"fr:{action}:{cat}:{listing_id}"}
+    return {"inline_keyboard": [
+        [btn("⭐ Salva", "s"), btn("📞 Contattato", "c"), btn("🗑 Scarta", "x")],
+        [btn("💶 Ho offerto…", "o"), btn("✅ Comprato a…", "b")],
+    ]}
+
+
+def _mark_delivery(db: Client, rows: list[dict[str, Any]]) -> None:
+    """Esito reale di ogni invio in sent_alerts (migrazione 25): consegnato o
+    no, id del messaggio per bottoni e risposte. Senza colonne: niente."""
+    for r in rows:
+        try:
+            db.table("sent_alerts").update({
+                "delivered": r["delivered"], "telegram_msg_id": r.get("msg_id"), "chat_id": r["chat_id"],
+            }).eq("listing_id", r["listing_id"]).eq("alert_type", r["alert_type"]).execute()
+        except Exception:
+            logger.debug("sent_alerts senza colonne di consegna (migrazione 25)", exc_info=True)
+            return
+
+
 # ------------------------------------------------------------------ hook
 
 async def notify_deals(
@@ -374,28 +417,22 @@ async def notify_deals(
     if not chat_id:
         return {"sent": 0, "skipped": len(deal_items) + len(drop_events) + len(repair_items or [])}
 
-    to_send: list[tuple[str, str, str, str | None]] = []  # (lid, type, text, photo)
+    # (lid, tipo, testo, foto pubblica, bottoni)
+    to_send: list[tuple[str, str, str, str | None, dict[str, Any] | None]] = []
 
     for item in deal_items:
         lid = item.get("id")
         if not lid:
             continue
-        images = item.get("images") or []
-        to_send.append(
-            (
-                str(lid),
-                ALERT_NEW,
-                _fmt_smart_deal(item, category),
-                images[0] if images else None,
-            )
-        )
+        to_send.append((str(lid), ALERT_NEW, _fmt_smart_deal(item, category),
+                        _public_photo(item), action_keyboard(str(lid), category)))
 
     for item in repair_items or []:
         lid = item.get("id")
         if not lid:
             continue
-        images = item.get("images") or []
-        to_send.append((str(lid), ALERT_REPAIR, _fmt_repair_deal(item), images[0] if images else None))
+        to_send.append((str(lid), ALERT_REPAIR, _fmt_repair_deal(item),
+                        _public_photo(item), action_keyboard(str(lid), category)))
 
     # Annunci ⭐ salvati fra quelli che hanno cambiato prezzo: su questi il calo
     # si notifica SEMPRE, anche sotto la soglia minima — li stai seguendo apposta.
@@ -420,6 +457,7 @@ async def notify_deals(
                     f"{ALERT_SAVED_DROP}:{new}",
                     _fmt_saved_drop(event),
                     None,
+                    None,
                 )
             )
             continue
@@ -433,6 +471,7 @@ async def notify_deals(
                 ALERT_DROP,
                 _fmt_price_drop(event, None),
                 None,
+                None,
             )
         )
 
@@ -440,7 +479,7 @@ async def notify_deals(
         return {"sent": 0, "skipped": 0}
 
     # Dedup persistente prima dell'invio (mai rinotificare lo stesso motivo).
-    keys = {(lid, atype) for lid, atype, _, _ in to_send}
+    keys = {(lid, atype) for lid, atype, _, _, _ in to_send}
     claimed = await asyncio.to_thread(
         _claim_alerts,
         db,
@@ -451,12 +490,19 @@ async def notify_deals(
     )
 
     sent = 0
+    outcome: list[dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
-        for lid, atype, text, photo in to_send:
+        for lid, atype, text, photo, keyboard in to_send:
             if (lid, atype) not in claimed:
                 continue
-            if await _send_telegram(client, chat_id, text, photo):
+            msg_id = await _send_telegram(client, chat_id, text, photo, keyboard)
+            outcome.append({"listing_id": lid, "alert_type": atype, "chat_id": str(chat_id),
+                            "delivered": msg_id is not None, "msg_id": msg_id})
+            if msg_id is not None:
                 sent += 1
+    await asyncio.to_thread(_mark_delivery, db, outcome)
+    if len(outcome) > sent:
+        logger.error("Telegram (%s): %d alert NON consegnati su %d", category, len(outcome) - sent, len(outcome))
 
     logger.info(
         "Telegram (%s): %d affari notificati su %d candidati.",

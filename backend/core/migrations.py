@@ -69,8 +69,22 @@ def status() -> dict[str, list[str]]:
     }
 
 
+# Lock di sessione: con raccolta e API in due processi che partono insieme,
+# uno solo applica le migrazioni; l'altro aspetta e poi trova tutto fatto.
+_MIGRATION_LOCK = 7263540
+
+
 def apply_pending() -> list[str]:
     """Applica le migrazioni mancanti; ritorna le versioni applicate ora."""
+    with _pool().connection() as lock_conn:
+        lock_conn.execute("select pg_advisory_lock(%s)", (_MIGRATION_LOCK,))
+        try:
+            return _apply_pending()
+        finally:
+            lock_conn.execute("select pg_advisory_unlock(%s)", (_MIGRATION_LOCK,))
+
+
+def _apply_pending() -> list[str]:
     files = migration_files()
     if not files:
         logger.warning("Migrazioni: nessun file in %s", MIGRATIONS_DIR)

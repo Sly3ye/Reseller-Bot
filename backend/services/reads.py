@@ -553,6 +553,9 @@ def _shape_opportunity(
         # coda per il download) le URL originali di Subito, caricate dal browser.
         "images": row.get("image_urls") or row.get("raw_image_urls") or [],
         "imagesRemote": not row.get("image_urls") and bool(row.get("raw_image_urls")),
+        # Link pubblici del CDN di Subito: per Telegram (le nostre copie hanno
+        # URL locali che i suoi server non raggiungono).
+        "remoteImages": row.get("raw_image_urls") or [],
         "foundAt": row.get("found_at"),
         "publishedAt": row.get("published_at"),
         "daysOnline": days_online,

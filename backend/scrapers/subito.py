@@ -14,6 +14,7 @@ Due client:
 """
 
 import asyncio
+from contextvars import ContextVar
 import io
 import logging
 import random
@@ -60,6 +61,19 @@ class ScraperBlockedError(Exception):
     deve fermarsi, non passare al target successivo."""
 
 
+# Chi sta facendo la richiesta (lo imposta ogni job): per contare il budget
+# di richieste per lavoro dallo stesso IP (tabella request_log, migrazione 25).
+current_job: ContextVar[str] = ContextVar("current_job", default="altro")
+_request_counts: dict[str, list[int]] = {}   # job → [richieste, blocchi]
+
+
+def take_request_counts() -> dict[str, list[int]]:
+    """Conteggi accumulati dall'ultima chiamata (e azzera)."""
+    out = {k: list(v) for k, v in _request_counts.items()}
+    _request_counts.clear()
+    return out
+
+
 class HadesPacer:
     """Ritmo globale verso hades, condiviso da tutti i job del processo.
 
@@ -97,12 +111,14 @@ class HadesPacer:
             if delay > 0:
                 await asyncio.sleep(delay)
             self._next_at = time.monotonic() + self.gap_s * random.uniform(0.75, 1.25)
+        _request_counts.setdefault(current_job.get(), [0, 0])[0] += 1
 
     def on_success(self) -> None:
         self.consecutive_blocks = 0
         self.gap_s = max(settings.scraper_min_gap_s, self.gap_s * 0.98)
 
     def on_block(self, status: int) -> None:
+        _request_counts.setdefault(current_job.get(), [0, 0])[1] += 1
         self.consecutive_blocks += 1
         self.total_blocks += 1
         cooldown = min(
