@@ -102,25 +102,36 @@ docker compose exec -T backend python scripts/reparse_nlp.py --apply
 
 ## Passaggio del 2026-10-05 sera (PC → Mac, tutto sul Mac)
 
-Il 2026-10-05 il **PC** ha raccolto fino alle 18:00 (iPhone + tutte le auto:
-inventario, venduti, foto, dati strutturati delle auto); il Mac era fermo dal
-merge del 2026-10-03. Il merge normale PC → Mac **non basta**: aggiunge solo
-gli annunci nuovi e perderebbe venduti, ribassi, foto e dati auto registrati
-sul PC per annunci già presenti sul Mac. Si fa al contrario, tutto sul Mac:
+Il 2026-10-05 il **PC** ha raccolto fino alle 17:45 (iPhone + tutte le auto:
+inventario, venduti, foto, dati strutturati delle auto, dalle 12:50 anche
+testa della coda e ricontrollo degli affari); il Mac era fermo dal merge del
+2026-10-03. Il merge normale PC → Mac **non basta**: aggiunge solo gli
+annunci nuovi e perderebbe venduti, ribassi, foto e dati auto registrati sul
+PC per annunci già presenti sul Mac. Si fa al contrario, tutto sul Mac.
+
+**Novità di compose (Goal Version P0):** due servizi con la stessa immagine.
+`backend` = solo dashboard e API (scheduler sempre spento, si ricostruisce
+quando vuoi senza fermare la raccolta); `collector` = raccolta (sweep, testa
+della coda, inventari, foto, alert, bot Telegram), nessuna porta esposta. La
+pagina Automazioni dell'API inoltra i comandi al `collector`.
 
 ```bash
 git pull
+# 0. .env di root del Mac: SCHEDULER_ENABLED assente o true (ora vale solo per
+#    il collector), AUTO_FULL_CATEGORY=true (scelta del 5/10, vedi sotto),
+#    nessuna riga COLLECTOR_URL (il default http://collector:8000 è giusto).
 # 1. Backup del DB attuale del Mac (diventerà la SORGENTE del merge)
 docker compose exec -T db pg_dump -U postgres -d reseller -Fc > backup_mac_$(date +%F).dump
 # 2. Il vecchio DB del Mac in un DB temporaneo
 docker compose exec -T db createdb -U postgres reseller_mac
 docker compose exec -T db pg_restore -U postgres --no-owner -d reseller_mac < backup_mac_AAAA-MM-GG.dump
-# 3. Il dump del PC DIVENTA il principale (sostituisce reseller)
-docker compose stop backend
+# 3. Il dump del PC DIVENTA il principale (sostituisce reseller). Prima si
+#    ferma tutto ciò che scrive nel DB.
+docker compose stop backend collector
 docker compose exec -T db dropdb -U postgres reseller
 docker compose exec -T db createdb -U postgres reseller
 docker compose exec -T db pg_restore -U postgres --no-owner -d reseller < reseller_pc_2026-10-05.dump
-docker compose up -d --build backend          # applica le migrazioni mancanti
+docker compose up -d --build backend          # applica le migrazioni mancanti; NON raccoglie
 # 4. Merge vecchio Mac → nuovo principale: entrano gli annunci che aveva solo il Mac
 docker compose exec -T backend sh -c 'SOURCE_DATABASE_URL=${DATABASE_URL%/reseller}/reseller_mac TARGET_DATABASE_URL=$DATABASE_URL python scripts/merge_instances.py --dry-run'
 docker compose exec -T backend sh -c 'SOURCE_DATABASE_URL=${DATABASE_URL%/reseller}/reseller_mac TARGET_DATABASE_URL=$DATABASE_URL python scripts/merge_instances.py --yes'
@@ -128,10 +139,32 @@ docker compose exec -T db dropdb -U postgres reseller_mac
 # 5. Foto (passo 6 sopra) e ricalcoli
 docker compose exec -T backend sh -c "mkdir -p /data/media && tar xzf - -C /data/media" < media_pc_2026-10-05.tar.gz
 docker compose exec -T backend python scripts/backfill_car_variants.py --apply
+# 6. Solo adesso la raccolta (e il backup notturno)
+docker compose up -d --build collector backup
+docker compose logs -f collector              # "Scheduler started with jobs: [...]", poi "Testa smartphone: +N nuovi"
 ```
-Nel `.env` di root del Mac: `SCHEDULER_ENABLED=true`, `AUTO_FULL_CATEGORY=true`;
-sul PC `SCHEDULER_ENABLED=false` (solo dashboard). Lo stato del ciclo
-d'inventario auto viaggia nel dump (`app_settings`): il Mac lo continua.
+
+Lo stato del ciclo d'inventario auto viaggia nel dump (`app_settings`): il
+Mac lo continua. Dopo un'ora, in **Qualità del dato** compaiono le richieste
+di oggi per lavoro (`testa`, `sweep`, `inventario`, `ricontrollo_affari`…):
+è il budget reale dallo stesso IP.
+
+**Tutte le auto sullo stesso IP (`AUTO_FULL_CATEGORY=true`).** La Goal Version
+(§4) consiglia di spegnerle sul nodo degli iPhone: la testa delle auto costa
+1.440 richieste al giorno e la fetta notturna ~1.400. Resta accesa per scelta
+del 5/10; il segnale per spegnerla (`AUTO_FULL_CATEGORY=false` nel `.env`,
+poi `docker compose up -d collector`) è la riga "Richieste oggi" con blocchi,
+o pause del governatore nei log (`Governatore: … in pausa`).
+
+**Sul PC, dopo il dump:** via i container avviati a mano e la riga del `.env`
+che puntava a uno di loro; da lì solo dashboard.
+
+```bash
+docker rm -f boh-collector boh-photos boh-head
+# nel .env di root del PC: togliere la riga COLLECTOR_URL=http://boh-collector:8000
+#                          (SCHEDULER_ENABLED=false resta)
+docker compose up -d backend
+```
 
 ## Dopo il merge
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure

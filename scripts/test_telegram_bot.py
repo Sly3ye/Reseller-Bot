@@ -96,5 +96,20 @@ ck("stesso affare, non un doppione", len(db.data["deals"]), 1)
 bot.apply_action(db, "t", "L1", "x")
 ck("scarta = triage", db.data["live_opportunities_tech"][0]["triage"], "scartato")
 
+print("Messaggio d'offerta da copiare:")
+from backend.services.notifications import offer_message  # noqa: E402
+
+ck("cifra = offerta consigliata a 5 €", "a 385 €" in (offer_message(
+    {"askingPrice": 420, "suggestedOffer": 384.7}, "smartphone") or ""), True)
+ck("senza offerta: 90% del tetto", "a 145 €" in (offer_message(
+    {"askingPrice": 200, "maxBid": 160}, "smartphone", repair=True) or ""), True)
+ck("da riparare: 'così com'è'", "così com'è" in (offer_message(
+    {"askingPrice": 200, "maxBid": 160}, "smartphone", repair=True) or ""), True)
+ck("mai sopra il prezzo chiesto", "al prezzo indicato" in (offer_message(
+    {"askingPrice": 300, "suggestedOffer": 310}, "smartphone") or ""), True)
+ck("auto: centinaia e visione", "offrirei 8.300 €" in (offer_message(
+    {"askingPrice": 9000, "suggestedOffer": 8330}, "automobile") or ""), True)
+ck("niente cifra, niente messaggio", offer_message({"askingPrice": 300}, "smartphone"), None)
+
 print(f"\n=== {_p} PASS / {_f} FAIL ===")
 raise SystemExit(1 if _f else 0)

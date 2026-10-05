@@ -227,6 +227,39 @@ avere 30 affari veri.
 | **P2** | Profitto atteso per ora; valore donatore e lotti; segnale riposizionamenti; prezzo di vendita consigliato; `listing_events` + `market_daily` + `price_models` | 2–4 settimane |
 | **P3** | Con i dati: fattore di trattativa e P(accetta) dalla pipeline, riuscita delle riparazioni, stagionalità, pavimento di riacquisto (se le fonti sono consultabili) | 4–8 settimane |
 
+### Stato al 2026-10-05 sera
+
+**P0, fatto in codice** (commit `7bd66d3`):
+- alert con la foto del CDN, ripiego sul testo, consegna reale registrata;
+- bottoni ed esiti da Telegram;
+- margine dello sweep a 20 minuti;
+- `collector` e `backend` separati in compose.
+
+**P0, manca:**
+- il nodo unico (A5), che è hardware;
+- spegnere le auto complete in produzione. Rimandato per scelta: si decide con i
+  numeri della riga "Richieste oggi" (vedi MERGE-DB, passaggio del 5/10).
+
+**P1, fatto** (commit `7bd66d3`, `86077fb`, `90edfa4` e il successivo):
+- testa della coda ogni 60 s, che salva senza foto e notifica nello stesso giro;
+- ricontrollo degli affari con la metrica dell'emivita; i candidati si
+  registrano anche senza Telegram;
+- allarmi di deriva orari;
+- governatore: contatori per job in `request_log` più pausa dei lavori bassi
+  con la rete instabile o dopo un blocco;
+- messaggio d'offerta pronto da copiare nell'alert (§3.5): si tocca, si copia,
+  si incolla al venditore.
+
+Primo giro reale sul PC, alle 12:50: +8 iPhone e +100 auto alla prima lettura
+della testa, 5 auto registrate come affare e messe in ricontrollo.
+
+**P1, manca:**
+- quote giornaliere per job: si fissano dopo una settimana di `request_log`,
+  non a occhio;
+- antiripubblicazione con pHash per gli annunci salvati dalla testa. La foto
+  arriva dopo, quindi per ora vale solo il controllo venditore + variante +
+  prezzo.
+
 ### Come si sa che ci siamo
 
 - Latenza indicizzazione→alert **p95 ≤ 2 min**; alert falliti **= 0**.

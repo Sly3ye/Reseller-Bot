@@ -140,6 +140,34 @@ _DEAL_HEAD = {
 }
 
 
+def offer_message(item: dict[str, Any], category: str, repair: bool = False) -> str | None:
+    """Primo messaggio al venditore, da toccare e copiare (Goal Version §3.5):
+    la gara si vince al primo messaggio credibile, non alla notifica.
+
+    Cifra = offerta consigliata (come nella riga sopra), altrimenti il 90% del
+    tetto; arrotondata a 5 € (iPhone) o 100 € (auto), mai sopra il prezzo chiesto.
+    """
+    asking = item.get("askingPrice")
+    amount = item.get("suggestedOffer")
+    if not amount and item.get("maxBid"):
+        amount = item["maxBid"] * 0.9
+    if not amount:
+        return None
+    step = 100 if category == "automobile" else 5
+    amount = int(round(amount / step) * step)
+    if amount <= 0:
+        return None
+    at_asking = bool(asking) and amount >= asking
+    eur = f"{amount:,}".replace(",", ".") + " €"
+    if category == "automobile":
+        price = "il prezzo richiesto mi va bene" if at_asking else f"offrirei {eur}"
+        return ("Buongiorno, l'auto è ancora disponibile? Posso venire a vederla a breve: "
+                f"se è come descritta {price}.")
+    how = "anche così com'è" if repair else "subito"
+    price = "al prezzo indicato" if at_asking else f"a {eur}"
+    return f"Ciao! È ancora disponibile? Lo prendo {how} {price} e passo a ritirarlo anche oggi."
+
+
 def _fmt_smart_deal(item: dict[str, Any], category: str) -> str:
     """Messaggio ricco da un'opportunità GIÀ arricchita (valore equo per
     variante, Deal Score, offerta consigliata, radar riparazioni, motivo AI):
@@ -233,6 +261,9 @@ def _fmt_smart_deal(item: dict[str, Any], category: str) -> str:
     if urgency:
         lines.append(f"🔥 Urgenza: {html.escape(', '.join(map(str, urgency)))} → tratta!")
 
+    message = offer_message(item, category)
+    if message:
+        lines.append(f"✉️ <code>{html.escape(message)}</code>")
     lines.append(str(item.get("url") or ""))
     return "\n".join(lines)
 
@@ -268,6 +299,9 @@ def _fmt_repair_deal(item: dict[str, Any]) -> str:
     place = item.get("location")
     if place:
         lines.append(f"📍 {html.escape(str(place))}")
+    message = offer_message(item, "smartphone", repair=True)
+    if message:
+        lines.append(f"✉️ <code>{html.escape(message)}</code>")
     lines.append(str(item.get("url") or ""))
     return "\n".join(lines)
 
