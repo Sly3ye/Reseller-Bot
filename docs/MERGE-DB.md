@@ -207,6 +207,22 @@ Sul Mac non servono né `SCHEDULER_SKIP` né `SCHEDULER_ONLY`: girano tutti i
 lavori, compresa la fetta auto, che sul PC il pomeriggio del 5/10 era spenta
 per dare la precedenza alle verifiche dei venduti iPhone.
 
+> **Eseguito il 2026-10-06 notte sul Mac** (dump PC del 5/10 come principale,
+> vecchio Mac dentro). Il Mac aveva raccolto dal 3 al 5/10 (54.776 iPhone).
+> Esito: iPhone 38.078 → 43.415 (+5.337 visti solo dal Mac), auto 78.093 →
+> 81.718 (+3.625, storico BMW del Mac), +1.219 righe di storico prezzi, +173
+> target (BMW per generazione, quasi tutti spenti). Poi `seed_targets.py`
+> (29 iPhone dal 12 + 2 BMW per generazione), `archive_out_of_scope.py --apply`
+> (122 fuori ambito arrivati dal Mac), backfill memoria/modello, reparse NLP,
+> varianti auto, foto del PC (8,7 GB). Differenze dalla procedura:
+> - il vecchio DB del Mac **non** è stato cancellato: `alter database reseller
+>   rename to reseller_mac` (è già la sorgente del passo 2), poi `createdb` +
+>   `pg_restore` del dump PC. Si elimina a mano quando il nuovo principale è
+>   verificato;
+> - il merge ora **salta gli annunci già nell'archivio fuori ambito** del
+>   principale (`<tabella>_archivio`, migrazione 28): senza, 11.450 iPhone
+>   archiviati sul PC tornavano nella tabella viva.
+
 ## Dopo il merge
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure
   forzalo — `market_trends` (curve/momentum) si ricostruisce dai nuovi annunci.

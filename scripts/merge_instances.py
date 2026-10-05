@@ -169,6 +169,16 @@ def _merge_opportunities(
             existing_urls.add(r["listing_url"])
             existing_ids.add(r["id"])
 
+    # Annunci che il principale ha spostato in archivio (es. iPhone fuori ambito,
+    # migrazione 28): sono già suoi, non vanno rimessi nella tabella viva.
+    archived_ids: set[str] = set()
+    archived_urls: set[str] = set()
+    if _columns(tgt, f"{table}_archivio"):
+        for r in tgt.execute(f"select id, listing_url from {table}_archivio").fetchall():  # noqa: S608
+            archived_ids.add(r["id"])
+            archived_urls.add(r["listing_url"])
+    rows = [r for r in rows if r["id"] not in archived_ids and r.get("listing_url") not in archived_urls]
+
     src_ids: list[str] = []
     inserted = 0
     for row in rows:
