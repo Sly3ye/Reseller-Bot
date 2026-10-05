@@ -2322,6 +2322,15 @@ function NegotiationAssistant(props: {
       color: p?.motivated ? "oklch(0.75 0.15 150)" : undefined,
     });
   }
+  if (item.signals && item.signals.reasons.length) {
+    // Fatti dalla storia dell'annuncio: chi riposiziona o ripubblica vuole vendere.
+    stats.push({
+      label: item.signals.level === "alta" ? "Annuncio · 📣 vuole vendere" : "Storia dell'annuncio",
+      value: item.signals.reasons[0],
+      hint: item.signals.reasons.slice(1).join(" · ") || undefined,
+      color: item.signals.level === "alta" ? "oklch(0.75 0.15 150)" : undefined,
+    });
+  }
   if (item.repair) {
     stats.push({
       label: "Margine netto post-riparazione",

@@ -1496,7 +1496,66 @@ def list_opportunities(
         items.sort(key=lambda it: it.get("score") or 0, reverse=True)
 
     total = len(items)
-    return {"items": items[offset : offset + limit], "total": total, "facets": facets}
+    return {"items": attach_signals(items[offset : offset + limit]), "total": total, "facets": facets}
+
+
+# Online da almeno tanti giorni senza mai ribassare: annuncio fermo, il
+# venditore può accettare un'offerta (o è rigido: lo dice la trattativa).
+STALE_DAYS = 21
+
+
+def listing_signals(event_counts: dict[str, Any] | None, days_online: int | None) -> dict[str, Any] | None:
+    """Segnali di motivazione dall'annuncio stesso (Goal Version §1.5): fatti
+    dalla storia in listing_events, non stime. Chi riposiziona o ripubblica
+    vuole visibilità, cioè vendere; chi ha già ribassato sta scendendo."""
+    ev = event_counts or {}
+    bumps30, drops, relisted = ev.get("bumps30") or 0, ev.get("drops") or 0, ev.get("relisted") or 0
+    reasons: list[str] = []
+    if bumps30:
+        reasons.append(f"riposizionato {bumps30}× in 30 giorni")
+    if relisted:
+        reasons.append(f"ripubblicato {relisted}×")
+    if drops >= 2:
+        # Un ribasso solo lo mostra già "Già ribassato"; due sono una tendenza.
+        reasons.append(f"ribassato {drops}×")
+    elif not drops and days_online is not None and days_online >= STALE_DAYS:
+        reasons.append(f"online da {days_online} giorni senza ribassi")
+    if not reasons:
+        return None
+    level = "alta" if bumps30 >= 2 or relisted or drops >= 2 else "media"
+    last_bump = ev.get("last_bump")
+    return {"bumps30": bumps30, "lastBumpAt": last_bump.isoformat() if hasattr(last_bump, "isoformat") else last_bump,
+            "drops": drops, "relisted": relisted, "reasons": reasons, "level": level}
+
+
+def attach_signals(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copie degli item con ``signals`` (una query per la pagina, non per il feed intero)."""
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    ids = [str(it["id"]) for it in items if it.get("id")]
+    counts: dict[str, dict[str, Any]] = {}
+    if ids and has_column("listing_events", "kind"):
+        try:
+            with _get_pool().connection() as conn:
+                rows = conn.execute(
+                    """
+                    select listing_id::text as id,
+                           count(*) filter (where kind = 'riposizionato' and at > now() - interval '30 days') as bumps30,
+                           max(at) filter (where kind = 'riposizionato') as last_bump,
+                           count(*) filter (where kind = 'prezzo' and price < old_price) as drops,
+                           count(*) filter (where kind in ('ripubblicato', 'ricomparso')) as relisted
+                    from public.listing_events
+                    where listing_id = any(%s::uuid[])
+                      and kind in ('riposizionato', 'prezzo', 'ripubblicato', 'ricomparso')
+                    group by listing_id
+                    """,
+                    (ids,),
+                ).fetchall()
+            counts = {r["id"]: dict(r) for r in rows}
+        except Exception:
+            logger.exception("Segnali dell'annuncio non disponibili")
+    return [{**it, "signals": listing_signals(counts.get(str(it.get("id"))), it.get("daysOnline"))}
+            for it in items]
 
 
 def _price_bands(points: list[tuple[float, float]]) -> list[dict[str, Any]]:

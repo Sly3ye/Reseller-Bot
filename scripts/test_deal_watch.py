@@ -1,4 +1,4 @@
-"""Test di emivita degli affari, allarmi di deriva e riposizionamenti, zero DB.
+"""Test di emivita, deriva, riposizionamenti e segnali dell'annuncio, zero DB.
 
 Esegui dalla root:  python scripts/test_deal_watch.py
 """
@@ -57,6 +57,19 @@ ck("data mostrata 4 giorni dopo = riposizionato", is_bump("2026-10-05T12:00:00+0
 ck("stessa ora in un altro fuso = niente", is_bump("2026-10-01T10:30:00+02:00", first), None)
 ck("data senza fuso letta come UTC", is_bump("2026-10-01 08:00:00", "2026-10-01T08:00:00+00:00"), None)
 ck("date mancanti o rotte = niente", (is_bump(None, first), is_bump("rotta", first)), (None, None))
+
+print("Segnali dell'annuncio:")
+from backend.services.reads import listing_signals  # noqa: E402
+
+ck("nessun evento, annuncio fresco = niente", listing_signals(None, 3), None)
+ck("fermo da 30 giorni senza ribassi", listing_signals({}, 30)["reasons"], ["online da 30 giorni senza ribassi"])
+ck("fermo = livello medio", listing_signals({}, 30)["level"], "media")
+s = listing_signals({"bumps30": 2, "drops": 1}, 40)
+ck("riposizionato 2 volte = vuole vendere", (s["level"], s["reasons"][0]), ("alta", "riposizionato 2× in 30 giorni"))
+ck("con un ribasso non si dice 'senza ribassi'", "online da 40 giorni senza ribassi" in s["reasons"], False)
+ck("ripubblicato = alta", listing_signals({"relisted": 1}, 2)["level"], "alta")
+ck("un ribasso solo non è un segnale (c'è già 'Già ribassato')", listing_signals({"drops": 1}, 5), None)
+ck("due ribassi = tendenza", listing_signals({"drops": 2}, 5)["reasons"], ["ribassato 2×"])
 
 print(f"\n=== {_p} PASS / {_f} FAIL ===")
 raise SystemExit(1 if _f else 0)

@@ -112,6 +112,12 @@ export type ApiOpportunity = {
   sellerType: string | null;
   sellerActiveCount: number | null;
   sellerProfile: SellerProfile | null;
+  /** Segnali dell'annuncio stesso (storia in listing_events): riposizionamenti,
+   *  ribassi, ripubblicazioni, giorni online senza ribassi. Solo nella pagina. */
+  signals?: {
+    bumps30: number; lastBumpAt: string | null; drops: number; relisted: number;
+    reasons: string[]; level: "alta" | "media" | null;
+  } | null;
   defects: string[];
   urgencyFlags: string[];
   features: string[];
