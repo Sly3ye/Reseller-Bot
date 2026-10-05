@@ -85,6 +85,34 @@ async def get_opportunities(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/car-models")
+async def get_car_models_endpoint() -> dict:
+    """Auto: modelli di prezzo per generazione (quanto pesano anno, km, kW...)."""
+    import asyncio  # noqa: PLC0415
+
+    from backend.services.car_intel import car_models_overview  # noqa: PLC0415
+
+    return await asyncio.to_thread(car_models_overview)
+
+
+@router.get("/car-value")
+async def get_car_value_endpoint(
+    variant: str = Query(..., description="modello@generazione, es. bmw-serie-1@e87"),
+    year: int = Query(...),
+    km: int = Query(...),
+    kw: int | None = Query(default=None),
+    diesel: bool = Query(default=False),
+    automatic: bool = Query(default=False),
+    coupe: bool = Query(default=False),
+) -> dict:
+    """Auto: quanto vale (± errore), costi d'acquisto e tetto d'acquisto."""
+    import asyncio  # noqa: PLC0415
+
+    from backend.services.car_intel import car_value  # noqa: PLC0415
+
+    return await asyncio.to_thread(car_value, variant, year, km, kw, diesel, automatic, coupe)
+
+
 @router.get("/car-hunt")
 async def get_car_hunt_endpoint(force: bool = Query(default=False)) -> dict:
     """Auto: matrice "dove cacciare" per modello@generazione (affari con margine

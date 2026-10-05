@@ -1634,6 +1634,7 @@ def get_time_to_sale(
     db = client or get_db()
     target_cat = _target_category(category)
     table = _opportunities_table(category)
+    auto = table.endswith("_auto")
     targets = _targets_for_category(db, target_cat)
     try:
         rows = _select_all(
@@ -1642,7 +1643,7 @@ def get_time_to_sale(
                 _cols(
                     table, "target_id", "variant_key", "color", "storage_gb",
                     "asking_price", "original_price", "found_at", "updated_at",
-                    "condition_tier", "title",
+                    "condition_tier", "title", "fuel", "km", "car_brand",
                 )
             )
             .in_("status", list(_SOLD_STATUSES))
@@ -1685,6 +1686,15 @@ def get_time_to_sale(
         color = row.get("color")
         storage = row.get("storage_gb")
         tier = row.get("condition_tier") or "buono"
+        if auto:
+            # Auto: le due dimensioni incrociabili sono alimentazione e fascia
+            # di km (al posto di colore e memoria), il modello è la generazione.
+            vk = row.get("variant_key") or ""
+            if CAR_GEN_SEP in vk:
+                model = f"{_car_model_name(_model_key(vk), row.get('car_brand'))} {car_generation_label(vk)}"
+            color = row.get("fuel")
+            km = row.get("km")
+            storage = min(int(km) // 50000 * 50, 250) if km is not None else None
         records.append(
             {
                 "model": model,
@@ -1709,6 +1719,9 @@ def get_time_to_sale(
         "storages": sorted(storages),
         "conditions": sorted(conditions),
         "sampleSold": len(records),
+        # Come leggere le due dimensioni (auto: alimentazione e km).
+        "dimLabels": ({"color": "Alimentazione", "storage": "Km"} if auto else None),
+        "storageUnit": "km" if auto else "gb",
         # Spariti esclusi perché probabilmente non venduti (scaduti/ritirati).
         "excluded": dict(excluded),
     }

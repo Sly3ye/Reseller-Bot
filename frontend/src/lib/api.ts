@@ -570,6 +570,57 @@ export type CarHunt = {
   note: string;
 };
 
+export type CarPriceModel = {
+  variantKey: string;
+  label: string;
+  level: "generazione" | "modello" | null;
+  n: number;
+  errPct: number;
+  yearRange: [number, number];
+  kmRange: [number, number];
+  kwRange: [number, number] | null;
+  perYearPct: number | null;
+  per10kKmPct: number | null;
+  per10pctKwPct: number | null;
+  coupePct: number | null;
+  dieselPct: number | null;
+  automaticPct: number | null;
+};
+
+export async function fetchCarModels(signal?: AbortSignal): Promise<{ models: CarPriceModel[]; count: number }> {
+  const res = await fetch(`${API_BASE_URL}/api/car-models`, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`GET /api/car-models failed (${res.status})`);
+  return res.json();
+}
+
+export type CarValue = {
+  variantKey: string;
+  expected: number | null;
+  low?: number;
+  high?: number;
+  errPct?: number;
+  n?: number;
+  level?: string;
+  reason?: string;
+  costs?: ApiOpportunity["acquisitionCosts"];
+  maxBid?: number | null;
+};
+
+export async function fetchCarValue(
+  q: { variant: string; year: number; km: number; kw?: number | null; diesel?: boolean;
+       automatic?: boolean; coupe?: boolean },
+  signal?: AbortSignal,
+): Promise<CarValue> {
+  const p = new URLSearchParams({ variant: q.variant, year: String(q.year), km: String(q.km) });
+  if (q.kw) p.set("kw", String(q.kw));
+  if (q.diesel) p.set("diesel", "true");
+  if (q.automatic) p.set("automatic", "true");
+  if (q.coupe) p.set("coupe", "true");
+  const res = await fetch(`${API_BASE_URL}/api/car-value?${p.toString()}`, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`GET /api/car-value failed (${res.status})`);
+  return res.json();
+}
+
 export async function fetchCarHunt(signal?: AbortSignal): Promise<CarHunt> {
   const res = await fetch(`${API_BASE_URL}/api/car-hunt`, { cache: "no-store", signal });
   if (!res.ok) throw new Error(`GET /api/car-hunt failed (${res.status})`);
@@ -664,6 +715,9 @@ export type TimeToSaleData = {
   storages: number[];
   conditions: string[];
   sampleSold: number;
+  /** Auto: etichette delle due dimensioni (alimentazione, km). */
+  dimLabels?: { color: string; storage: string } | null;
+  storageUnit?: "gb" | "km";
 };
 
 export async function fetchTimeToSale(

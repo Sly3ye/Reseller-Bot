@@ -36,7 +36,11 @@ import {
   type CarFilters,
   type CarHunt,
   type CarHuntCell,
+  type CarPriceModel,
+  type CarValue,
   fetchCarHunt,
+  fetchCarModels,
+  fetchCarValue,
   type DealsSummary,
   type DepreciationCurve,
   type DepreciationData,
@@ -860,7 +864,8 @@ export default function FlipRadar() {
             />
           )}
 
-          {screen === "intel" && (
+          {screen === "intel" && !isTech && <CarIntelScreen />}
+          {screen === "intel" && isTech && (
             <IntelScreen
               loading={loading}
               error={error}
@@ -2565,8 +2570,9 @@ const TTS_DIM_LABEL: Record<TtsDim, string> = {
   storage: "Taglia",
 };
 
-function ttsStorageLabel(st: number | null): string {
+function ttsStorageLabel(st: number | null, unit: string = "gb"): string {
   if (st == null) return "n/d";
+  if (unit === "km") return st >= 250 ? "oltre 250k km" : `${st}–${st + 50}k km`;
   return st >= 1024 ? "1TB" : `${st}GB`;
 }
 
@@ -2768,6 +2774,148 @@ const DEFECT_FILTERS: [string, string][] = [
 ];
 
 /** Matrice opportunità modello × guasto: dove conviene cacciare. */
+/** Auto: i modelli di prezzo per generazione + calcolatore "quanto vale?". */
+function CarIntelScreen() {
+  const [models, setModels] = useState<CarPriceModel[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [calc, setCalc] = useState({ variant: "", year: 2016, km: 120000, kw: 0, diesel: false,
+                                     automatic: false, coupe: false });
+  const [value, setValue] = useState<CarValue | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchCarModels(ctrl.signal)
+      .then((d) => setModels(d.models))
+      .catch((e: unknown) => {
+        if (!ctrl.signal.aborted) setErr(e instanceof Error ? e.message : "Errore");
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!calc.variant) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetchCarValue({ ...calc, kw: calc.kw || null }, ctrl.signal).then(setValue).catch(() => null);
+    }, 300);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [calc]);
+
+  if (err) return <div style={{ color: "oklch(0.68 0.17 25)" }}>Modelli non disponibili: {err}</div>;
+  if (!models) return <div style={{ color: "oklch(0.6 0.01 250)" }}>Carico i modelli di prezzo…</div>;
+
+  const rows = models.filter((m) => !q || m.label.toLowerCase().includes(q.toLowerCase()));
+  const pct = (v: number | null, plus = true) => (v == null ? "—" : `${plus && v > 0 ? "+" : ""}${v}%`);
+  const cols = "1.8fr 0.5fr 0.6fr 0.75fr 0.8fr 0.8fr 0.7fr 0.7fr 0.7fr";
+  const head: CSSProperties = {
+    fontSize: "10.5px", fontWeight: 700, color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.04em",
+  };
+  const inp: CSSProperties = { padding: "6px 8px", borderRadius: "8px", fontSize: "13px", width: "100%" };
+  const sel = models.find((m) => m.variantKey === calc.variant);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "18px", animation: "fadeIn 0.2s ease" }}>
+      <div>
+        <div style={{ fontSize: "22px", fontWeight: 700 }}>Mercato auto</div>
+        <div style={{ fontSize: "13px", color: "oklch(0.6 0.01 250)", marginTop: "4px", lineHeight: 1.6 }}>
+          {models.length} generazioni con un modello di prezzo (dalle auto sane in vendita): quanto vale in meno
+          ogni anno e ogni 10.000 km, quanto pesano potenza, carrozzeria, diesel e cambio. &quot;—&quot; = il
+          campione non lo misura. Si aggiorna man mano che la raccolta cresce.
+        </div>
+      </div>
+
+      <div style={{ border: "1px solid var(--accent-border)", borderRadius: "12px", padding: "14px 16px",
+                    display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ fontSize: "15px", fontWeight: 700 }}>Quanto vale?</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: "10px" }}>
+          <select value={calc.variant} onChange={(e) => setCalc({ ...calc, variant: e.target.value })}
+                  style={{ ...inp, gridColumn: "span 2" }}>
+            <option value="">Scegli modello e generazione…</option>
+            {models.map((m) => <option key={m.variantKey} value={m.variantKey}>{m.label}</option>)}
+          </select>
+          <input type="number" value={calc.year} onChange={(e) => setCalc({ ...calc, year: Number(e.target.value) })}
+                 style={inp} title="Anno" placeholder="Anno" />
+          <input type="number" value={calc.km} step={5000} onChange={(e) => setCalc({ ...calc, km: Number(e.target.value) })}
+                 style={inp} title="Km" placeholder="Km" />
+          <input type="number" value={calc.kw || ""} onChange={(e) => setCalc({ ...calc, kw: Number(e.target.value) })}
+                 style={inp} title="Potenza kW" placeholder="kW (CV × 0,7355)" />
+          {(["diesel", "automatic", "coupe"] as const).map((k) => (
+            <label key={k} style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "13px" }}>
+              <input type="checkbox" checked={calc[k]} onChange={(e) => setCalc({ ...calc, [k]: e.target.checked })} />
+              {k === "diesel" ? "Diesel" : k === "automatic" ? "Automatico" : "Coupé/cabrio"}
+            </label>
+          ))}
+        </div>
+        {sel && (
+          <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)" }}>
+            Campione: anni {sel.yearRange[0]}–{sel.yearRange[1]}, km {sel.kmRange[0].toLocaleString("it-IT")}–
+            {sel.kmRange[1].toLocaleString("it-IT")}
+            {sel.kwRange ? `, ${sel.kwRange[0]}–${sel.kwRange[1]} kW (obbligatori per la stima)` : ""}
+          </div>
+        )}
+        {value && (value.expected != null ? (
+          <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", alignItems: "baseline" }}>
+            <div>
+              <div style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)" }}>Vale (sana)</div>
+              <div style={{ fontFamily: MONO, fontSize: "22px", fontWeight: 700 }}>{eur(value.expected)}</div>
+              <div style={{ fontSize: "11.5px", color: "oklch(0.6 0.01 250)" }}>
+                {eur(value.low ?? 0)}–{eur(value.high ?? 0)} (±{value.errPct}%, {value.n} auto
+                {value.level === "modello" ? ", tutte le generazioni" : ""})
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)" }}>Costi d&apos;acquisto</div>
+              <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 700 }}>
+                {value.costs?.total != null ? eur(value.costs.total) : "kW necessari"}
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "11px", color: "oklch(0.55 0.01 250)" }}>Pagala al massimo</div>
+              <div style={{ fontFamily: MONO, fontSize: "18px", fontWeight: 700, color: "var(--accent-text)" }}>
+                {value.maxBid != null ? eur(value.maxBid) : "—"}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: "13px", color: "oklch(0.78 0.14 80)" }}>Non stimabile: {value.reason}</div>
+        ))}
+      </div>
+
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cerca modello…"
+             style={{ padding: "7px 10px", borderRadius: "8px", fontSize: "13px", maxWidth: "280px" }} />
+      <div style={{ border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflowX: "auto" }}>
+        <div style={{ minWidth: "900px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: cols, gap: "10px", padding: "10px 16px", ...head }}>
+            <div>Modello · generazione</div><div>Auto</div><div>Errore</div><div>Ogni anno</div>
+            <div>Ogni 10k km</div><div>+10% kW</div><div>Coupé</div><div>Diesel</div><div>Automatico</div>
+          </div>
+          {rows.map((m) => (
+            <div key={m.variantKey}
+                 onClick={() => setCalc({ ...calc, variant: m.variantKey })}
+                 style={{ display: "grid", gridTemplateColumns: cols, gap: "10px", padding: "8px 16px",
+                          fontSize: "13px", cursor: "pointer", borderTop: "1px solid oklch(0.24 0.008 250)",
+                          opacity: m.level === "modello" ? 0.75 : 1 }}>
+              <div style={{ fontWeight: 600 }}>{m.label}{m.level === "modello" ? " ·" : ""}</div>
+              <div style={{ fontFamily: MONO }}>{m.n}</div>
+              <div style={{ fontFamily: MONO }}>±{m.errPct}%</div>
+              <div style={{ fontFamily: MONO }}>{pct(m.perYearPct)}</div>
+              <div style={{ fontFamily: MONO }}>{pct(m.per10kKmPct)}</div>
+              <div style={{ fontFamily: MONO }}>{pct(m.per10pctKwPct)}</div>
+              <div style={{ fontFamily: MONO }}>{pct(m.coupePct)}</div>
+              <div style={{ fontFamily: MONO }}>{pct(m.dieselPct)}</div>
+              <div style={{ fontFamily: MONO }}>{pct(m.automaticPct)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div style={{ fontSize: "11.5px", color: "oklch(0.55 0.01 250)" }}>
+        &quot;·&quot; = generazione con poche auto: stima dal modello intero (tutte le generazioni), errore più alto.
+      </div>
+    </div>
+  );
+}
+
 /** Auto: dove conviene cacciare (modello@generazione), dai modelli di prezzo. */
 function CarHuntScreen(props: { onOpenCell: (cell: CarHuntCell) => void }) {
   const [data, setData] = useState<CarHunt | null>(null);
@@ -3128,7 +3276,7 @@ function TimeToSaleScreen(props: { category: Category }) {
       const keys: Record<TtsDim, string> = {
         model: r.model,
         color: r.color ?? "n/d",
-        storage: ttsStorageLabel(r.storageGb),
+        storage: ttsStorageLabel(r.storageGb, data?.storageUnit),
       };
       const k = orderedGroup.length
         ? orderedGroup.map((d) => keys[d]).join(" · ")
@@ -3250,7 +3398,7 @@ function TimeToSaleScreen(props: { category: Category }) {
               </span>
               {(["model", "color", "storage"] as TtsDim[]).map((d) => (
                 <div key={d} onClick={() => toggleDim(d)} style={chip(groupBy.includes(d))}>
-                  {TTS_DIM_LABEL[d]}
+                  {(d !== "model" && data.dimLabels?.[d]) || TTS_DIM_LABEL[d]}
                 </div>
               ))}
               <span style={{ fontSize: "12px", color: "oklch(0.46 0.01 250)" }}>
@@ -3279,7 +3427,7 @@ function TimeToSaleScreen(props: { category: Category }) {
                 ))}
               </select>
               <select value={fColor} onChange={(e) => setFColor(e.target.value)} style={selectStyle}>
-                <option value="">Tutti i colori</option>
+                <option value="">{data.dimLabels ? `${data.dimLabels.color}: tutte` : "Tutti i colori"}</option>
                 {data.colors.map((c) => (
                   <option key={c} value={c}>
                     {c}
@@ -3287,10 +3435,10 @@ function TimeToSaleScreen(props: { category: Category }) {
                 ))}
               </select>
               <select value={fStorage} onChange={(e) => setFStorage(e.target.value)} style={selectStyle}>
-                <option value="">Tutte le taglie</option>
+                <option value="">{data.dimLabels ? `${data.dimLabels.storage}: tutti` : "Tutte le taglie"}</option>
                 {data.storages.map((s) => (
                   <option key={s} value={String(s)}>
-                    {ttsStorageLabel(s)}
+                    {ttsStorageLabel(s, data.storageUnit)}
                   </option>
                 ))}
               </select>

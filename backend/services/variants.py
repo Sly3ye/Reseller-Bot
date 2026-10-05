@@ -372,7 +372,10 @@ def car_generation_label(variant_key: str | None) -> str | None:
     for g in (_car_table()["models"].get(model_slug) or {}).get("generations", []):
         if g["code"] == code:
             return g["label"]
-    return code.upper()
+    m = re.fullmatch(r"(\d+)a?-serie", code)
+    if m:
+        return f"{m.group(1)}ª serie"   # "3a-serie" → "3ª serie"
+    return code.upper()                  # "e87" → "E87", "2007-2016" resta
 
 
 def year_fits_generation(variant_key: str | None, year: int | None) -> bool:
