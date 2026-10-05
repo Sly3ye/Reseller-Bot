@@ -5,8 +5,13 @@ pagina) e poi, con un'euristica, se è venduto, ritirato o scaduto. Prima di
 fidarsi dei tempi di vendita (C4) serve misurare quanto spesso sbaglia, con
 un controllo indipendente: una persona che apre la pagina nel browser.
 
-  python scripts/sample_removals.py            # crea il CSV da compilare
+  python scripts/sample_removals.py            # crea il CSV da compilare (iPhone)
+  python scripts/sample_removals.py --auto     # idem per le auto (venduti a fine
+                                               # ciclo d'inventario, senza verifica)
   python scripts/sample_removals.py --eval FILE  # misura sul CSV compilato
+
+Per le auto conta ancora di più: i venduti si dichiarano a fine ciclo senza
+aprire le pagine una per una. Va fatto entro un giorno dalla fine del ciclo.
 
 Il CSV (in scripts/data/) contiene annunci marcati spariti e, come controllo,
 alcuni ancora attivi, mescolati e senza dire quale è quale. Nella colonna
@@ -27,18 +32,20 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 TABLE = "live_opportunities_tech"
 
 
-def extract(n_removed: int = 40, n_active: int = 15) -> Path:
+def extract(n_removed: int = 40, n_active: int = 15, table: str = TABLE) -> Path:
     from backend.core.database import _get_pool  # noqa: PLC0415
 
     with _get_pool().connection() as conn:
         removed = conn.execute(
-            f"select id, listing_url, title, asking_price, status from public.{TABLE} "
+            f"select id, listing_url, title, asking_price, status from public.{table} "
             f"where status in ('venduto_rimosso', 'scaduto') "
-            f"and updated_at >= now() - interval '2 days' order by random() limit %s",
-            (n_removed,),
+            # Auto: la data di sparizione è l'ultima volta vista (fino a un ciclo
+            # d'inventario prima della fine del ciclo), quindi finestra più larga.
+            f"and updated_at >= now() - make_interval(days => %s) order by random() limit %s",
+            (7 if table.endswith("_auto") else 2, n_removed),
         ).fetchall()
         active = conn.execute(
-            f"select id, listing_url, title, asking_price, status from public.{TABLE} "
+            f"select id, listing_url, title, asking_price, status from public.{table} "
             f"where status in ('nuovo', 'visto') order by random() limit %s",
             (n_active,),
         ).fetchall()
@@ -47,7 +54,8 @@ def extract(n_removed: int = 40, n_active: int = 15) -> Path:
     rows = [dict(r) for r in removed + active]
     random.shuffle(rows)
     DATA_DIR.mkdir(exist_ok=True)
-    out = DATA_DIR / f"validazione_venduti_{datetime.now(timezone.utc):%Y%m%d}.csv"
+    kind = "auto" if table.endswith("_auto") else "iphone"
+    out = DATA_DIR / f"validazione_venduti_{kind}_{datetime.now(timezone.utc):%Y%m%d}.csv"
     with out.open("w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["id", "url", "titolo", "prezzo", "stato_programma", "online_ora"])
@@ -90,5 +98,7 @@ if __name__ == "__main__":
         evaluate(Path(sys.argv[sys.argv.index("--eval") + 1]).resolve()
                  if Path(sys.argv[sys.argv.index("--eval") + 1]).exists()
                  else DATA_DIR / sys.argv[sys.argv.index("--eval") + 1])
+    elif "--auto" in sys.argv:
+        extract(table="live_opportunities_auto")
     else:
         extract()
