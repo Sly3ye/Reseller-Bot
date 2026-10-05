@@ -490,7 +490,10 @@ def _shape_opportunity(
         "marginPct": margin_pct,
         "priceDrop": drop,
         "description": row.get("description"),
-        "images": row.get("image_urls") or [],
+        # Foto salvate da noi; se non ci sono (auto: solo link; iPhone ancora in
+        # coda per il download) le URL originali di Subito, caricate dal browser.
+        "images": row.get("image_urls") or row.get("raw_image_urls") or [],
+        "imagesRemote": not row.get("image_urls") and bool(row.get("raw_image_urls")),
         "foundAt": row.get("found_at"),
         "publishedAt": row.get("published_at"),
         "daysOnline": days_online,
