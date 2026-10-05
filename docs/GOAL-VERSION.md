@@ -264,9 +264,27 @@ Due correzioni dai primi dati:
 **P1, manca:**
 - quote giornaliere per job: si fissano dopo una settimana di `request_log`,
   non a occhio;
-- antiripubblicazione con pHash per gli annunci salvati dalla testa. La foto
-  arriva dopo, quindi per ora vale solo il controllo venditore + variante +
-  prezzo.
+- antiripubblicazione con pHash per gli annunci salvati dalla testa. La
+  fusione notturna (venditore + variante + prezzo) copre già chi ripubblica
+  dallo stesso account; la foto servirebbe per gli account nuovi, e la sua
+  precisione va prima misurata a mano (G12).
+
+**Resilienza, fatto il 5/10 pomeriggio:**
+- **Verifiche dei venduti in coda nel DB**, a pezzi da 50 (§2.5, la parte più
+  lunga dell'inventario). L'inventario iPhone del 5/10 ha trovato 3.565
+  candidati: circa 6 ore di verifiche. Prima i rimossi si marcavano solo
+  alla fine, e spegnere la macchina buttava tutto. Ora ogni pezzo resta fatto
+  e la coda viaggia nel dump. Nel primo pezzo, 46 venduti su 50 candidati.
+  Il giro dell'inventario (circa 2 ore) riparte invece ancora da capo.
+- **Raccolta del PC sul `collector` di compose** dalle 14:02 (prova generale
+  della sera), con `SCHEDULER_SKIP` per lasciare la fetta auto al Mac.
+- **AI prima sui candidati** (§4.7): segnalati, salvati, in pipeline; poi i
+  più recenti.
+- **Latenza di scoperta solo sui freschi**: mediana 3,1 minuti dalla
+  pubblicazione; i tardivi, recuperati dall'inventario, contati a parte.
+- **Pannello "Obiettivi della Goal Version"**: le metriche qui sotto misurate
+  dal vivo. Il 5/10 sono 2 su 5: latenza p95 0,1 min, copertura 99,9%. Gli
+  altri aspettano Telegram e i primi affari in pipeline.
 
 **P2, iniziato il 5/10:**
 - `listing_events` (migrazione 26). I trigger nel DB registrano comparso,
@@ -277,6 +295,8 @@ Due correzioni dai primi dati:
   ribassato più volte, fermo da settimane (§1.5).
 - Profitto atteso per ora (§1.1), con l'ordinamento "€/ora" e i tempi
   modificabili in Impostazioni.
+- Storia dell'annuncio (comparso, ribassi, riposizionamenti, sparito) nella
+  riga espansa del feed.
 - Rinviati:
   - valore donatore: i listini aftermarket sono bassi e il valore di una
     parte originale usata non è verificabile;
