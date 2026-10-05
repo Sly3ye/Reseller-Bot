@@ -1026,6 +1026,8 @@ export type AppSettings = {
   car_alert_brands?: string[];
   car_alert_zones?: string[];
   car_alert_radius_km?: number;
+  /** Il margine deve superare N volte l'errore tipico del modello di prezzo (€). */
+  car_alert_min_err_multiple?: number;
   home_town?: string;
   // Tempi per il profitto per ora (ipotesi da tarare con i tuoi dati)
   tv_speed_kmh?: number;

@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 WATCH_TYPES = ("new_deal", "repair_deal")
 WATCH_DAYS = 7
-BATCH = 30
+BATCH = 20
 TABLES = {"smartphone": "live_opportunities_tech", "automobile": "live_opportunities_auto"}
 ACTIVE = ("nuovo", "visto")
 # Orizzonti della metrica (minuti): quota sparita entro ciascuno.
@@ -53,7 +53,8 @@ def _due(limit: int) -> list[dict[str, Any]]:
               and s.sent_at > now() - make_interval(days => %s)
               and now() - coalesce(s.last_checked_at, s.sent_at)
                   >= greatest(interval '10 minutes', (now() - s.sent_at) / 2)
-            order by coalesce(s.last_checked_at, s.sent_at)
+            -- Prima gli iPhone (il business principale), poi i più in ritardo.
+            order by (coalesce(s.category, 'smartphone') <> 'smartphone'), coalesce(s.last_checked_at, s.sent_at)
             limit %s
             """,
             (list(WATCH_TYPES), WATCH_DAYS, limit),

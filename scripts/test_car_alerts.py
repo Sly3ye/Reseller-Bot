@@ -23,9 +23,16 @@ def ck(desc, got, want):
 
 car = {"netMarginAfterCostsEur": 1500, "carModel": {"n": 30}, "risk": None, "conditionTier": "buono",
        "askingPrice": 9000, "variantKey": "alfa-romeo-giulietta@tutte", "location": "Milano (MI)"}
-cfg = {"car_alert_min_net_margin_eur": 800, "car_alert_max_price": 0, "car_alert_brands": [], "car_alert_zones": []}
+# Un criterio del compratore serve sempre: qui il budget.
+cfg = {"car_alert_min_net_margin_eur": 800, "car_alert_max_price": 20000, "car_alert_brands": [],
+       "car_alert_zones": []}
 print("Alert auto:")
 ck("affare base", matches(car, cfg), True)
+ck("nessun criterio del compratore: niente alert", matches(car, {**cfg, "car_alert_max_price": 0}), False)
+noisy = {**car, "carModel": {"n": 30, "errPct": 25}, "expectedPrice": 10000}
+ck("margine dentro l'errore del modello (1.500 < 25% di 10.000)", matches(noisy, cfg), False)
+ck("margine oltre l'errore del modello", matches({**noisy, "netMarginAfterCostsEur": 3000}, cfg), True)
+ck("soglia di rumore spenta (0)", matches(noisy, {**cfg, "car_alert_min_err_multiple": 0}), True)
 ck("margine sotto soglia", matches({**car, "netMarginAfterCostsEur": 500}, cfg), False)
 ck("senza modello di prezzo", matches({**car, "carModel": None}, cfg), False)
 ck("rischio alto", matches({**car, "risk": {"level": "alto"}}, cfg), False)

@@ -5411,11 +5411,16 @@ function SettingsScreen() {
         <div style={{ fontSize: "12px", color: "oklch(0.6 0.01 250)", marginTop: "-6px" }}>
           Solo auto sane con valore equo affidabile e rischio non alto. Marche e zone separate da virgola
           (vuoto = tutte); la zona si confronta con la località dell&apos;annuncio (es. &quot;Milano, MB, Lombardia&quot;).
+          Serve almeno un criterio (marca, zona, raggio o budget): su tutta Italia sarebbero migliaia al giorno.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: "12px" }}>
           {field("Margine netto minimo", num(s.car_alert_min_net_margin_eur ?? 800, (nv) => setS({ ...s, car_alert_min_net_margin_eur: nv }), "€"))}
           {field("Budget massimo (0 = nessuno)", num(s.car_alert_max_price ?? 0, (nv) => setS({ ...s, car_alert_max_price: nv }), "€"))}
           {field("Raggio da casa (0 = ovunque)", num(s.car_alert_radius_km ?? 0, (nv) => setS({ ...s, car_alert_radius_km: nv }), "km"))}
+          {field(
+            "Margine oltre l'errore del modello",
+            num(s.car_alert_min_err_multiple ?? 1, (nv) => setS({ ...s, car_alert_min_err_multiple: nv }), "×"),
+          )}
           {field(
             "Comune di casa",
             <input

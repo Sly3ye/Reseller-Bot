@@ -265,20 +265,46 @@ async def head_poll(category: str = "smartphone") -> dict[str, Any]:
     l'indicizzazione invece che a fine sweep (in media 7,5 min di attesa per
     gli iPhone, 15 per le auto) e senza aspettare il download delle gallerie.
     Lo sweep resta come rete di sicurezza per ciò che la testa non vede.
+
+    Subito indicizza a ondate (~ogni 10 minuti): un'ondata di auto supera
+    spesso i 100 annunci della pagina 1 (+100 misurati il 5/10). Se la pagina
+    è quasi tutta nuova si legge subito la successiva, fino a HEAD_MAX_PAGES.
     """
+    current_job.set(f"testa_{category}")
+    scraper = SubitoScraper(category_id=SWEEP_CATEGORY_ID.get(category))
+    new = checked = 0
+    for page in range(HEAD_MAX_PAGES):
+        outcome = await _head_page(scraper, category, page * SubitoScraper.PAGE_SIZE)
+        if outcome.get("error"):
+            return {"mode": "head", "category": category, "new": new, **outcome}
+        new += outcome["new"]
+        checked += outcome["checked"]
+        # Pagina satura (quasi tutta nuova): l'ondata continua oltre.
+        if outcome["listings"] < HEAD_MIN_PAGE or outcome["new"] < HEAD_SATURATED * outcome["listings"]:
+            break
+    if new:
+        logger.info("Testa %s: +%d nuovi, notificati subito", category, new)
+    return {"mode": "head", "category": category, "new": new, "checked": checked, "pages": page + 1}
+
+
+HEAD_MAX_PAGES = 3
+HEAD_MIN_PAGE = 50       # pagine più corte: niente da inseguire oltre
+HEAD_SATURATED = 0.9     # quota di nuovi oltre cui si legge la pagina successiva
+
+
+async def _head_page(scraper: SubitoScraper, category: str, start: int) -> dict[str, Any]:
+    """Una pagina della testa: salva i nuovi senza foto e li notifica subito."""
     from backend.tasks import notify_new_rows  # noqa: PLC0415
 
-    current_job.set(f"testa_{category}")
-    query = SWEEP_QUERY[category]
-    scraper = SubitoScraper(category_id=SWEEP_CATEGORY_ID.get(category))
     anti_min, anti_max = anti_spam_bounds(category)
     try:
-        payload = await scraper._fetch_page(query, SubitoScraper.PAGE_SIZE, 0, anti_min, anti_max)
+        payload = await scraper._fetch_page(SWEEP_QUERY[category], SubitoScraper.PAGE_SIZE, start,
+                                            anti_min, anti_max)
     except ScraperBlockedError as exc:
-        return {"mode": "head", "category": category, "blocked": True, "error": str(exc)[:120]}
+        return {"blocked": True, "error": str(exc)[:120]}
     except Exception as exc:  # noqa: BLE001 (rete giù: il prossimo giro riprova)
         logger.warning("Testa %s: %s", category, str(exc)[:120])
-        return {"mode": "head", "category": category, "error": str(exc)[:120]}
+        return {"error": str(exc)[:120]}
     listings = [
         listing for listing in scraper.select_ads(payload.get("ads") or [], min_price=anti_min,
                                                   max_price=anti_max)
@@ -291,7 +317,7 @@ async def head_poll(category: str = "smartphone") -> dict[str, Any]:
     while len(seen) > _HEAD_SEEN_MAX:
         seen.pop(next(iter(seen)))
     if not fresh:
-        return {"mode": "head", "category": category, "new": 0}
+        return {"new": 0, "checked": 0, "listings": len(listings)}
     targets = await asyncio.to_thread(get_active_targets, category)
     totals = await persist_by_target(
         scraper, category, fresh, build_target_index(targets), download_images=False
@@ -301,9 +327,7 @@ async def head_poll(category: str = "smartphone") -> dict[str, Any]:
             {category: totals["inserted_rows"]} if totals["inserted_rows"] else {},
             {category: totals["drop_events"]} if totals["drop_events"] else {},
         )
-    if totals["new"]:
-        logger.info("Testa %s: +%d nuovi, notificati subito", category, totals["new"])
-    return {"mode": "head", "category": category, "new": totals["new"], "checked": len(fresh)}
+    return {"new": totals["new"], "checked": len(fresh), "listings": len(listings)}
 
 
 # ------------------------------------------------------------ deep backfill
