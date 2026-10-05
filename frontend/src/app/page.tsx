@@ -5890,8 +5890,8 @@ function DataQualityPanel(props: { category: Category }) {
       {q.latency && q.latency.published24h ? (
         <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
           <span style={head}>Ritardo</span>
-          <span title="Dalla pubblicazione su Subito a quando l'abbiamo visto (annunci delle ultime 24h)">
-            scoperta: mediana {q.latency.discoveryP50Min} min · 95% entro {q.latency.discoveryP95Min} min
+          <span title="Dalla pubblicazione su Subito a quando l'abbiamo visto: annunci delle ultime 24h scoperti entro 2 ore (i tardivi sono contati a parte)">
+            scoperta dei freschi: mediana {q.latency.discoveryP50Min ?? "—"} min · 95% entro {q.latency.discoveryP95Min ?? "—"} min
           </span>
           <span
             style={{ color: q.latency.lateOver2h ? "oklch(0.78 0.14 80)" : undefined }}

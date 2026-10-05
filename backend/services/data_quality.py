@@ -131,7 +131,10 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
         # Latenza (G13): quanto arriviamo dopo la pubblicazione, sugli annunci
         # pubblicati nelle ultime 24h. "tardivi" = scoperti oltre 2h dopo:
         # di solito li ha recuperati l'inventario, non lo sweep (moderazione,
-        # PC spento, buchi). E dalla scoperta all'alert Telegram.
+        # PC spento, buchi), e si contano a parte. Mediana e p95 solo sui
+        # freschi (entro 2h): mescolati, il recupero dopo una macchina spenta
+        # dava "mediana 659 minuti" (5/10) e la misura non diceva più niente.
+        # E dalla scoperta all'alert Telegram.
         latency = conn.execute(
             f"""
             with d as (
@@ -140,8 +143,8 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
               where published_at >= now() - interval '24 hours' and found_at >= published_at
             )
             select count(*) as n,
-                   percentile_cont(0.5) within group (order by m) as p50,
-                   percentile_cont(0.95) within group (order by m) as p95,
+                   percentile_cont(0.5) within group (order by m) filter (where m <= 120) as p50,
+                   percentile_cont(0.95) within group (order by m) filter (where m <= 120) as p95,
                    count(*) filter (where m > 120) as late
             from d
             """

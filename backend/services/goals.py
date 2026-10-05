@@ -39,7 +39,7 @@ def evaluate_goals(dq: dict[str, Any], deals: list[dict[str, Any]],
         "key": "latenza", "label": "Scoperta → alert (p95)", "target": "≤ 2 min",
         "value": f"{p95} min" if p95 is not None else None,
         "ok": (p95 <= 2) if p95 is not None else None,
-        "detail": (f"{lat.get('alerts7d') or 0} affari segnalati in 7 giorni; pubblicazione → scoperta "
+        "detail": (f"{lat.get('alerts7d') or 0} affari segnalati in 7 giorni; pubblicazione → scoperta (annunci freschi) "
                    f"mediana {lat.get('discoveryP50Min')} min (comprende ~6 min di indicizzazione di Subito)"),
     })
 
