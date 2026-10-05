@@ -2581,6 +2581,12 @@ function NegotiationAssistant(props: {
         </div>
       )}
 
+      {!item.ai && props.category === "smartphone" && (
+        <div style={{ fontSize: "12px", color: "oklch(0.72 0.12 80)", lineHeight: 1.5 }}>
+          🤖 Non ancora letto dall&apos;AI: condizione e guasti vengono dalle regole automatiche, che
+          riconoscono circa metà dei guasti (misura del 5/10). Leggi la descrizione prima di offrire.
+        </div>
+      )}
       {item.ai && (
         <div
           style={{

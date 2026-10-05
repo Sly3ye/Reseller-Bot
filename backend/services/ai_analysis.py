@@ -179,26 +179,47 @@ def _field_writeback(
     return update
 
 
+# Sotto questa quota della mediana del modello un annuncio è o un affare o un
+# guasto non dichiarato: è lì che leggere la descrizione cambia la decisione.
+AI_CHEAP_RATIO = 0.8
+
+
 def ai_queue(table: str, limit: int) -> list[dict[str, Any]]:
-    """Annunci da analizzare, PRIMA i candidati (Goal Version §4.7): segnalati
-    come affare, salvati o in pipeline; poi i più recenti. Prima l'ordine era
-    casuale su ~49.000 attivi: un affare poteva aspettare giorni l'analisi."""
+    """Annunci da analizzare, in ordine di utilità (Goal Version §4.7):
+    1. candidati: segnalati come affare, salvati, in pipeline;
+    2. prezzo sotto l'80% della mediana del modello: affare vero o guasto non
+       dichiarato (le regole riconoscono solo il 48% dei guasti, verifica del 5/10);
+    3. modello non riconosciuto (o raro): l'AI lo legge dalla descrizione;
+    4. il resto. A parità, i più recenti. Prima l'ordine era casuale su ~49.000
+    attivi: un affare poteva aspettare giorni l'analisi."""
     from backend.core.database import _get_pool  # noqa: PLC0415
 
     with _get_pool().connection() as conn:
         rows = conn.execute(
             f"""
+            with med as (
+              select variant_key, percentile_cont(0.5) within group (order by asking_price) as m
+              from public.{table}
+              where status in ('nuovo', 'visto') and asking_price > 0
+              group by variant_key having count(*) >= 6
+            )
             select t.id, t.title, t.description, t.storage_gb, t.color, t.battery_pct,
                    t.defects_noted, t.features, t.variant_key
             from public.{table} t
+            left join med on med.variant_key = t.variant_key
             where t.status in ('nuovo', 'visto') and t.ai_analysis is null and t.description is not null
-            order by (t.triage = 'salvato'
-                      or exists (select 1 from public.sent_alerts s where s.listing_id = t.id)
-                      or exists (select 1 from public.deals d where d.listing_id = t.id)) desc nulls last,
+            order by case
+                       when t.triage = 'salvato'
+                            or exists (select 1 from public.sent_alerts s where s.listing_id = t.id)
+                            or exists (select 1 from public.deals d where d.listing_id = t.id) then 0
+                       when t.asking_price < %s * med.m then 1
+                       when med.m is null then 2
+                       else 3
+                     end,
                      t.found_at desc
             limit %s
             """,
-            (limit,),
+            (AI_CHEAP_RATIO, limit),
         ).fetchall()
     return [dict(r) for r in rows]
 
