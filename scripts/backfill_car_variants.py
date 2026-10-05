@@ -32,7 +32,7 @@ def main() -> int:
     with _get_pool().connection() as conn:
         rows = conn.execute(
             f"select a.id, a.title, a.description, a.year, a.km, a.variant_key, a.defects_noted, "
-            f"a.features, a.condition_tier, a.status, t.query, t.strict_filters "
+            f"a.features, a.condition_tier, a.status, a.car_brand, a.car_model, t.query, t.strict_filters "
             f"from public.{TABLE} a left join public.target_models t on t.id = a.target_id"
         ).fetchall()
 
@@ -45,7 +45,7 @@ def main() -> int:
         res = resolve_variant(
             "automobile", r["title"],
             {"year": r["year"], "km": km, "defects_noted": nlp["defects_noted"],
-             "features": nlp["features"]},
+             "features": nlp["features"], "car_brand": r["car_brand"], "car_model": r["car_model"]},
             query=r["query"], strict_filters=r["strict_filters"], description=r["description"],
         )
         after[res["variant_key"]] += 1

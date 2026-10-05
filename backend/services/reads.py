@@ -49,12 +49,16 @@ _SOLD_STATUSES = ("venduto_rimosso", "scaduto")
 # vuote dentro un try/except, che sembrano "dati non ancora sufficienti").
 _TECH_ONLY_COLUMNS = frozenset({"storage_gb", "battery_pct", "ai_analysis"})
 _AUTO_ONLY_COLUMNS = frozenset({"year", "km", "transmission", "fuel"})
+# Dati strutturati auto (migrazione 23): solo se la colonna esiste già.
+_CAR_STRUCT_COLUMNS = frozenset({"car_brand", "car_model", "car_version", "power_kw", "body_type",
+                                 "doors", "register_month", "emission_class"})
 
 
 def _cols(table: str, *names: str) -> str:
     """Lista di colonne per una select, senza quelle assenti in quel verticale."""
-    drop = _TECH_ONLY_COLUMNS if table.endswith("_auto") else _AUTO_ONLY_COLUMNS
-    cols = [n for n in names if n not in drop]
+    drop = _TECH_ONLY_COLUMNS if table.endswith("_auto") else _AUTO_ONLY_COLUMNS | _CAR_STRUCT_COLUMNS
+    cols = [n for n in names if n not in drop
+            and (n not in _CAR_STRUCT_COLUMNS or has_column(table, n))]
     # Data di pubblicazione su Subito (migrazione 19) accanto a found_at: è la
     # vera nascita dell'annuncio (vedi _born). Solo se la colonna esiste già.
     if "found_at" in cols and has_column(table, "published_at"):
@@ -364,6 +368,19 @@ def _seller_profiles(
     return profiles
 
 
+def car_attributes(row: dict[str, Any]) -> dict[str, Any]:
+    """Attributi di un'auto per il modello di prezzo: kW, coupé/cabrio,
+    diesel, automatico (dai campi strutturati, o dal testo se mancano)."""
+    text = f"{row.get('title') or ''} {row.get('description') or ''}"
+    body = (row.get("body_type") or "").lower()
+    return {
+        "kw": row.get("power_kw"),
+        "coupe": "coup" in body or "cabrio" in body or (not body and car_is_coupe(text)),
+        "diesel": "diesel" in (row.get("fuel") or "").lower(),
+        "automatic": (row.get("transmission") or "").lower().startswith(("autom", "sequen")),
+    }
+
+
 def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
     """Modello prezzo ~ età + km per VARIANTE auto (modello@generazione), dagli
     annunci attivi SANI con anno e km. Varianti incerte (@nd) o escluse
@@ -372,7 +389,8 @@ def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
     try:
         rows = _select_all(
             lambda: db.table(table)
-            .select("variant_key, year, km, asking_price, condition_tier, title, description")
+            .select(_cols(table, "variant_key", "year", "km", "asking_price", "condition_tier", "title",
+                          "description", "power_kw", "body_type", "fuel", "transmission"))
             .in_("status", list(_ACTIVE_STATUSES))
         )
     except Exception:
@@ -387,8 +405,9 @@ def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
         price = _to_float(r.get("asking_price"))
         if (r.get("year") and r.get("km") is not None and price
                 and year_fits_generation(vk, r["year"])):
-            coupe = car_is_coupe(f"{r.get('title') or ''} {r.get('description') or ''}")
-            by_variant.setdefault(vk, []).append((int(r["year"]), int(r["km"]), price, coupe))
+            by_variant.setdefault(vk, []).append(
+                {"year": int(r["year"]), "km": int(r["km"]), "price": price, **car_attributes(r)}
+            )
     models = {}
     for vk, pts in by_variant.items():
         fitted = fit_car_price_model(pts)
@@ -654,6 +673,10 @@ def _row_model(row: dict[str, Any], targets: dict[str, str]) -> str | None:
             return label
     if mk and car_model_label(mk):
         return car_model_label(mk)
+    if mk and CAR_GEN_SEP in (row.get("variant_key") or ""):
+        # Auto con dati strutturati di Subito: il modello è marca + modello
+        # ("Bmw Serie 1"), non il target che l'ha trovata.
+        return _model_label(mk)
     return targets.get(row.get("target_id"))
 
 
@@ -852,15 +875,16 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     car_model = ctx["car_models"].get(variant_key) if variant_key else None
     if car_model and not year_fits_generation(variant_key, row.get("year")):
         car_model = None  # anno incompatibile con la generazione: niente stima
-    coupe = car_is_coupe(f"{row.get('title') or ''} {row.get('description') or ''}")
-    expected = car_expected_price(car_model, row.get("year"), row.get("km"), coupe)
+    attrs = car_attributes(row) if ctx["target_cat"] == "automobile" else {}
+    expected = car_expected_price(car_model, row.get("year"), row.get("km"), attrs)
     if expected and shaped["askingPrice"]:
         # Prezzo atteso di un'auto SANA di quell'anno e km nella sua generazione.
         shaped["expectedPrice"] = expected
         shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
     shaped["carModel"] = (
         {k: car_model.get(k) for k in ("n", "errPct", "perYearPct", "per10kKmPct", "yearRange",
-                                       "kmRange", "coupePct")}
+                                       "kmRange", "kwRange", "per10pctKwPct", "coupePct",
+                                       "dieselPct", "automaticPct")}
         if car_model else None
     )
 
@@ -888,7 +912,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         km=row.get("km"),
         year=row.get("year"),
         car_model=car_model,
-        coupe=coupe,
+        car_attrs=attrs,
         sold_reference=sold_reference,
         sold_reference_is_tier_specific=sold_tier_specific,
         has_images=bool(row.get("image_urls")),

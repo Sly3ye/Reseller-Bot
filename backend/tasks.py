@@ -95,7 +95,8 @@ def get_existing_opportunities(
         return {}
     with_published = has_column(table, "published_at", client)
     can_raw = has_column(table, "raw_image_urls", client)
-    cols = "id, listing_url, asking_price, image_urls"
+    can_car = table.endswith("_auto") and has_column(table, "car_model", client)
+    cols = "id, listing_url, asking_price, image_urls" + (", car_model" if can_car else "")
     rows = (
         client.table(table)
         .select(cols + (", published_at" if with_published else ""))
@@ -112,6 +113,9 @@ def get_existing_opportunities(
             # False se la colonna manca: allora non si tenta il riempimento.
             "missing_published": with_published and not row.get("published_at"),
             "can_raw": can_raw,
+            # Auto salvata prima della migrazione 23: i dati strutturati si
+            # riempiono la prima volta che l'annuncio viene rivisto.
+            "missing_car": can_car and not row.get("car_model"),
         }
     return result
 
@@ -165,6 +169,7 @@ def _opportunity_payload(
                 "km": meta.get("km"),
                 "transmission": meta.get("transmission"),
                 "fuel": meta.get("fuel"),
+                **{k: meta.get(k) for k in CAR_FIELDS},
                 "defects_noted": meta.get("defects_noted"),
                 "urgency_flags": meta.get("urgency_flags"),
             }
@@ -286,6 +291,8 @@ def apply_price_updates(
             patch["raw_image_urls"] = listing.metadata["raw_images"]
         # Righe salvate prima della migrazione 19: la data di pubblicazione
         # arriva la prima volta che l'annuncio viene rivisto.
+        if row.get("missing_car") and (listing.metadata or {}).get("car_model"):
+            patch.update({k: listing.metadata.get(k) for k in CAR_FIELDS})
         published = (listing.metadata or {}).get("published_at")
         if row.get("missing_published") and published:
             patch["published_at"] = published
@@ -351,6 +358,9 @@ def apply_price_updates(
 
 
 ACTIVE_STATUSES = ("nuovo", "visto")
+# Dati strutturati delle auto (migrazione 23), dallo scraper ai record.
+CAR_FIELDS = ("car_brand", "car_model", "car_version", "power_kw", "body_type",
+              "doors", "register_month", "emission_class")
 
 
 def find_republished(

@@ -121,6 +121,11 @@ ck("etichetta", car("BMW 125i", "BMW 125i", 2016)["variant_label"], "BMW 125i F2
 ck("anno compatibile con F20", v.year_fits_generation("bmw-125i@f2x", 2016), True)
 ck("F20 del 2025: anno sbagliato", v.year_fits_generation("bmw-125i@f2x", 2025), False)
 ck("modello senza tabella", v.year_fits_generation("golf-gti", 2018), True)
+ck("dati Subito: generazione dal nome", v.structured_car_variant("BMW", "Serie 1 (E87)")[0], "bmw-serie-1@e87")
+ck("dati Subito: senza generazione", v.structured_car_variant("Fiat", "Panda")[0], "fiat-panda@tutte")
+ck("i dati Subito vincono sulla tabella",
+   v.resolve_variant("automobile", "BMW 123d", {"year": 2008, "km": 200000, "car_brand": "BMW",
+                     "car_model": "Serie 1 (E87)"}, query="BMW 123d")["variant_key"], "bmw-serie-1@e87")
 ck("modello senza tabella: fascia dal target",
    auto("Golf GTI", {"min_year": 2017, "max_year": 2020})["variant_key"], "golf-gti@2017-2020")
 ck("modello senza tabella e senza fascia", auto("Golf GTI", {})["variant_key"], "golf-gti")

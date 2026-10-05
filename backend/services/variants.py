@@ -9,9 +9,11 @@ le medie di mercato non mescolano prezzi di modelli diversi.
   Es. "iPhone 13 Pro Max 256GB" → ``iphone-13-pro-max-256``; un "iPhone 13
   128GB" → ``iphone-13-128``. Risolve l'overlap base/Pro *nell'analisi*, senza
   dover complicare la ricerca.
-- **Auto**: variante = (modello, generazione) dedotta dall'annuncio con la
-  tabella ``data/car_generations.json``: la sigla scritta ("F20") vince, poi
-  l'anno. Es. ``bmw-125i@f2x``. Generazione incerta (anno a cavallo di due, o
+- **Auto**: variante = (marca-modello, generazione) dai dati strutturati di
+  Subito ("BMW · Serie 1 (E87)" → ``bmw-serie-1@e87``; senza generazione nel
+  nome → ``@tutte``: l'età la gestisce il modello di prezzo). Annunci senza
+  dati strutturati: tabella ``data/car_generations.json``, dove la sigla
+  scritta ("F20") vince, poi l'anno. Es. ``bmw-125i@f2x``. Generazione incerta (anno a cavallo di due, o
   fuori tabella) → ``bmw-125i@nd``: pool a parte, mai mescolato. Annunci di un
   altro modello ("X1 23d") o di ricambi ("Motore BMW 123d") → ``…@escluso``.
   Modelli senza tabella: ripiego sul target (query + fascia anni).
@@ -275,6 +277,28 @@ def _iphone_variant(title: str, storage_gb: int | None) -> tuple[str, str] | Non
 CAR_GEN_SEP = "@"
 CAR_GEN_UNKNOWN = "nd"
 CAR_EXCLUDED = "escluso"
+CAR_GEN_ALL = "tutte"   # il modello di Subito non dichiara la generazione
+
+_MODEL_GEN_RE = re.compile(r"^(?P<family>.*?)\s*\((?P<gen>[^)]+)\)\s*(?P<rest>.*)$")
+
+
+def split_car_model(model: str) -> tuple[str, str | None]:
+    """"Serie 1 (E87)" → ("Serie 1", "E87"); "Panda" → ("Panda", None)."""
+    m = _MODEL_GEN_RE.match(model.strip())
+    if not m:
+        return model.strip(), None
+    family = f"{m.group('family')} {m.group('rest')}".strip()
+    return family, m.group("gen").strip()
+
+
+def structured_car_variant(brand: str | None, model: str | None) -> tuple[str, str] | None:
+    """(chiave, etichetta) dai dati strutturati di Subito, o None se mancano."""
+    if not brand or not model:
+        return None
+    family, gen = split_car_model(model)
+    key = f"{_slug(brand)}-{_slug(family)}{CAR_GEN_SEP}{_slug(gen) if gen else CAR_GEN_ALL}"
+    label = f"{brand} {family}" + (f" ({gen})" if gen else "")
+    return key, label
 
 
 @lru_cache(maxsize=1)
@@ -335,12 +359,14 @@ def car_generation_label(variant_key: str | None) -> str | None:
     model_slug, code = variant_key.split(CAR_GEN_SEP, 1)
     if code == CAR_GEN_UNKNOWN:
         return "generazione incerta"
+    if code == CAR_GEN_ALL:
+        return "tutte le generazioni"
     if code == CAR_EXCLUDED:
         return "altro modello / ricambio"
     for g in (_car_table()["models"].get(model_slug) or {}).get("generations", []):
         if g["code"] == code:
             return g["label"]
-    return code
+    return code.upper()
 
 
 def year_fits_generation(variant_key: str | None, year: int | None) -> bool:
@@ -375,8 +401,18 @@ def _car_variant(query: str | None,
                  title: str | None = None,
                  year: int | None = None,
                  description: str | None = None,
-                 km: int | None = None) -> tuple[str, str]:
+                 km: int | None = None,
+                 brand: str | None = None,
+                 model: str | None = None) -> tuple[str, str]:
     base = _slug(query or "auto")
+    structured = structured_car_variant(brand, model)
+    if structured:
+        # Dati di Subito: valgono per qualunque auto. I ricambi restano esclusi
+        # (un ricambio non ha marca/modello strutturati, ma per sicurezza).
+        key, label = structured
+        if title is not None and _car_excluded(key.split(CAR_GEN_SEP)[0], title, km):
+            return f"{key.split(CAR_GEN_SEP)[0]}{CAR_GEN_SEP}{CAR_EXCLUDED}", f"{label} (ricambio)"
+        return key, label
     label_base = car_model_label(base) or (query or "Auto")
     if title is not None and car_model_label(base):
         if _car_excluded(base, title, km):
@@ -416,7 +452,7 @@ def resolve_variant(
 
     if category == "automobile":
         key, label = _car_variant(query, strict_filters, title, meta.get("year"), description,
-                                  meta.get("km"))
+                                  meta.get("km"), meta.get("car_brand"), meta.get("car_model"))
         return {"variant_key": key, "variant_label": label, "condition_tier": tier}
 
     # tech

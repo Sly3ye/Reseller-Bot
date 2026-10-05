@@ -442,6 +442,8 @@ class SubitoScraper(BaseScraper):
                 ),
                 "transmission": self._feature(features, "/gearbox"),
                 "fuel": self._feature(features, "/fuel"),
+                # Auto: marca/modello(generazione)/versione, kW, carrozzeria...
+                **self._car_fields(features),
                 # Variante tech (None per le auto): segmentazione di mercato.
                 "storage_gb": nlp["storage_gb"],
                 "battery_pct": nlp["battery_pct"],
@@ -536,6 +538,30 @@ class SubitoScraper(BaseScraper):
                 if values:
                     return values[0].get("value") or values[0].get("key")
         return None
+
+    @staticmethod
+    def _feature_values(features: list[dict], uri: str) -> list[str]:
+        """Tutti i valori di un campo (es. /car = [marca, modello, versione])."""
+        for feature in features:
+            if feature.get("uri") == uri:
+                return [str(v.get("value") or v.get("key") or "") for v in feature.get("values") or []]
+        return []
+
+    def _car_fields(self, features: list[dict]) -> dict[str, Any]:
+        """Dati strutturati di un'auto (migrazione 23). Vuoti sugli iPhone."""
+        car = self._feature_values(features, "/car")
+        power = re.search(r"(\d+)\s*kw", self._feature(features, "/power") or "", re.IGNORECASE)
+        reg = re.match(r"(\d{1,2})/(\d{4})", self._feature(features, "/register_date") or "")
+        return {
+            "car_brand": car[0] if len(car) > 0 else None,
+            "car_model": car[1] if len(car) > 1 else None,
+            "car_version": car[2] if len(car) > 2 else None,
+            "power_kw": int(power.group(1)) if power else None,
+            "body_type": self._feature(features, "/car_type"),
+            "doors": self._feature(features, "/doors"),
+            "register_month": int(reg.group(1)) if reg else None,
+            "emission_class": self._feature(features, "/pollution"),
+        }
 
     def _feature_int(self, features: list[dict], uri: str) -> int | None:
         for feature in features:

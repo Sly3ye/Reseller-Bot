@@ -81,6 +81,19 @@ ck("eta' senza effetto: fuori dal modello", m2["perYearPct"], None)
 ck("km ritrovati (-3%/10k)", round(m2["per10kKmPct"]), -3)
 ck("premio coupe' ritrovato (~+40%)", round(m2["coupePct"] / 10), 4)
 ck("coupe' stimato piu' caro", val.car_expected_price(m2, 2009, 150000, True) > val.car_expected_price(m2, 2009, 150000, False), True)
+# Una generazione Subito con versioni diverse: 116d (85 kW) e 123d (150 kW).
+rows3 = []
+for i in range(40):
+    kw = 85 if i % 2 else 150
+    km = 120000 + (i * 7919) % 150000
+    year = 2007 + i % 5
+    price = 3000 * (kw / 85) ** 0.9 * 0.97 ** (km / 10000) * (1 + ((i * 13) % 7 - 3) / 100)
+    rows3.append({"year": year, "km": km, "price": price, "kw": kw})
+m3 = val.fit_car_price_model(rows3, ref_year=2026)
+ck("potenza nel modello", m3["kwRange"], (85, 150))
+ck("123d stimato piu' caro del 116d", val.car_expected_price(m3, 2009, 180000, {"kw": 150})
+   > 1.5 * val.car_expected_price(m3, 2009, 180000, {"kw": 85}), True)
+ck("potenza ignota = niente stima", val.car_expected_price(m3, 2009, 180000, {}), None)
 ck("km in migliaia (184 su un 2008)", val.normalize_km(184, 2008, 2026), 184000)
 ck("km 0 vero su auto nuova", val.normalize_km(15, 2025, 2026), 15)
 
