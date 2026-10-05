@@ -11,6 +11,27 @@ Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 > quanto posso pagarlo · quanto e quando lo rivendo · di chi mi fido · è sicuro
 > comprarlo* — ma su un'auto **nessuna** si risponde con "modello + memoria".
 
+## Ambito (decisione del 2026-10-05)
+
+Il verticale auto serve a un amico che fa **flipping e compravendita**: la
+versione avanzata copre **tutte le auto** di Subito (536.786 in vendita il
+2026-10-05), non due modelli pilota. Raccolta sulla **stessa macchina** degli
+iPhone, sviluppo **in parallelo** alla v1 iPhone.
+
+Cosa lo rende possibile: Subito dà per ogni auto marca · modello **con la
+generazione** · versione (es. *BMW · Serie 1 (E87) · 123d cat 5 porte Eletta
+DPF*), kW, carrozzeria, porte, immatricolazione, classe emissioni. Niente
+tabelle scritte a mano (quella BMW resta come ripiego).
+
+Come si accende: `AUTO_FULL_CATEGORY=true` nel `.env` del backend
+(`docker compose up -d backend`). Fa: sweep di tutta la categoria per i nuovi
+(foto solo come URL), inventario a rotazione su `AUTO_INVENTORY_SLICES` notti
+(default 4, ~1.350 richieste a notte), venduti a fine ciclo senza verifica
+pagina per pagina (data = ultima volta vista, ±durata del ciclo),
+ripubblicazioni fuse, Garbage Collector auto spento. Il feed filtra nel DB
+(max 5.000 righe valutate, ultimi 7 giorni senza filtro di modello) con filtri
+a cascata Marca → Modello → Generazione.
+
 ---
 
 ## 0. Perché l'auto non è "l'iPhone con altri nomi"
@@ -79,7 +100,7 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
   segnali che spostano davvero il prezzo: **cinghia/catena distribuzione fatta,
   tagliandi certificati, unico proprietario, revisione, gancio traino, GPL/metano
   (e scadenza bombole), km non congruenti, "vendo per inutilizzo"**.
-- ◻️ 🟡 **Colonna `ai_analysis` assente** su `live_opportunities_auto`: il prompt
+- ◻️ 🟡 **Colonna `ai_analysis` assente** (resta da fare) su `live_opportunities_auto`: il prompt
   AI per le auto (`_PROMPT_AUTO`) è già scritto ma non ha dove scrivere, e
   `enrich_missing(category="automobile")` chiede colonne tech. Serve migrazione.
 
@@ -160,7 +181,9 @@ tutto un altro set:
 ## 7. Copertura e raccolta
 
 - ✅ Sniper auto ogni 15', 2 target (BMW 123d, 125i), 66 annunci attivi.
-- ◻️ 🔴 **Flotta auto vera**: due target sono un pilota. Definire il perimetro —
+- ✅ 🔴 **Flotta auto vera** (2026-10-05): tutte le auto, codice pronto dietro
+  `AUTO_FULL_CATEGORY` (vedi *Ambito*). Provato dal vivo su 2 pagine: 199 auto
+  di 33 marche con dati strutturati. *Prima:* due target sono un pilota. Definire il perimetro —
   quali modelli, quali fasce di prezzo, quale raggio geografico — è una
   **decisione di business**, non tecnica, e va presa prima di allargare.
 - ◻️ 🟡 **Target per generazione** invece che per modello: un target

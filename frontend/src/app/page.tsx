@@ -1287,12 +1287,29 @@ function SniperScreen(props: {
             {!props.isTech && (
               <>
                 <FacetSelect
-                  label="Modello e generazione"
+                  label="Marca"
+                  value={car.brand ?? null}
+                  onChange={(v) => setCar({ brand: v, model: null, generation: null })}
+                  options={(props.facets.brands ?? []).map((b) => ({ value: b.value, label: `${b.value} (${b.count})` }))}
+                />
+                <FacetSelect
+                  label="Modello"
+                  value={car.model ?? null}
+                  onChange={(v) => setCar({ model: v, generation: null })}
+                  options={props.facets.models
+                    .filter((m) => !car.brand || (m.brand ?? "").toLowerCase() === car.brand.toLowerCase())
+                    .map((m) => ({ value: m.key, label: `${m.label} (${m.count})` }))}
+                />
+                <FacetSelect
+                  label="Generazione"
                   value={car.generation ?? null}
                   onChange={(v) => setCar({ generation: v })}
-                  options={(props.facets.generations ?? []).map((g) => ({
-                    value: g.value, label: `${g.label} (${g.count})`,
-                  }))}
+                  options={(props.facets.generations ?? [])
+                    .filter((g) => !car.model || g.model === car.model)
+                    .filter((g) => car.model || !car.brand ||
+                      props.facets.models.some((m) => m.key === g.model &&
+                        (m.brand ?? "").toLowerCase() === car.brand!.toLowerCase()))
+                    .map((g) => ({ value: g.value, label: `${g.label} (${g.count})` }))}
                 />
                 <NumberRangeField
                   label="Anno"

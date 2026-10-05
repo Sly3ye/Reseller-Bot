@@ -423,15 +423,19 @@ export type CarFilters = {
   fuel?: string | null;
   /** Variante modello@generazione, es. "bmw-125i@f2x". */
   generation?: string | null;
+  brand?: string | null;
+  /** Modello (marca-modello, es. "bmw-serie-1"): sostituisce il filtro modello. */
+  model?: string | null;
 };
 
 export type OpportunityFacets = {
-  models: { key: string; label: string; count: number }[];
+  models: { key: string; label: string; count: number; brand?: string }[];
+  brands?: { value: string; count: number }[];
   storages: { value: number; count: number }[];
   colors: { value: string; count: number }[];
   conditions: { value: string; count: number }[];
   // Solo auto
-  generations?: { value: string; label: string; count: number }[];
+  generations?: { value: string; label: string; count: number; model?: string }[];
   transmissions?: { value: string; count: number }[];
   fuels?: { value: string; count: number }[];
   yearRange?: [number, number] | null;
@@ -469,6 +473,7 @@ export async function fetchOpportunities(
   if (filters.transmission) p.set("transmission", filters.transmission);
   if (filters.fuel) p.set("fuel", filters.fuel);
   if (filters.generation) p.set("generation", filters.generation);
+  if (filters.brand) p.set("brand", filters.brand);
   if (filters.defect) {
     p.set("defect", filters.defect);
     if (filters.onlyDefect) p.set("only_defect", "true");

@@ -33,7 +33,7 @@ from backend.services.valuation import SortedPrices, car_expected_price, evaluat
 from backend.services.variants import (
     AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_generation_label, car_is_coupe, car_model_label,
     iphone_model_key,
-    is_healthy, model_text,
+    is_healthy, model_text, _slug,
     year_fits_generation,
 )
 
@@ -727,13 +727,25 @@ def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
     return _compute_facets(db, table)
 
 
+def _car_model_name(model_key: str, brand: str | None) -> str:
+    """"bmw-x5" + "BMW" → "BMW X5" (marca come la scrive Subito); senza marca
+    l'etichetta generica."""
+    if car_model_label(model_key):
+        return car_model_label(model_key)
+    prefix = _slug(brand) + "-" if brand else ""
+    if brand and model_key.startswith(prefix):
+        rest = model_key[len(prefix):].replace("-", " ")
+        return f"{brand} {' '.join(w.upper() if len(w) <= 2 else w.capitalize() for w in rest.split())}"
+    return _model_label(model_key)
+
+
 def _compute_facets(db: Client, table: str) -> dict[str, Any]:
     """Valori disponibili per i filtri (modello/memoria/colore/condizione) con
     conteggi, dai listing attivi — popola i menu a tendina della dashboard."""
     rows = (
         db.table(table)
         .select(_cols(table, "variant_key", "storage_gb", "color", "condition_tier",
-                      "year", "transmission", "fuel"))
+                      "year", "transmission", "fuel", "car_brand"))
         .in_("status", list(_ACTIVE_STATUSES))
         .execute()
         .data
@@ -745,14 +757,20 @@ def _compute_facets(db: Client, table: str) -> dict[str, Any]:
     conditions: Counter = Counter()
     # Auto: generazione (dalla variante), cambio, alimentazione, anni.
     generations: Counter = Counter()
+    brands: Counter = Counter()
+    model_brand: dict[str, str] = {}
     transmissions: Counter = Counter()
     fuels: Counter = Counter()
     years: list[int] = []
     for r in rows:
         vk = r.get("variant_key") or ""
         if CAR_GEN_SEP in vk:
-            label = f"{car_model_label(_model_key(vk)) or _model_key(vk)} {car_generation_label(vk)}"
+            brand = r.get("car_brand") or (car_model_label(_model_key(vk)) or "").split(" ")[0] or None
+            label = f"{_car_model_name(_model_key(vk), brand)} {car_generation_label(vk)}"
             generations[vk, label] += 1
+            if brand:
+                brands[brand] += 1
+                model_brand.setdefault(_model_key(vk), brand)
         if r.get("transmission"):
             transmissions[r["transmission"]] += 1
         if r.get("fuel"):
@@ -770,9 +788,12 @@ def _compute_facets(db: Client, table: str) -> dict[str, Any]:
             conditions[r["condition_tier"]] += 1
     return {
         "models": [
-            {"key": k, "label": _model_label(k), "count": c}
+            {"key": k, "label": _car_model_name(k, model_brand.get(k)), "count": c,
+             **({"brand": model_brand[k]} if k in model_brand else {})}
             for k, c in sorted(models.items(), key=lambda x: -x[1])
         ],
+        # Auto: marca → modello → generazione (a cascata nella barra filtri).
+        "brands": [{"value": b, "count": c} for b, c in sorted(brands.items())],
         "storages": [{"value": s, "count": c} for s, c in sorted(storages.items())],
         "colors": [
             {"value": k, "count": c}
@@ -783,7 +804,7 @@ def _compute_facets(db: Client, table: str) -> dict[str, Any]:
             for k, c in sorted(conditions.items(), key=lambda x: -x[1])
         ],
         "generations": [
-            {"value": vk, "label": label, "count": c}
+            {"value": vk, "label": label, "count": c, "model": _model_key(vk)}
             for (vk, label), c in sorted(generations.items(), key=lambda x: -x[1])
         ],
         "transmissions": [{"value": k, "count": c} for k, c in transmissions.most_common()],
@@ -1098,13 +1119,16 @@ def _auto_feed_rows(table: str, pre: dict[str, Any]) -> list[dict[str, Any]]:
 
     where = ["status in ('nuovo', 'visto')"]
     params: list[Any] = []
+    if pre.get("brand"):
+        where.append("lower(car_brand) = lower(%s)")
+        params.append(pre["brand"])
     if pre.get("generation"):
         where.append("variant_key = %s")
         params.append(pre["generation"])
     elif pre.get("model"):
         where.append("(variant_key = %s or variant_key like %s)")
         params += [pre["model"], pre["model"] + CAR_GEN_SEP + "%"]
-    else:
+    elif not pre.get("brand"):
         where.append("found_at >= now() - make_interval(days => %s)")
         params.append(AUTO_FEED_DAYS)
     for col, op, key in (("year", ">=", "min_year"), ("year", "<=", "max_year"),
@@ -1222,6 +1246,7 @@ def list_opportunities(
     transmission: str | None = None,
     fuel: str | None = None,
     generation: str | None = None,
+    brand: str | None = None,
     limit: int = 30,
     offset: int = 0,
     client: Client | None = None,
@@ -1240,7 +1265,8 @@ def list_opportunities(
     facets = _opportunity_facets(db, table)
 
     prefilter = (
-        {"model": model, "generation": generation, "min_year": min_year, "max_year": max_year,
+        {"model": model, "generation": generation, "brand": brand,
+         "min_year": min_year, "max_year": max_year,
          "max_km": max_km, "min_price": min_price, "max_price": max_price,
          "transmission": transmission, "fuel": fuel, "q": q}
         if table.endswith("_auto") else None
@@ -1274,6 +1300,8 @@ def list_opportunities(
             if fuel and (row.get("fuel") or "") != fuel:
                 return False
             if generation and row.get("variant_key") != generation:
+                return False
+            if brand and (row.get("car_brand") or "").lower() != brand.lower():
                 return False
         # Guasto (dalla matrice riparazioni): l'annuncio lo dichiara; con
         # only_defect è l'UNICO guasto funzionale (segni estetici ammessi).

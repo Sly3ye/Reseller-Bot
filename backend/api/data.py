@@ -46,6 +46,7 @@ async def get_opportunities(
     transmission: str | None = Query(default=None, description="auto: cambio"),
     fuel: str | None = Query(default=None, description="auto: alimentazione"),
     generation: str | None = Query(default=None, description="auto: variante modello@generazione, es. bmw-125i@f2x"),
+    brand: str | None = Query(default=None, description="auto: marca, es. BMW"),
     limit: int = Query(default=30, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
@@ -76,6 +77,7 @@ async def get_opportunities(
             transmission=transmission,
             fuel=fuel,
             generation=generation,
+            brand=brand,
             limit=limit,
             offset=offset,
         )
