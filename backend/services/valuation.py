@@ -56,80 +56,125 @@ CAR_MODEL_MAX_ERR_PCT = 35   # errore tipico oltre cui il modello non si usa
 _OUTLIER_SD = 2.5            # residui oltre ±2.5 sd: fuori, e si rifà il fit
 
 
-def _solve3(a: list[list[float]], b: list[float]) -> list[float] | None:
-    """Sistema 3×3 per eliminazione di Gauss (equazioni normali)."""
+def _solve(a: list[list[float]], b: list[float]) -> list[float] | None:
+    """Sistema n×n per eliminazione di Gauss (equazioni normali)."""
+    n = len(b)
     m = [row[:] + [b[i]] for i, row in enumerate(a)]
-    for col in range(3):
-        pivot = max(range(col, 3), key=lambda r: abs(m[r][col]))
+    for col in range(n):
+        pivot = max(range(col, n), key=lambda r: abs(m[r][col]))
         if abs(m[pivot][col]) < 1e-12:
             return None
         m[col], m[pivot] = m[pivot], m[col]
-        for r in range(3):
+        for r in range(n):
             if r != col:
                 f = m[r][col] / m[col][col]
                 m[r] = [x - f * y for x, y in zip(m[r], m[col])]
-    return [m[i][3] / m[i][i] for i in range(3)]
+    return [m[i][n] / m[i][i] for i in range(n)]
 
 
-def _ols(points: list[tuple[float, float, float]]) -> list[float] | None:
-    """log(prezzo) = a + b·età + c·(km/10.000): coefficienti [a, b, c]."""
-    xtx = [[0.0] * 3 for _ in range(3)]
-    xty = [0.0] * 3
-    for age, km10k, y in points:
-        x = (1.0, age, km10k)
-        for i in range(3):
+def _ols(points: list[tuple[float, float, float, float]], use: tuple[bool, bool, bool]
+         ) -> list[float] | None:
+    """log(prezzo) = a [+ b·età] [+ c·(km/10.000)] [+ d·coupé/cabrio].
+
+    ``use`` = (età, km, carrozzeria). Ritorna SEMPRE 4 coefficienti [a, b, c, d]
+    con 0 per i termini esclusi, così previsione e UI non cambiano forma."""
+    idx = [0] + [i + 1 for i, on in enumerate(use) if on]
+    n = len(idx)
+    xtx = [[0.0] * n for _ in range(n)]
+    xty = [0.0] * n
+    for age, km10k, body, y in points:
+        full = (1.0, age, km10k, body)
+        x = [full[i] for i in idx]
+        for i in range(n):
             xty[i] += x[i] * y
-            for j in range(3):
+            for j in range(n):
                 xtx[i][j] += x[i] * x[j]
-    return _solve3(xtx, xty)
+    sol = _solve(xtx, xty)
+    if sol is None:
+        return None
+    coef = [0.0, 0.0, 0.0, 0.0]
+    for i, value in zip(idx, sol):
+        coef[i] = value
+    return coef
 
 
-def fit_car_price_model(rows: list[tuple[int, int, float]], ref_year: int | None = None
+def _predict(coef: list[float], age: float, km10k: float, body: float) -> float:
+    return coef[0] + coef[1] * age + coef[2] * km10k + coef[3] * body
+
+
+def _fit(pts: list[tuple[float, float, float, float]], use: tuple[bool, bool, bool]
+         ) -> tuple[list[float], list[tuple[float, float, float, float]]] | None:
+    """Fit, via gli anomali (±_OUTLIER_SD), rifit. Ritorna (coef, punti tenuti)."""
+    for _ in range(3):
+        if len(pts) < CAR_MODEL_MIN_SAMPLES:
+            return None
+        coef = _ols(pts, use)
+        if coef is None:
+            return None
+        resid = [y - _predict(coef, a, k, b) for a, k, b, y in pts]
+        sd = statistics.pstdev(resid)
+        kept = [p for p, r in zip(pts, resid) if abs(r) <= _OUTLIER_SD * sd] if sd > 0 else pts
+        if len(kept) == len(pts):
+            return coef, pts
+        pts = kept
+    coef = _ols(pts, use) if len(pts) >= CAR_MODEL_MIN_SAMPLES else None
+    return (coef, pts) if coef else None
+
+
+MIN_PER_BODY = 4  # auto per tipo di carrozzeria perché la variabile entri nel modello
+
+
+def fit_car_price_model(rows: list[tuple], ref_year: int | None = None
                         ) -> dict[str, Any] | None:
     """Modello di prezzo di UNA generazione da annunci sani (anno, km, prezzo).
 
     Forma log-lineare: il deprezzamento è percentuale (un anno in più toglie
     circa il b% del valore, non una cifra fissa). Accettato solo se:
     - almeno CAR_MODEL_MIN_SAMPLES annunci dopo aver tolto gli anomali;
-    - prezzo che SCENDE con età e km (coefficienti negativi: altrimenti i dati
-      sono sporchi o il campione non copre abbastanza anni/km);
+    - prezzo che SCENDE coi km (coefficiente negativo: altrimenti dati sporchi);
     - errore tipico ≤ CAR_MODEL_MAX_ERR_PCT.
-    Ritorna coefficienti, campione, errore tipico % e intervallo coperto.
+    L'età resta nel modello solo se il suo effetto è negativo: dentro una
+    generazione stretta (123d E8x 2007–2012) a parità di km l'anno non si vede
+    nei prezzi, e forzarlo darebbe un coefficiente col segno sbagliato. In quel
+    caso ``perYearPct`` è None e conta solo il chilometraggio (dichiarato).
+    ``rows``: (anno, km, prezzo) oppure (anno, km, prezzo, coupé/cabrio). La
+    carrozzeria entra solo con almeno MIN_PER_BODY auto di ciascun tipo (sul
+    123d E8x un coupé vale ~+40% a parità di anno e km).
     """
     ref_year = ref_year or datetime.now(timezone.utc).year
-    rows = [(y, normalize_km(k, y, ref_year), pr) for y, k, pr in rows]
+    rows = [(r[0], normalize_km(r[1], r[0], ref_year), r[2], float(r[3]) if len(r) > 3 and r[3] else 0.0)
+            for r in rows]
     pts = [
-        (float(ref_year - int(year)), float(km) / 10000.0, math.log(float(price)))
-        for year, km, price in rows
+        (float(ref_year - int(year)), float(km) / 10000.0, body, math.log(float(price)))
+        for year, km, price, body in rows
         if year and km is not None and price and float(price) > 500 and 0 <= ref_year - int(year) <= 40
     ]
-    for _ in range(2):  # fit, via gli anomali, rifit
-        if len(pts) < CAR_MODEL_MIN_SAMPLES:
-            return None
-        coef = _ols(pts)
-        if coef is None:
-            return None
-        resid = [y - (coef[0] + coef[1] * a + coef[2] * k) for a, k, y in pts]
-        sd = statistics.pstdev(resid)
-        kept = [p for p, r in zip(pts, resid) if abs(r) <= _OUTLIER_SD * sd] if sd > 0 else pts
-        if len(kept) == len(pts):
-            break
-        pts = kept
-    if len(pts) < CAR_MODEL_MIN_SAMPLES:
+    coupes = sum(1 for p in pts if p[2])
+    use_body = coupes >= MIN_PER_BODY and len(pts) - coupes >= MIN_PER_BODY
+
+    fitted = _fit(pts, (True, True, use_body))
+    use_age = True
+    if fitted and fitted[0][1] >= 0:
+        # L'età non abbassa il prezzo a parità di km: fuori dal modello.
+        use_age = False
+        fitted = _fit(pts, (False, True, use_body))
+    if not fitted:
         return None
-    coef = _ols(pts)
-    if coef is None or coef[1] >= 0 or coef[2] >= 0:
+    coef, pts = fitted
+    if coef[2] >= 0:
         return None
-    resid = [y - (coef[0] + coef[1] * a + coef[2] * k) for a, k, y in pts]
+    resid = [y - _predict(coef, a, k, b) for a, k, b, y in pts]
     err_pct = round((math.exp(statistics.pstdev(resid)) - 1) * 100, 1)
     if err_pct > CAR_MODEL_MAX_ERR_PCT:
         return None
     return {
         "coef": coef, "n": len(pts), "errPct": err_pct, "refYear": ref_year,
-        "yearRange": (int(ref_year - max(a for a, _, _ in pts)), int(ref_year - min(a for a, _, _ in pts))),
-        "kmRange": (int(min(k for _, k, _ in pts) * 10000), int(max(k for _, k, _ in pts) * 10000)),
+        "yearRange": (int(ref_year - max(p[0] for p in pts)), int(ref_year - min(p[0] for p in pts))),
+        "kmRange": (int(min(p[1] for p in pts) * 10000), int(max(p[1] for p in pts) * 10000)),
+        # Premio coupé/cabrio sulla berlina (in %), se la variabile è nel modello.
+        "coupePct": round((math.exp(coef[3]) - 1) * 100, 1) if use_body else None,
         # Quanto vale in meno un anno / 10.000 km in più (in %), per la UI.
-        "perYearPct": round((math.exp(coef[1]) - 1) * 100, 1),
+        "perYearPct": round((math.exp(coef[1]) - 1) * 100, 1) if use_age else None,
         "per10kKmPct": round((math.exp(coef[2]) - 1) * 100, 1),
     }
 
@@ -146,7 +191,8 @@ def normalize_km(km: int | None, year: int | None, ref_year: int | None = None) 
     return km
 
 
-def car_expected_price(model: dict[str, Any] | None, year: int | None, km: int | None) -> float | None:
+def car_expected_price(model: dict[str, Any] | None, year: int | None, km: int | None,
+                       coupe: bool = False) -> float | None:
     """Prezzo atteso di un'auto sana di quell'anno e km, o None. Fuori
     dall'intervallo coperto dal campione (con un po' di margine) non si
     estrapola: un 2007 da 300.000 km stimato con dati 2015-2019 è un'invenzione."""
@@ -157,8 +203,8 @@ def car_expected_price(model: dict[str, Any] | None, year: int | None, km: int |
     lo_k, hi_k = model["kmRange"]
     if not (lo_y - 1 <= int(year) <= hi_y + 1) or not (lo_k * 0.8 - 10000 <= km <= hi_k * 1.2 + 10000):
         return None
-    a, b, c = model["coef"]
-    return round(math.exp(a + b * (model["refYear"] - int(year)) + c * km / 10000.0), 2)
+    return round(math.exp(_predict(model["coef"], model["refYear"] - int(year), km / 10000.0,
+                                   1.0 if coupe else 0.0)), 2)
 
 
 def _condition_factor(category: str, tier: str | None) -> float:
@@ -186,6 +232,7 @@ def estimate_fair_value(
     km: int | None = None,
     year: int | None = None,
     car_model: dict[str, Any] | None = None,
+    coupe: bool = False,
     sold_reference: float | None = None,
     sold_reference_is_tier_specific: bool = False,
 ) -> float | None:
@@ -208,7 +255,7 @@ def estimate_fair_value(
     """
     if category == "automobile":
         # Mediana o venduti di un pool auto mescolano anni e km: niente ripieghi.
-        expected = car_expected_price(car_model, year, km)
+        expected = car_expected_price(car_model, year, km, coupe)
         if expected is None:
             return None
         return round(expected * _condition_factor(category, condition_tier), 2)
@@ -237,6 +284,7 @@ def evaluate_value(
     km: int | None = None,
     year: int | None = None,
     car_model: dict[str, Any] | None = None,
+    coupe: bool = False,
     sold_reference: float | None = None,
     sold_reference_is_tier_specific: bool = False,
     has_images: bool = True,
@@ -257,6 +305,7 @@ def evaluate_value(
         km=km,
         year=year,
         car_model=car_model,
+        coupe=coupe,
         sold_reference=sold_reference,
         sold_reference_is_tier_specific=sold_reference_is_tier_specific,
     )

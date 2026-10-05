@@ -31,7 +31,8 @@ from backend.services.scoring import car_risk_assessment, evaluate_opportunity, 
 from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summary
 from backend.services.valuation import car_expected_price, evaluate_value, fit_car_price_model
 from backend.services.variants import (
-    AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_generation_label, car_model_label, iphone_model_key,
+    AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_generation_label, car_is_coupe, car_model_label,
+    iphone_model_key,
     is_healthy, model_text,
     year_fits_generation,
 )
@@ -371,7 +372,7 @@ def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
     try:
         rows = _select_all(
             lambda: db.table(table)
-            .select("variant_key, year, km, asking_price, condition_tier")
+            .select("variant_key, year, km, asking_price, condition_tier, title, description")
             .in_("status", list(_ACTIVE_STATUSES))
         )
     except Exception:
@@ -386,7 +387,8 @@ def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
         price = _to_float(r.get("asking_price"))
         if (r.get("year") and r.get("km") is not None and price
                 and year_fits_generation(vk, r["year"])):
-            by_variant.setdefault(vk, []).append((int(r["year"]), int(r["km"]), price))
+            coupe = car_is_coupe(f"{r.get('title') or ''} {r.get('description') or ''}")
+            by_variant.setdefault(vk, []).append((int(r["year"]), int(r["km"]), price, coupe))
     models = {}
     for vk, pts in by_variant.items():
         fitted = fit_car_price_model(pts)
@@ -850,13 +852,15 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     car_model = ctx["car_models"].get(variant_key) if variant_key else None
     if car_model and not year_fits_generation(variant_key, row.get("year")):
         car_model = None  # anno incompatibile con la generazione: niente stima
-    expected = car_expected_price(car_model, row.get("year"), row.get("km"))
+    coupe = car_is_coupe(f"{row.get('title') or ''} {row.get('description') or ''}")
+    expected = car_expected_price(car_model, row.get("year"), row.get("km"), coupe)
     if expected and shaped["askingPrice"]:
         # Prezzo atteso di un'auto SANA di quell'anno e km nella sua generazione.
         shaped["expectedPrice"] = expected
         shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
     shaped["carModel"] = (
-        {k: car_model[k] for k in ("n", "errPct", "perYearPct", "per10kKmPct", "yearRange", "kmRange")}
+        {k: car_model.get(k) for k in ("n", "errPct", "perYearPct", "per10kKmPct", "yearRange",
+                                       "kmRange", "coupePct")}
         if car_model else None
     )
 
@@ -884,6 +888,7 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         km=row.get("km"),
         year=row.get("year"),
         car_model=car_model,
+        coupe=coupe,
         sold_reference=sold_reference,
         sold_reference_is_tier_specific=sold_tier_specific,
         has_images=bool(row.get("image_urls")),

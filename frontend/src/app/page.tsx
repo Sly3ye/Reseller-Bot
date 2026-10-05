@@ -2319,7 +2319,9 @@ function NegotiationAssistant(props: {
           ? `${item.marginVsExpected >= 0 ? "+" : ""}${eur(item.marginVsExpected)} vs richiesto`
           : "") +
         (m
-          ? ` · nella generazione ogni anno vale ${m.perYearPct}%, ogni 10.000 km ${m.per10kKmPct}%` +
+          ? ` · nella generazione: ogni 10.000 km ${m.per10kKmPct}%` +
+            (m.perYearPct != null ? `, ogni anno ${m.perYearPct}%` : ", l'anno non incide a parità di km") +
+            (m.coupePct != null ? `, coupé/cabrio +${m.coupePct}%` : "") +
             ` (${m.n} auto ${m.yearRange[0]}–${m.yearRange[1]})`
           : ""),
       color: "var(--accent-text)",

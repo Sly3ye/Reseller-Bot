@@ -62,16 +62,36 @@ _FEATURE_SYNONYMS: dict[str, tuple[str, ...]] = {
     "Garanzia": ("garanzia", "garantita", "ancora in garanzia"),
     "Tagliandi": ("tagliandi", "tagliandata", "tagliando", "libretto tagliandi"),
     "Neopatentati": ("neopatentati", "neopatentato", "ok neopatentati"),
+    # Lavori e storia che spostano davvero il prezzo di un'auto usata.
+    "Distribuzione-Fatta": ("distribuzione fatta", "distribuzione appena fatta", "distribuzione nuova",
+                            "catena distribuzione fatta", "catena di distribuzione fatta",
+                            "catena distribuzione nuova", "catena cambiata", "catena sostituita",
+                            "kit distribuzione", "cinghia fatta", "cinghia di distribuzione fatta"),
+    "Tagliandi-Certificati": ("tagliandi certificati", "tagliandi bmw", "tagliandi ufficiali",
+                              "tagliandi documentati", "storico tagliandi", "service bmw",
+                              "tagliandi in concessionaria", "fatture dei tagliandi"),
+    "Unico-Proprietario": ("unico proprietario", "un solo proprietario", "primo proprietario",
+                           "1 proprietario", "prima mano"),
+    "Revisione-Fatta": ("revisione fatta", "revisionata", "revisione appena fatta", "revisione nuova",
+                        "revisione valida", "revisione fino"),
+    "Gancio-Traino": ("gancio traino", "gancio di traino"),
+    "GPL-Metano": ("impianto gpl", "a gpl", "gpl ", "metano", "bombola"),
 }
 
 # ---------------------------------------------------------------- difetti (penalità)
 
 # canonico → sinonimi. incidentata/fuso sono anche criterio di esclusione IQR.
 _DEFECT_SYNONYMS: dict[str, tuple[str, ...]] = {
-    "frizione": ("frizione", "frizioni"),
+    # Solo la frizione DA FARE: "frizione nuova/fatta/rifatta" è un pregio (9 su 9
+    # dei "frizione" segnati il 2026-10-05 erano lavori già fatti).
+    "frizione": ("frizione da sostituire", "frizione da cambiare", "frizione da fare",
+                 "frizione da rifare", "frizione slitta", "frizione che slitta",
+                 "frizione andata", "frizione bruciata", "frizione consumata",
+                 "problema alla frizione", "problemi alla frizione", "problema frizione"),
     "graffi": ("graffi", "graffio", "graffiata", "graffiato", "rigata", "rigato"),
     "grandine": ("grandine", "grandinata"),
-    "da-rivedere": ("da rivedere", "da sistemare", "da vedere", "da tagliandare"),
+    # "da vedere" no: "Pronta da vedere e provare" è un invito, non un difetto.
+    "da-rivedere": ("da rivedere", "da sistemare", "da tagliandare"),
     "spia-motore": ("spia motore", "spia del motore", "spia accesa", "spie accese",
                     "check engine"),
     "incidentata": ("incidentata", "incidentato", "sinistrata", "sinistrato",

@@ -155,7 +155,12 @@ export type ApiOpportunity = {
   fairValueErrPct?: number | null;
   /** Auto: il modello di prezzo della generazione (campione, deprezzamento). */
   carModel?: {
-    n: number; errPct: number; perYearPct: number; per10kKmPct: number;
+    n: number; errPct: number;
+    /** null = dentro la generazione l'anno non sposta il prezzo a parità di km. */
+    perYearPct: number | null;
+    per10kKmPct: number;
+    /** Premio coupé/cabrio sulla berlina, se misurato. */
+    coupePct?: number | null;
     yearRange: [number, number]; kmRange: [number, number];
   } | null;
   valuationSamples: number | null;

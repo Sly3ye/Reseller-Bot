@@ -71,6 +71,16 @@ ck("senza modello: niente valore equo (non la mediana)",
 ck("incidentata abbassa", val.evaluate_value(category="automobile", asking=3000, condition_tier="incidentata",
    variant_prices=[], km=100000, year=2016, car_model=m)["fairValue"] < exp, True)
 
+# Generazione stretta: l'anno non conta, i km si'; coupe' +40%.
+rows2 = []
+for i in range(30):
+    year, km, coupe = 2007 + i % 6, 100000 + i * 6000, i % 3 == 0
+    rows2.append((year, km, 9000 * 0.97 ** (km / 10000) * (1.4 if coupe else 1.0) * (1 + ((i * 7) % 5 - 2) / 100), coupe))
+m2 = val.fit_car_price_model(rows2, ref_year=2026)
+ck("eta' senza effetto: fuori dal modello", m2["perYearPct"], None)
+ck("km ritrovati (-3%/10k)", round(m2["per10kKmPct"]), -3)
+ck("premio coupe' ritrovato (~+40%)", round(m2["coupePct"] / 10), 4)
+ck("coupe' stimato piu' caro", val.car_expected_price(m2, 2009, 150000, True) > val.car_expected_price(m2, 2009, 150000, False), True)
 ck("km in migliaia (184 su un 2008)", val.normalize_km(184, 2008, 2026), 184000)
 ck("km 0 vero su auto nuova", val.normalize_km(15, 2025, 2026), 15)
 

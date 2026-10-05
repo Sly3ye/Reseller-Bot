@@ -58,6 +58,10 @@ def condition_tier(category: str, defects: list[str] | None,
     """Fascia di condizione dai segnali NLP già estratti."""
     d = set(defects or [])
     if category == "automobile":
+        # Graffi = normale usura di un'auto usata; "per-ricambi" viene dal
+        # rilevatore degli iPhone e su un'auto scatta su "pezzi di ricambio
+        # utilizzati" (i ricambi veri sono già esclusi dalla variante).
+        d -= {"graffi", "per-ricambi"}
         if d & _AUTO_BROKEN:
             return "incidentata"
         return "difetti" if d else "buono"
@@ -315,6 +319,15 @@ def car_generation_years(variant_key: str | None) -> tuple[int, int] | None:
     return None
 
 
+_COUPE_RE = re.compile(r"\b(coup[eé]|cabrio\w*|cabriolet|e82|e88|f22|f23|2\s?porte)\b", re.IGNORECASE)
+
+
+def car_is_coupe(text: str | None) -> bool:
+    """Coupé o cabrio (contro berlina 3/5 porte): sposta il prezzo a parità di
+    anno e km (vedi valuation.fit_car_price_model)."""
+    return bool(text and _COUPE_RE.search(text))
+
+
 def car_generation_label(variant_key: str | None) -> str | None:
     """Etichetta della generazione di una variante auto ("F20/F21"), o None."""
     if not variant_key or CAR_GEN_SEP not in variant_key:
@@ -351,6 +364,8 @@ def _car_excluded(model_slug: str, title: str, km: int | None = None) -> bool:
         return True
     if km is None and set(words) & set(table.get("parts_anywhere_without_km", [])):
         return True
+    if set(words) & {"ricambio", "ricambi"}:
+        return True  # "RICAMBIO USATO", "solo ricambi": mai l'auto intera
     model = table["models"].get(model_slug) or {}
     return any(re.search(rf"\b{re.escape(w)}\b", low) for w in model.get("exclude", []))
 

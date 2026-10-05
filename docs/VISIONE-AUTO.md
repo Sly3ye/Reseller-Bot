@@ -53,8 +53,11 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
   estrapolazione, errore tipico dichiarato e un "affare" deve superarlo; senza
   modello affidabile → "non so". Km in migliaia ("184") corretti. Sui dati
   del PC: 125i F20/F21 −8,2%/anno, −1,8%/10.000 km, errore 12% (5 affari su
-  29, prima 17 su 66 artefatti); 123d E8x **non stimabile** (errore 46%: serve
-  carrozzeria/allestimento o più dati). *Prima:* Oggi la regressione è
+  29, prima 17 su 66 artefatti). 123d E8x: con la **carrozzeria** (coupé/cabrio
+  +43%) e senza l'età (dentro 2007–2012 non incide a parità di km) errore 26%,
+  −3,1%/10.000 km, 7 affari su 57. Corretti anche i falsi difetti ("frizione
+  nuova", "pronta da vedere", graffi) che toglievano auto sane dal campione.
+  *Prima:* Oggi la regressione è
   `prezzo ~ km` sul target intero e **ignora l'anno**: sui nostri dati stima un
   123d del 2007 con 280.000 km a **6.811€** (chiesto 4.500€ → "affare +52%") e
   un 125i 2013 con 60.000 km a **24.695€**. Su 66 annunci ne classifica
@@ -69,7 +72,10 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
 - ◻️ 🟡 **Campione minimo onesto**: con decine di annunci per variante, le soglie
   tech (3 attivi / 5 venduti) sono troppo permissive. Rivedere per l'auto e
   **mostrare sempre l'ampiezza del campione** accanto a ogni stima.
-- ◻️ 🟡 **NLP auto**: già ci sono km, anno, allestimenti e 7 difetti. Mancano i
+- 🔧 🟡 **NLP auto** (2026-10-05): riconosciuti distribuzione/catena fatta, tagliandi
+  certificati, unico proprietario, revisione, gancio traino, GPL/metano; "frizione"
+  è difetto solo se da fare. Mancano: km non congruenti dal testo, scadenza
+  bombole. *Prima:* già ci sono km, anno, allestimenti e 7 difetti. Mancano i
   segnali che spostano davvero il prezzo: **cinghia/catena distribuzione fatta,
   tagliandi certificati, unico proprietario, revisione, gancio traino, GPL/metano
   (e scadenza bombole), km non congruenti, "vendo per inutilizzo"**.

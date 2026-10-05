@@ -125,6 +125,10 @@ ck("modello senza tabella: fascia dal target",
    auto("Golf GTI", {"min_year": 2017, "max_year": 2020})["variant_key"], "golf-gti@2017-2020")
 ck("modello senza tabella e senza fascia", auto("Golf GTI", {})["variant_key"], "golf-gti")
 ck("incidentata", auto("BMW 123d", {}, defects=["incidentata"])["condition_tier"], "incidentata")
+ck("auto con graffi resta buona", auto("BMW 123d", {}, defects=["graffi"])["condition_tier"], "buono")
+ck("'ricambio' nel titolo = escluso anche con km",
+   v.resolve_variant("automobile", "123D E82 2.0 D RICAMBIO USATO", {"year": 2009, "km": 150000,
+                     "defects_noted": [], "features": []}, query="BMW 123d")["variant_key"], "bmw-123d@escluso")
 
 print("Helper is_healthy:")
 ck("buono sano", v.is_healthy("buono"), True)

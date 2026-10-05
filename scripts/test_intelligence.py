@@ -94,6 +94,16 @@ def test_nlp_guasti_v2():
     check("batteria sotto 70%", "batteria-esausta" in d("iPhone 12", "batteria 66%"), True)
 
 
+def test_nlp_auto_signals():
+    print("NLP auto (lavori fatti, difetti veri):")
+    r = nlp.parse_listing("BMW 123d", "distribuzione fatta, frizione nuova, unico proprietario, tagliandi BMW")
+    check("frizione nuova non è un difetto", "frizione" in r["defects_noted"], False)
+    check("lavori riconosciuti", {"Distribuzione-Fatta", "Unico-Proprietario", "Tagliandi-Certificati"} <= set(r["features"]), True)
+    check("frizione che slitta = difetto", "frizione" in nlp.parse_listing("BMW 125i", "la frizione slitta")["defects_noted"], True)
+    check("'pronta da vedere' non è da rivedere",
+          nlp.parse_listing("BMW 125i", "Pronta da vedere e provare")["defects_noted"], [])
+
+
 def test_car_risk():
     print("Rischio auto:")
     r = lambda **kw: scoring.car_risk_assessment(ref_year=2026, title="BMW 123d", defects=[],  # noqa: E731
@@ -186,6 +196,7 @@ def main() -> None:
     test_nlp_guasti_v2()
     test_nlp_auto()
     test_car_risk()
+    test_nlp_auto_signals()
     test_scoring()
     print(f"\n=== {_passed} PASS / {_failed} FAIL ===")
     raise SystemExit(1 if _failed else 0)
