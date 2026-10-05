@@ -1546,6 +1546,23 @@ def listing_signals(event_counts: dict[str, Any] | None, days_online: int | None
             "drops": drops, "relisted": relisted, "reasons": reasons, "level": level}
 
 
+def listing_history(listing_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    """Eventi dell'annuncio in ordine di tempo (listing_events, migrazione 26)."""
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    if not has_column("listing_events", "kind"):
+        return []
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            "select kind, at, price, old_price, info from public.listing_events "
+            "where listing_id = %s::uuid order by at, id limit %s",
+            (listing_id, limit),
+        ).fetchall()
+    return [{"kind": r["kind"], "at": r["at"].isoformat() if r["at"] else None,
+             "price": _to_float(r["price"]), "oldPrice": _to_float(r["old_price"]),
+             "info": r["info"] or {}} for r in rows]
+
+
 def attach_signals(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Copie degli item con ``signals`` (una query per la pagina, non per il feed intero)."""
     from backend.core.database import _get_pool  # noqa: PLC0415

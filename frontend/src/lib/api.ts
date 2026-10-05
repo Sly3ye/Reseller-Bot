@@ -1001,6 +1001,21 @@ export async function fetchDataQuality(
   return res.json();
 }
 
+/** Un evento della storia di un annuncio (listing_events). */
+export type ListingEvent = {
+  kind: "comparso" | "prezzo" | "riposizionato" | "ripubblicato" | "sparito" | "ricomparso" | "fuso";
+  at: string | null;
+  price: number | null;
+  oldPrice: number | null;
+  info: Record<string, unknown>;
+};
+
+export async function fetchListingEvents(listingId: string, signal?: AbortSignal): Promise<ListingEvent[]> {
+  const res = await fetch(`${API_BASE_URL}/api/listing-events/${listingId}`, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`GET /api/listing-events failed (${res.status})`);
+  return (await res.json()).events;
+}
+
 /** Obiettivi della Goal Version ("Come si sa che ci siamo") misurati ora. */
 export type Goal = {
   key: string; label: string; target: string;

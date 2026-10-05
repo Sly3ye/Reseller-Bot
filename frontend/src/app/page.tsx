@@ -14,6 +14,7 @@ import {
   fetchScraperHealth,
   fetchDataQuality,
   fetchGoals,
+  fetchListingEvents,
   fetchRepairMatrix,
   fetchSettings,
   testTelegram,
@@ -52,6 +53,7 @@ import {
   type ScraperHealth,
   type DataQuality,
   type GoalsState,
+  type ListingEvent,
   type DealRepair,
   type RepairCell,
   type RepairMatrix,
@@ -2039,6 +2041,7 @@ function SniperRow(props: {
             inPipeline={props.inPipeline}
             onAddToPipeline={props.onAddToPipeline}
           />
+          <ListingHistory listingId={item.id} />
           {item.risk && (
             <div
               style={{
@@ -2181,6 +2184,55 @@ function SniperRow(props: {
 }
 
 /* ------------------------------------------------- NEGOTIATION ASSISTANT */
+
+/** Storia dell'annuncio da listing_events: cosa ha fatto il venditore e quando. */
+function ListingHistory(props: { listingId: string }) {
+  const [events, setEvents] = useState<ListingEvent[] | null>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchListingEvents(props.listingId, ctrl.signal).then(setEvents).catch(() => setEvents([]));
+    return () => ctrl.abort();
+  }, [props.listingId]);
+  if (!events || events.length === 0) return null;
+  const when = (at: string | null) =>
+    at ? new Date(at).toLocaleString("it-IT", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "";
+  const describe = (e: ListingEvent): string => {
+    const p = e.price != null ? eur(e.price) : "";
+    switch (e.kind) {
+      case "comparso":
+        return `📥 comparso${p ? ` a ${p}` : ""}${e.info?.backfill ? " (prima vista)" : ""}`;
+      case "prezzo":
+        return e.oldPrice != null && e.price != null && e.price < e.oldPrice
+          ? `↘ ribassato ${eur(e.oldPrice)} → ${p}`
+          : `↗ rialzato ${e.oldPrice != null ? eur(e.oldPrice) : ""} → ${p}`;
+      case "riposizionato":
+        return "↻ riposizionato (rimesso in cima)";
+      case "ripubblicato":
+        return `♻ ripubblicato con un nuovo annuncio${e.oldPrice != null && e.price != null && e.price !== e.oldPrice ? ` (${eur(e.oldPrice)} → ${p})` : ""}`;
+      case "sparito":
+        return "✓ sparito (venduto o ritirato)";
+      case "ricomparso":
+        return "↩ ricomparso";
+      case "fuso":
+        return "⧉ doppione fuso";
+      default:
+        return e.kind;
+    }
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
+      <div style={{ fontSize: "11px", fontWeight: 700, color: "oklch(0.6 0.01 250)", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+        Storia dell&apos;annuncio
+      </div>
+      {events.slice(-12).map((e, i) => (
+        <div key={i} style={{ display: "flex", gap: "10px" }}>
+          <span style={{ fontFamily: MONO, color: "oklch(0.55 0.01 250)", minWidth: "92px" }}>{when(e.at)}</span>
+          <span>{describe(e)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function NegotiationAssistant(props: {
   item: ApiOpportunity;

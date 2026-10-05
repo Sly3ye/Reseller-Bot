@@ -95,6 +95,22 @@ async def get_car_models_endpoint() -> dict:
     return await asyncio.to_thread(car_models_overview)
 
 
+@router.get("/listing-events/{listing_id}")
+async def get_listing_events(listing_id: str) -> dict:
+    """Storia dell'annuncio (listing_events): comparso, prezzo, riposizionato,
+    ripubblicato, sparito, ricomparso, fuso."""
+    import asyncio  # noqa: PLC0415
+    import uuid  # noqa: PLC0415
+
+    from backend.services.reads import listing_history  # noqa: PLC0415
+
+    try:
+        uuid.UUID(listing_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="id annuncio non valido") from exc
+    return {"events": await asyncio.to_thread(listing_history, listing_id)}
+
+
 @router.get("/car-value")
 async def get_car_value_endpoint(
     variant: str = Query(..., description="modello@generazione, es. bmw-serie-1@e87"),
