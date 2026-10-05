@@ -41,6 +41,17 @@ CORS_ORIGINS = [
 ]
 
 
+def _prewarm_feed() -> None:
+    try:
+        from backend.core.database import get_db  # noqa: PLC0415
+        from backend.services.reads import _enriched_feed  # noqa: PLC0415
+
+        _enriched_feed(get_db(), "live_opportunities_tech", "smartphone")
+        logger.info("Feed iPhone pronto in cache")
+    except Exception:
+        logger.exception("Preparazione del feed fallita (si calcolerà alla prima richiesta)")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Start the background scheduler with the app and stop it on shutdown."""
@@ -54,6 +65,9 @@ async def lifespan(app: FastAPI):
         logger.exception("Migration runner fallito: schema forse non aggiornato")
     # Correzioni dalle tue riparazioni (E3) pronte prima della prima stima.
     await asyncio.to_thread(repair_feedback.refresh)
+    # Feed iPhone preparato in background: valutare ~47k annunci costa ~20 s e
+    # la prima apertura della dashboard non deve aspettarli.
+    asyncio.get_running_loop().run_in_executor(None, _prewarm_feed)
     scheduler = create_scheduler()
     app.state.scheduler = scheduler
     if settings.scheduler_enabled:

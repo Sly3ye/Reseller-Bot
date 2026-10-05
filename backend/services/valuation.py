@@ -270,15 +270,31 @@ def _condition_factor(category: str, tier: str | None) -> float:
     return table.get(tier or "buono", 1.0)
 
 
+class SortedPrices(list):
+    """Prezzi positivi già ordinati, con la mediana pronta. I pool per variante
+    si valutano decine di migliaia di volte per richiesta (uno per annuncio):
+    riordinarli ogni volta costava la maggior parte del tempo del feed."""
+
+    def __init__(self, prices: Any = ()) -> None:
+        super().__init__(sorted(p for p in prices if p and p > 0))
+        self.median = statistics.median(self) if self else None
+
+
+def _sorted_positive(prices: list[float]) -> list[float]:
+    return prices if isinstance(prices, SortedPrices) else sorted(p for p in prices if p and p > 0)
+
+
 def price_position(asking: float | None, prices: list[float]) -> float | None:
     """Percentile (0–100) del prezzo richiesto nella variante.
 
     10 → più economico del 90% dei simili (coda degli affari); 90 → tra i più cari.
     """
-    vals = sorted(p for p in prices if p and p > 0)
+    from bisect import bisect_left  # noqa: PLC0415
+
+    vals = _sorted_positive(prices)
     if asking is None or len(vals) < MIN_POOL:
         return None
-    below = sum(1 for v in vals if v < asking)
+    below = bisect_left(vals, asking)
     return round(below / len(vals) * 100, 1)
 
 
@@ -318,8 +334,10 @@ def estimate_fair_value(
             return None
         return round(expected * _condition_factor(category, condition_tier), 2)
 
-    healthy = sorted(p for p in variant_prices if p and p > 0)
-    base: float | None = statistics.median(healthy) if len(healthy) >= MIN_POOL else None
+    healthy = _sorted_positive(variant_prices)
+    base: float | None = None
+    if len(healthy) >= MIN_POOL:
+        base = healthy.median if isinstance(healthy, SortedPrices) else statistics.median(healthy)
     apply_condition_factor = True
 
     # I venduti battono i listati come riferimento (prezzo di realizzo reale).

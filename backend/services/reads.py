@@ -29,7 +29,7 @@ from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import car_risk_assessment, evaluate_opportunity, risk_assessment
 from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summary
-from backend.services.valuation import car_expected_price, evaluate_value, fit_car_price_model
+from backend.services.valuation import SortedPrices, car_expected_price, evaluate_value, fit_car_price_model
 from backend.services.variants import (
     AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_generation_label, car_is_coupe, car_model_label,
     iphone_model_key,
@@ -389,8 +389,10 @@ def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
     try:
         rows = _select_all(
             lambda: db.table(table)
+            # Niente descrizione: su mezzo milione di auto pesa centinaia di MB e la
+            # carrozzeria arriva dal campo strutturato (dal titolo se manca).
             .select(_cols(table, "variant_key", "year", "km", "asking_price", "condition_tier", "title",
-                          "description", "power_kw", "body_type", "fuel", "transmission"))
+                          "power_kw", "body_type", "fuel", "transmission"))
             .in_("status", list(_ACTIVE_STATUSES))
         )
     except Exception:
@@ -538,7 +540,7 @@ def _variant_price_pools(db: Client, table: str) -> dict[str, list[float]]:
     for vk, prices in buckets.items():
         cleaned = _iqr_clean(prices)
         if len(cleaned) >= 3:
-            pools[vk] = cleaned
+            pools[vk] = SortedPrices(cleaned)  # ordinati una volta sola
     return pools
 
 
@@ -707,7 +709,25 @@ def _select_all(make_query: Any) -> list[dict[str, Any]]:
         start += _PAGE_ROWS
 
 
+_facets_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
 def _opportunity_facets(db: Client, table: str) -> dict[str, Any]:
+    """Valori disponibili per i filtri, con cache per le auto (_CTX_TTL_S):
+    contarli su mezzo milione di annunci a ogni richiesta costa secondi."""
+    import time  # noqa: PLC0415
+
+    if table.endswith("_auto"):
+        hit = _facets_cache.get(table)
+        if hit and time.monotonic() - hit[0] < _CTX_TTL_S:
+            return hit[1]
+        facets = _compute_facets(db, table)
+        _facets_cache[table] = (time.monotonic(), facets)
+        return facets
+    return _compute_facets(db, table)
+
+
+def _compute_facets(db: Client, table: str) -> dict[str, Any]:
     """Valori disponibili per i filtri (modello/memoria/colore/condizione) con
     conteggi, dai listing attivi — popola i menu a tendina della dashboard."""
     rows = (
@@ -784,14 +804,37 @@ def _build_enrich_ctx(
 
     settings_store.get_all()
 
+    row_ctx = {
+        "price_history": _latest_price_history(db, [r["id"] for r in rows]),
+        "price_watch": _price_watch(db, [r["id"] for r in rows]),
+        "seller_profiles": _seller_profiles(db, table, rows),
+    }
+    # La parte che non dipende dalle righe (pool, modelli di prezzo, venduti,
+    # medie, matrice) costa secondi e cambia lentamente → in cache: 15' per le
+    # auto (mezzo milione di annunci), 5' per gli iPhone.
+    import time  # noqa: PLC0415
+
+    ttl = _CTX_TTL_S if target_cat == "automobile" else _CTX_TTL_TECH_S
+    hit = _ctx_cache.get(table)
+    if hit and time.monotonic() - hit[0] < ttl:
+        return {**hit[1], **row_ctx}
+    base = _build_base_ctx(db, target_cat, table)
+    _ctx_cache[table] = (time.monotonic(), base)
+    return {**base, **row_ctx}
+
+
+_CTX_TTL_S = 900
+_CTX_TTL_TECH_S = 300
+_ctx_cache: dict[str, tuple[float, dict[str, Any]]] = {}
+
+
+def _build_base_ctx(db: Client, target_cat: str, table: str) -> dict[str, Any]:
+    """Parte del contesto che non dipende dalle righe da arricchire."""
     ctx: dict[str, Any] = {
         "target_cat": target_cat,
         "targets": _targets_for_category(db, target_cat),
         "variant_pools": _variant_price_pools(db, table),
         "sold_refs": _sold_variant_refs(db, table),
-        "price_history": _latest_price_history(db, [r["id"] for r in rows]),
-        "price_watch": _price_watch(db, [r["id"] for r in rows]),
-        "seller_profiles": _seller_profiles(db, table, rows),
         "car_models": {},
     }
     # Quanto vale meno un riparato aftermarket (schermo/batteria non originali),
@@ -1031,6 +1074,9 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
 # di annunci con la copertura totale) costa secondi, e i dati cambiano a ritmo
 # di giri di raccolta. Il triage invece si rilegge fresco a ogni richiesta.
 _FEED_TTL_S = 90
+# Oltre il TTL e fino a qui si serve il vecchio mentre si ricalcola (vedi sopra).
+_FEED_STALE_MAX_S = 1800
+_feed_refreshing: set[str] = set()
 _feed_cache: dict[str, tuple[float, list[tuple[dict[str, Any], dict[str, Any]]]]] = {}
 
 
@@ -1038,30 +1084,105 @@ def invalidate_feed_cache() -> None:
     _feed_cache.clear()
 
 
+# Feed auto: tetto di righe valutate per richiesta e finestra di default.
+AUTO_FEED_MAX_ROWS = 5000
+AUTO_FEED_DAYS = 7
+
+
+def _auto_feed_rows(table: str, pre: dict[str, Any]) -> list[dict[str, Any]]:
+    """Righe auto filtrate NEL DB (mezzo milione di attive non si valutano in
+    memoria a ogni richiesta). Senza filtro di modello/generazione: solo gli
+    annunci degli ultimi AUTO_FEED_DAYS giorni. Al massimo AUTO_FEED_MAX_ROWS,
+    i più recenti."""
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    where = ["status in ('nuovo', 'visto')"]
+    params: list[Any] = []
+    if pre.get("generation"):
+        where.append("variant_key = %s")
+        params.append(pre["generation"])
+    elif pre.get("model"):
+        where.append("(variant_key = %s or variant_key like %s)")
+        params += [pre["model"], pre["model"] + CAR_GEN_SEP + "%"]
+    else:
+        where.append("found_at >= now() - make_interval(days => %s)")
+        params.append(AUTO_FEED_DAYS)
+    for col, op, key in (("year", ">=", "min_year"), ("year", "<=", "max_year"),
+                         ("km", "<=", "max_km"), ("asking_price", ">=", "min_price"),
+                         ("asking_price", "<=", "max_price")):
+        if pre.get(key) is not None:
+            where.append(f"{col} {op} %s")
+            params.append(pre[key])
+    for col in ("transmission", "fuel"):
+        if pre.get(col):
+            where.append(f"{col} = %s")
+            params.append(pre[col])
+    if pre.get("q"):
+        where.append("title ilike %s")
+        params.append(f"%{pre['q']}%")
+    sql = (f"select * from public.{table} where {' and '.join(where)} "
+           f"order by found_at desc limit %s")
+    with _get_pool().connection() as conn:
+        return [dict(r) for r in conn.execute(sql, (*params, AUTO_FEED_MAX_ROWS)).fetchall()]
+
+
 def _enriched_feed(
-    db: Client, table: str, target_cat: str
+    db: Client, table: str, target_cat: str, prefilter: dict[str, Any] | None = None
 ) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """(riga, opportunità arricchita) per ogni annuncio attivo, con cache."""
+    """(riga, opportunità arricchita) per ogni annuncio attivo, con cache.
+    Auto: solo le righe del ``prefilter`` (vedi _auto_feed_rows)."""
     import time  # noqa: PLC0415
 
-    hit = _feed_cache.get(table)
+    auto = table.endswith("_auto")
+    cache_key = f"{table}:{sorted((prefilter or {}).items())}" if auto else table
+    hit = _feed_cache.get(cache_key)
     if hit and time.monotonic() - hit[0] < _FEED_TTL_S:
         return hit[1]
-    rows = _select_all(
-        lambda: db.table(table).select("*").in_("status", list(_ACTIVE_STATUSES))
-    )
-    # Accessori e ricambi ("Cover per iPhone 13", "Display iPhone 15"): non sono
-    # telefoni e col valore equo della variante sembrerebbero affari clamorosi.
-    # Scartati anche QUI, non solo allo scraping, così il filtro vale subito su
-    # tutto lo storico già raccolto senza doverlo cancellare.
-    if not table.endswith("_auto"):
-        rows = [r for r in rows if not _is_accessory_listing(r.get("title"))]
-    pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
-    if rows:
-        ctx = _build_enrich_ctx(db, target_cat, table, rows)
-        pairs = [(r, _enrich_opportunity(r, ctx)) for r in rows]
-    _feed_cache[table] = (time.monotonic(), pairs)
+    if hit and time.monotonic() - hit[0] < _FEED_STALE_MAX_S:
+        # Scaduto ma recente: si risponde SUBITO col vecchio e si ricalcola in
+        # background (valutare 47k iPhone costa ~20 s: nessuno deve aspettarli).
+        # Il vecchio resta servibile finché il nuovo non è pronto.
+        if cache_key not in _feed_refreshing:
+            import threading  # noqa: PLC0415
+
+            _feed_refreshing.add(cache_key)
+
+            def refresh() -> None:
+                try:
+                    _feed_cache[cache_key] = (time.monotonic(),
+                                              _build_feed(db, table, target_cat, prefilter))
+                except Exception:
+                    logger.exception("Ricalcolo del feed in background fallito")
+                finally:
+                    _feed_refreshing.discard(cache_key)
+
+            threading.Thread(target=refresh, daemon=True).start()
+        return hit[1]
+    pairs = _build_feed(db, table, target_cat, prefilter)
+    if auto and len(_feed_cache) > 50:
+        _feed_cache.clear()  # una chiave per combinazione di filtri: non accumulare
+    _feed_cache[cache_key] = (time.monotonic(), pairs)
     return pairs
+
+
+def _build_feed(
+    db: Client, table: str, target_cat: str, prefilter: dict[str, Any] | None
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    if table.endswith("_auto"):
+        rows = _auto_feed_rows(table, prefilter or {})
+    else:
+        rows = _select_all(
+            lambda: db.table(table).select("*").in_("status", list(_ACTIVE_STATUSES))
+        )
+        # Accessori e ricambi ("Cover per iPhone 13", "Display iPhone 15"): non
+        # sono telefoni e col valore equo della variante sembrerebbero affari
+        # clamorosi. Scartati anche QUI, non solo allo scraping, così il filtro
+        # vale subito su tutto lo storico già raccolto.
+        rows = [r for r in rows if not _is_accessory_listing(r.get("title"))]
+    if not rows:
+        return []
+    ctx = _build_enrich_ctx(db, target_cat, table, rows)
+    return [(r, _enrich_opportunity(r, ctx)) for r in rows]
 
 
 def _current_triage(db: Client, table: str) -> dict[str, str]:
@@ -1118,7 +1239,13 @@ def list_opportunities(
 
     facets = _opportunity_facets(db, table)
 
-    pairs = _enriched_feed(db, table, target_cat)
+    prefilter = (
+        {"model": model, "generation": generation, "min_year": min_year, "max_year": max_year,
+         "max_km": max_km, "min_price": min_price, "max_price": max_price,
+         "transmission": transmission, "fuel": fuel, "q": q}
+        if table.endswith("_auto") else None
+    )
+    pairs = _enriched_feed(db, table, target_cat, prefilter)
     triage = _current_triage(db, table)
 
     def keep(row: dict[str, Any]) -> bool:
