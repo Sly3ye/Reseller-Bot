@@ -85,6 +85,20 @@ async def get_opportunities(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
+@router.get("/car-hunt")
+async def get_car_hunt_endpoint(force: bool = Query(default=False)) -> dict:
+    """Auto: matrice "dove cacciare" per modello@generazione (affari con margine
+    netto dopo i costi, volume, potenziale €/settimana). In cache 1 h."""
+    import asyncio  # noqa: PLC0415
+
+    from backend.services.car_hunt import get_car_hunt  # noqa: PLC0415
+
+    try:
+        return await asyncio.to_thread(get_car_hunt, force)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
 @router.get("/repair-matrix")
 async def get_repair_matrix_endpoint() -> dict:
     """Matrice opportunità modello × guasto (iPhone): acquisto tipico, sconto vs

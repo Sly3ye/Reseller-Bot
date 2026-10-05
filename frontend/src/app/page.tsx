@@ -34,6 +34,9 @@ import {
   type Deal,
   type DealStage,
   type CarFilters,
+  type CarHunt,
+  type CarHuntCell,
+  fetchCarHunt,
   type DealsSummary,
   type DepreciationCurve,
   type DepreciationData,
@@ -65,7 +68,7 @@ import {
 const MONO = "var(--font-ibm-plex-mono), 'IBM Plex Mono', monospace";
 
 type Vertical = "tech" | "auto";
-type Screen = "sniper" | "riparazioni" | "intel" | "tempo" | "pipeline" | "automations" | "settings";
+type Screen = "sniper" | "riparazioni" | "caccia" | "intel" | "tempo" | "pipeline" | "automations" | "settings";
 type MarginFilter = "all" | "high";
 
 const PAGE_SIZE = 30;
@@ -354,6 +357,8 @@ export default function FlipRadar() {
   }, []);
   const toggleVertical = () => {
     resetFilters();
+    // Riparazioni (iPhone) e Dove cacciare (auto) esistono in un solo verticale.
+    setScreen((cur) => (cur === "riparazioni" || cur === "caccia" ? "sniper" : cur));
     setVertical((v) => (v === "tech" ? "auto" : "tech"));
   };
 
@@ -589,6 +594,15 @@ export default function FlipRadar() {
             </div>
           )}
 
+          {!isTech && (
+            <div onClick={() => setScreen("caccia")} style={navItem(screen === "caccia")}>
+              <div style={{ width: "16px", height: "16px", flexShrink: 0, display: "grid", placeItems: "center" }}>
+                <div style={{ width: "12px", height: "12px", borderRadius: "50%", border: "2px solid currentColor" }} />
+              </div>
+              Dove cacciare
+            </div>
+          )}
+
           <div onClick={() => setScreen("intel")} style={navItem(screen === "intel")}>
             <div
               style={{
@@ -747,6 +761,18 @@ export default function FlipRadar() {
               onOpenCell={(cell) => {
                 setFModel(cell.modelKey);
                 setFDefect({ code: cell.defect, label: `${cell.model} · ${cell.defectLabel}` });
+                setPreset(null);
+                setSortMode("margin");
+                setPage(0);
+                setScreen("sniper");
+              }}
+            />
+          )}
+
+          {screen === "caccia" && (
+            <CarHuntScreen
+              onOpenCell={(cell) => {
+                setFCar({ generation: cell.variantKey });
                 setPreset(null);
                 setSortMode("margin");
                 setPage(0);
@@ -2738,6 +2764,113 @@ const DEFECT_FILTERS: [string, string][] = [
 ];
 
 /** Matrice opportunità modello × guasto: dove conviene cacciare. */
+/** Auto: dove conviene cacciare (modello@generazione), dai modelli di prezzo. */
+function CarHuntScreen(props: { onOpenCell: (cell: CarHuntCell) => void }) {
+  const [data, setData] = useState<CarHunt | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [onlyValued, setOnlyValued] = useState(true);
+  const [q, setQ] = useState("");
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchCarHunt(ctrl.signal)
+      .then(setData)
+      .catch((e: unknown) => {
+        if (!ctrl.signal.aborted) setErr(e instanceof Error ? e.message : "Errore");
+      });
+    return () => ctrl.abort();
+  }, []);
+
+  const rows = useMemo(
+    () => (data?.cells ?? []).filter(
+      (c) => (!onlyValued || c.valued) && (!q || c.label.toLowerCase().includes(q.toLowerCase())),
+    ),
+    [data, onlyValued, q],
+  );
+
+  if (err) return <div style={{ color: "oklch(0.68 0.17 25)" }}>Matrice non disponibile: {err}</div>;
+  if (!data) return <div style={{ color: "oklch(0.6 0.01 250)" }}>Calcolo della matrice (tutte le auto)…</div>;
+
+  const cols = "1.8fr 0.6fr 0.7fr 0.7fr 0.8fr 0.7fr 0.6fr 0.9fr 0.8fr";
+  const head: CSSProperties = {
+    fontSize: "10.5px", fontWeight: 700, color: "oklch(0.55 0.01 250)",
+    textTransform: "uppercase", letterSpacing: "0.04em",
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", animation: "fadeIn 0.2s ease" }}>
+      <div>
+        <div style={{ fontSize: "22px", fontWeight: 700 }}>Dove cacciare</div>
+        <div style={{ fontSize: "13px", color: "oklch(0.6 0.01 250)", marginTop: "4px", lineHeight: 1.6 }}>
+          Per modello e generazione: affari = auto sane con margine netto (dopo passaggio e costi) sopra{" "}
+          {eur(data.minDealMarginEur)} <b>e</b> sopra l&apos;errore tipico della stima. Valutate{" "}
+          {data.valuedVariants} generazioni su {data.totalVariants}: le altre non hanno ancora abbastanza auto
+          per un modello di prezzo affidabile. Ultimi {data.windowDays} giorni. {data.note}
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Cerca modello…"
+          style={{ padding: "7px 10px", borderRadius: "8px", fontSize: "13px", minWidth: "200px" }}
+        />
+        <label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "13px" }}>
+          <input type="checkbox" checked={onlyValued} onChange={(e) => setOnlyValued(e.target.checked)} />
+          solo generazioni con valore equo
+        </label>
+      </div>
+      <div style={{ border: "1px solid oklch(0.27 0.01 250)", borderRadius: "12px", overflowX: "auto" }}>
+        <div style={{ minWidth: "860px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: cols, gap: "10px", padding: "10px 16px", ...head }}>
+            <div>Modello · generazione</div>
+            <div>Attive</div>
+            <div title="Nuove a settimana">Nuove/sett.</div>
+            <div title="Sparite a settimana (affidabile dopo il primo ciclo d'inventario)">Sparite/sett.</div>
+            <div>Prezzo tipico</div>
+            <div title="Errore tipico del modello di prezzo">Errore</div>
+            <div>Affari</div>
+            <div>Margine tipico</div>
+            <div title="Affari nuovi a settimana × margine tipico">€/sett.</div>
+          </div>
+          {rows.map((c) => (
+            <div
+              key={c.variantKey}
+              onClick={() => props.onOpenCell(c)}
+              style={{
+                display: "grid", gridTemplateColumns: cols, gap: "10px", padding: "9px 16px",
+                alignItems: "center", fontSize: "13px", cursor: "pointer",
+                borderTop: "1px solid oklch(0.24 0.008 250)", opacity: c.valued ? 1 : 0.6,
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>{c.label}</div>
+              <div style={{ fontFamily: MONO }}>{c.active}</div>
+              <div style={{ fontFamily: MONO }}>{c.newPerWeek}</div>
+              <div style={{ fontFamily: MONO }}>{c.gonePerWeek}</div>
+              <div style={{ fontFamily: MONO }}>{c.medianPrice != null ? eur(c.medianPrice) : "—"}</div>
+              <div style={{ fontFamily: MONO }} title={c.modelSamples ? `${c.modelSamples} auto nel modello` : ""}>
+                {c.errPct != null ? `±${c.errPct}%` : "—"}
+              </div>
+              <div style={{ fontFamily: MONO }}>{c.deals}</div>
+              <div style={{ fontFamily: MONO, color: c.typicalDealMargin ? "oklch(0.78 0.15 150)" : undefined }}>
+                {c.typicalDealMargin != null ? `+${eur(c.typicalDealMargin)}` : "—"}
+              </div>
+              <div style={{ fontFamily: MONO, fontWeight: 700 }}>
+                {c.weeklyPotentialEur != null ? eur(c.weeklyPotentialEur) : "—"}
+              </div>
+            </div>
+          ))}
+          {!rows.length && (
+            <div style={{ padding: "16px", fontSize: "13px", color: "oklch(0.6 0.01 250)" }}>
+              Nessuna generazione: la raccolta delle auto è appena iniziata, i modelli di prezzo si formano
+              man mano che arrivano annunci.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RepairMatrixScreen(props: { onOpenCell: (cell: RepairCell) => void }) {
   const [data, setData] = useState<RepairMatrix | null>(null);
   const [err, setErr] = useState<string | null>(null);

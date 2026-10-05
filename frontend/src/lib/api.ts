@@ -539,6 +539,40 @@ export type RepairMatrix = {
   computedAt: string;
 };
 
+/** Auto: matrice "dove cacciare" per modello@generazione. */
+export type CarHuntCell = {
+  variantKey: string;
+  label: string;
+  modelKey: string;
+  active: number;
+  newPerWeek: number;
+  gonePerWeek: number;
+  medianPrice: number | null;
+  valued: boolean;
+  modelSamples: number | null;
+  errPct: number | null;
+  deals: number;
+  typicalDealMargin: number | null;
+  dealsPerWeek: number;
+  weeklyPotentialEur: number | null;
+};
+
+export type CarHunt = {
+  cells: CarHuntCell[];
+  windowDays: number;
+  minDealMarginEur: number;
+  valuedVariants: number;
+  totalVariants: number;
+  generatedAt: string;
+  note: string;
+};
+
+export async function fetchCarHunt(signal?: AbortSignal): Promise<CarHunt> {
+  const res = await fetch(`${API_BASE_URL}/api/car-hunt`, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`GET /api/car-hunt failed (${res.status})`);
+  return res.json();
+}
+
 export async function fetchRepairMatrix(signal?: AbortSignal): Promise<RepairMatrix> {
   const res = await fetch(`${API_BASE_URL}/api/repair-matrix`, { cache: "no-store", signal });
   if (!res.ok) throw new Error(`GET /api/repair-matrix failed (${res.status})`);

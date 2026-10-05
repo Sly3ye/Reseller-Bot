@@ -138,6 +138,10 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
   senso qui.
 - ◻️ 🔴 **Curva prezzo/km e prezzo/anno per generazione**: l'equivalente auto
   della curva di deprezzamento iPhone, e la base del valore equo.
+- ✅ 🔴 **Dove cacciare** (2026-10-05, `services/car_hunt.py`, schermata omonima): per
+  modello@generazione attive, nuove/sparite a settimana, prezzo tipico, errore
+  del modello, affari (margine netto dopo i costi sopra 500 € e sopra l'errore),
+  margine tipico, potenziale €/settimana; clic → feed filtrato per margine.
 - ◻️ 🟡 **Confronto tra generazioni** dello stesso modello (E82 vs F20 vs F40):
   dove si compra meglio oggi.
 - ◻️ 🟡 **Prezzo per fascia di km** (0-50k, 50-100k, …): come si muove il mercato
