@@ -124,6 +124,71 @@ async def _send_telegram(
         return None
 
 
+def chat_for(category: str) -> str | None:
+    """Chat effettiva per categoria ("smartphone", "automobile", "ops"):
+    Impostazioni UI se c'è il token, altrimenti il .env."""
+    from backend.services import settings_store  # noqa: PLC0415
+
+    if not settings.telegram_bot_token:
+        return None
+    key = {"automobile": "telegram_chat_auto", "ops": "telegram_chat_ops"}.get(category, "telegram_chat_tech")
+    fallback = settings.telegram_chat_ops if category == "ops" else settings.telegram_chat_for(category)
+    return settings_store.get_all().get(key) or fallback
+
+
+async def send_test_alert(category: str) -> dict[str, Any]:
+    """Alert di prova per verificare token, chat e bottoni in un clic.
+
+    iPhone/auto: il primo affare del feed, formattato come un alert vero (foto
+    dal CDN, offerta da copiare, bottoni funzionanti su quell'annuncio).
+    Sistema: un messaggio semplice. Ritorna l'esito con la descrizione esatta
+    di Telegram in caso di rifiuto (mai il token).
+    """
+    token = settings.telegram_bot_token
+    if not token:
+        return {"ok": False, "detail": "TELEGRAM_BOT_TOKEN mancante in backend/.env (poi riavvia backend e collector)"}
+    chat = chat_for(category)
+    if not chat:
+        return {"ok": False, "detail": "Nessuna chat impostata per questa categoria: scrivi l'ID e salva"}
+    text = "🧪 <b>Prova FlipRadar</b>: il bot raggiunge questa chat."
+    photo: str | None = None
+    keyboard: dict[str, Any] | None = None
+    if category in ("smartphone", "automobile"):
+        from backend.services.reads import list_opportunities  # noqa: PLC0415
+
+        try:
+            items = (await asyncio.to_thread(list_opportunities, category, sort="score", limit=1))["items"]
+        except Exception:
+            logger.exception("Alert di prova: feed non disponibile")
+            items = []
+        if items:
+            item = items[0]
+            text = ("🧪 <b>PROVA</b>: così arriveranno gli alert (i bottoni agiscono davvero su "
+                    "questo annuncio)\n\n" + _fmt_smart_deal(item, category))
+            photo, keyboard = _public_photo(item), action_keyboard(str(item["id"]), category)
+    extra = {"reply_markup": keyboard} if keyboard else {}
+    try:
+        async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
+            if photo and len(text) <= CAPTION_MAX:
+                r = await client.post(f"{TELEGRAM_API}/bot{token}/sendPhoto",
+                                      json={"chat_id": chat, "photo": photo, "caption": text,
+                                            "parse_mode": "HTML", **extra})
+                if r.status_code == 200:
+                    return {"ok": True, "detail": "Arrivato, con foto e bottoni"}
+            r = await client.post(f"{TELEGRAM_API}/bot{token}/sendMessage",
+                                  json={"chat_id": chat, "text": text, "parse_mode": "HTML", **extra})
+    except httpx.HTTPError:
+        # Il messaggio dell'eccezione contiene l'URL col token: mai restituirlo.
+        return {"ok": False, "detail": "api.telegram.org non raggiungibile da questo computer"}
+    if r.status_code == 200:
+        return {"ok": True, "detail": "Arrivato" + (" (senza foto)" if photo else "")}
+    try:
+        description = r.json().get("description")
+    except ValueError:
+        description = None
+    return {"ok": False, "detail": f"Telegram ha rifiutato: {description or 'HTTP ' + str(r.status_code)}"}
+
+
 # ------------------------------------------------------------- formatting
 
 def _fmt_eur(value: float | int | None) -> str:

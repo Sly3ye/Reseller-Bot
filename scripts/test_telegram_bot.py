@@ -111,5 +111,79 @@ ck("auto: centinaia e visione", "offrirei 8.300 €" in (offer_message(
     {"askingPrice": 9000, "suggestedOffer": 8330}, "automobile") or ""), True)
 ck("niente cifra, niente messaggio", offer_message({"askingPrice": 300}, "smartphone"), None)
 
+print("Alert di prova (Telegram finto):")
+import asyncio  # noqa: E402
+
+import httpx  # noqa: E402
+
+import backend.services.notifications as notif  # noqa: E402
+import backend.services.reads as reads  # noqa: E402
+
+import dataclasses  # noqa: E402
+
+FAKE_TOKEN = "123:SEGRETO"
+calls: list[tuple[str, dict]] = []
+real_client = httpx.AsyncClient
+
+
+def run_test(handler, category="smartphone"):
+    """send_test_alert con un Telegram finto (MockTransport) al posto della rete."""
+    calls.clear()
+
+    def factory(*args, **kwargs):
+        kwargs.pop("trust_env", None)
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    notif.httpx.AsyncClient = factory
+    try:
+        return asyncio.run(notif.send_test_alert(category))
+    finally:
+        notif.httpx.AsyncClient = real_client
+
+
+notif.settings = dataclasses.replace(notif.settings, telegram_bot_token=FAKE_TOKEN)
+notif.chat_for = lambda category: "42"
+reads.list_opportunities = lambda *a, **k: {"items": [{
+    "id": "L9", "title": "iPhone 13", "askingPrice": 300, "suggestedOffer": 280, "score": 80,
+    "dealClass": "affare", "url": "https://www.subito.it/x.htm", "remoteImages": ["https://images.sbito.it/a.jpg"]}]}
+
+
+def ok_handler(request):
+    calls.append((request.url.path.rsplit("/", 1)[-1], __import__("json").loads(request.content)))
+    return httpx.Response(200, json={"ok": True, "result": {"message_id": 7}})
+
+
+out = run_test(ok_handler)
+ck("arriva con foto", (out["ok"], calls[0][0]), (True, "sendPhoto"))
+ck("con i bottoni dell'annuncio", calls[0][1]["reply_markup"]["inline_keyboard"][0][0]["callback_data"], "fr:s:t:L9")
+
+
+def photo_refused(request):
+    method = request.url.path.rsplit("/", 1)[-1]
+    calls.append((method, {}))
+    if method == "sendPhoto":
+        return httpx.Response(400, json={"ok": False, "description": "Bad Request: wrong file"})
+    return httpx.Response(200, json={"ok": True, "result": {"message_id": 8}})
+
+
+out = run_test(photo_refused)
+ck("foto rifiutata: ripiega sul testo", ([c[0] for c in calls], out["ok"]), (["sendPhoto", "sendMessage"], True))
+
+
+def chat_missing(request):
+    return httpx.Response(400, json={"ok": False, "description": "Bad Request: chat not found"})
+
+
+out = run_test(chat_missing, "ops")
+ck("errore esatto di Telegram", out["detail"], "Telegram ha rifiutato: Bad Request: chat not found")
+
+
+def network_down(request):
+    raise httpx.ConnectError(f"connessione a https://api.telegram.org/bot{FAKE_TOKEN}/sendMessage fallita")
+
+
+out = run_test(network_down, "ops")
+ck("rete giù: il token non esce mai", FAKE_TOKEN in out["detail"], False)
+
 print(f"\n=== {_p} PASS / {_f} FAIL ===")
 raise SystemExit(1 if _f else 0)

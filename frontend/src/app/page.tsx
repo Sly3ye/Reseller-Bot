@@ -15,6 +15,7 @@ import {
   fetchDataQuality,
   fetchRepairMatrix,
   fetchSettings,
+  testTelegram,
   fetchTimeToSale,
   fetchTrends,
   patchOpportunityStatus,
@@ -5537,6 +5538,7 @@ function SettingsScreen() {
             ),
           )}
         </div>
+        <TelegramTest />
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
@@ -5894,6 +5896,50 @@ const BACKUP_STATE: Record<string, { label: string; color: string }> = {
   fallito: { label: "fallito", color: "oklch(0.68 0.17 25)" },
   assente: { label: "mai eseguito", color: "oklch(0.68 0.17 25)" },
 };
+
+/** Un clic per chat: arriva un alert vero (foto, offerta, bottoni) o l'errore esatto di Telegram. */
+function TelegramTest() {
+  const [result, setResult] = useState<Record<string, { ok: boolean; detail: string } | "…">>({});
+  const run = async (cat: "smartphone" | "automobile" | "ops") => {
+    setResult((r) => ({ ...r, [cat]: "…" }));
+    try {
+      const out = await testTelegram(cat);
+      setResult((r) => ({ ...r, [cat]: out }));
+    } catch (e) {
+      setResult((r) => ({ ...r, [cat]: { ok: false, detail: e instanceof Error ? e.message : "errore" } }));
+    }
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px", fontSize: "12px" }}>
+      <div style={{ color: "oklch(0.6 0.01 250)" }}>Salva, poi prova: deve arrivarti un alert.</div>
+      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+        {([["smartphone", "Prova iPhone"], ["automobile", "Prova auto"], ["ops", "Prova sistema"]] as const).map(
+          ([cat, label]) => {
+            const r = result[cat];
+            return (
+              <span key={cat} style={{ display: "inline-flex", gap: "8px", alignItems: "center" }}>
+                <span
+                  onClick={() => run(cat)}
+                  style={{
+                    padding: "5px 10px", borderRadius: "7px", cursor: "pointer", fontWeight: 600,
+                    border: "1px solid oklch(0.32 0.01 250)", background: "oklch(0.20 0.008 250)",
+                  }}
+                >
+                  {label}
+                </span>
+                {r && (
+                  <span style={{ color: r === "…" ? undefined : r.ok ? "var(--accent)" : "oklch(0.68 0.17 25)" }}>
+                    {r === "…" ? "invio…" : r.detail}
+                  </span>
+                )}
+              </span>
+            );
+          },
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** 45 → "45 min", 120 → "2 h", 1440 → "1 giorno". */
 function fmtMinutes(min: number): string {

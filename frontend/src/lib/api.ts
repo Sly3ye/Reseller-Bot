@@ -1065,6 +1065,15 @@ export async function updateSettings(
 
 /* --------------------------------------------------- Automations (scheduler) */
 
+/** Alert di prova alla chat salvata (verifica token, chat, foto e bottoni). */
+export async function testTelegram(
+  category: "smartphone" | "automobile" | "ops",
+): Promise<{ ok: boolean; detail: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/settings/telegram-test?category=${category}`, { method: "POST" });
+  if (!res.ok) throw new Error(`POST /api/settings/telegram-test failed (${res.status})`);
+  return res.json();
+}
+
 export type AutomationJob = {
   id: string;
   name: string;

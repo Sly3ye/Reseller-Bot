@@ -1,6 +1,6 @@
 """API impostazioni configurabili da UI (soglie alert, margine, ricambi Apple)."""
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -31,3 +31,11 @@ async def put_settings(payload: SettingsPatch) -> dict[str, Any]:
         return settings_store.update(payload.values)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/settings/telegram-test")
+async def telegram_test(category: Literal["smartphone", "automobile", "ops"] = "smartphone") -> dict[str, Any]:
+    """Alert di prova alla chat salvata per la categoria: {ok, detail}."""
+    from backend.services.notifications import send_test_alert  # noqa: PLC0415
+
+    return await send_test_alert(category)

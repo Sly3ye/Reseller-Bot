@@ -149,6 +149,21 @@ Mac lo continua. Dopo un'ora, in **Qualità del dato** compaiono le richieste
 di oggi per lavoro (`testa`, `sweep`, `inventario`, `ricontrollo_affari`…):
 è il budget reale dallo stesso IP.
 
+**Telegram:**
+1. `TELEGRAM_BOT_TOKEN` in `backend/.env` (mai in chat né nel repository),
+   poi `docker compose up -d backend collector`.
+2. In **Impostazioni → Chat Telegram** scrivi gli ID delle chat e premi **Salva**.
+3. Premi **Prova iPhone**, **Prova auto** e **Prova sistema**. Arriva un alert
+   vero con foto, offerta da copiare e bottoni; se non arriva, accanto al
+   pulsante compare l'errore esatto di Telegram (chat sbagliata, bot non
+   avviato…).
+4. Premi un bottone sotto l'alert (es. ⭐ Salva): l'annuncio deve comparire in
+   pipeline entro 30 secondi. Questo vuol dire che il bot del collector riceve
+   i comandi.
+
+Gli alert auto partono solo se imposti almeno un criterio del compratore
+(marca, zona, raggio o budget).
+
 **Tutte le auto sullo stesso IP (`AUTO_FULL_CATEGORY=true`).** La Goal Version
 (§4) consiglia di spegnerle sul nodo degli iPhone: la testa delle auto costa
 1.440 richieste al giorno e la fetta notturna ~1.400. Resta accesa per scelta
