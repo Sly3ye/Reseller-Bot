@@ -114,6 +114,8 @@ def get_existing_opportunities(
             "has_images": bool(row.get("image_urls")),
             # False se la colonna manca: allora non si tenta il riempimento.
             "missing_published": with_published and not row.get("published_at"),
+            # Prima data vista: confronto per i riposizionamenti (record_bumps).
+            "published_at": row.get("published_at"),
             "can_raw": can_raw,
             # Auto salvata prima della migrazione 23: i dati strutturati si
             # riempiono la prima volta che l'annuncio viene rivisto.
@@ -271,6 +273,7 @@ def apply_price_updates(
     price_drops = 0
     history_rows: list[dict[str, Any]] = []
     drop_events: list[dict[str, Any]] = []
+    bumps: list[tuple[Any, datetime]] = []
 
     for listing in listings:
         row = existing.get(listing.url)
@@ -302,6 +305,8 @@ def apply_price_updates(
         published = (listing.metadata or {}).get("published_at")
         if row.get("missing_published") and published:
             patch["published_at"] = published
+        elif published and (shown := is_bump(published, row.get("published_at"))):
+            bumps.append((listing_id, shown))
         if new_price is not None and old_price is not None and new_price > old_price:
             # Rialzo: si registra anche quello (prima andava perso, e il prezzo
             # in DB restava quello vecchio più basso). Niente alert né
@@ -355,12 +360,81 @@ def apply_price_updates(
                 len(history_rows),
             )
 
+    try:
+        bumped = record_bumps(table, bumps)
+    except Exception:
+        logger.exception("Riposizionamenti non registrati")
+        bumped = 0
+
     return {
         "updated": updated,
         "price_drops": price_drops,
         "history_stored": stored_history,
         "drop_events": drop_events,
+        "bumps": bumped,
     }
+
+
+# Riposizionamento: quando il venditore rimette in cima l'annuncio, la data
+# mostrata da Subito (display_iso8601) torna "adesso"; published_at resta la
+# prima vista. Sotto l'ora è rumore (fusi orari, arrotondamenti).
+BUMP_MIN_GAP = timedelta(hours=1)
+
+
+def _as_dt(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def is_bump(shown: Any, first_published: Any) -> datetime | None:
+    """Data mostrata ora se è un riposizionamento rispetto alla prima, altrimenti None."""
+    shown_dt, first_dt = _as_dt(shown), _as_dt(first_published)
+    if shown_dt and first_dt and shown_dt - first_dt > BUMP_MIN_GAP:
+        return shown_dt
+    return None
+
+
+def record_bumps(table: str, bumps: list[tuple[Any, datetime]]) -> int:
+    """Eventi 'riposizionato' in listing_events (migrazione 26), uno per ogni
+    nuova data mostrata: inventario e sweep rivedono lo stesso annuncio
+    riposizionato più volte e non va contato ogni volta."""
+    import json  # noqa: PLC0415
+
+    from backend.core.database import _get_pool  # noqa: PLC0415
+
+    if not bumps or not has_column("listing_events", "kind"):
+        return 0
+    category = "automobile" if table.endswith("_auto") else "smartphone"
+    ids = list({str(listing_id) for listing_id, _ in bumps})
+    with _get_pool().connection() as conn:
+        last = {
+            str(r["listing_id"]): r["shown"]
+            for r in conn.execute(
+                "select listing_id, max((info->>'shown_at')::timestamptz) as shown "
+                "from public.listing_events where kind = 'riposizionato' and listing_id = any(%s::uuid[]) "
+                "group by listing_id",
+                (ids,),
+            ).fetchall()
+        }
+        rows = []
+        for listing_id, shown in bumps:
+            prev = last.get(str(listing_id))
+            if prev is None or shown - prev > BUMP_MIN_GAP:
+                rows.append((str(listing_id), category, shown, json.dumps({"shown_at": shown.isoformat()})))
+                last[str(listing_id)] = shown
+        if rows:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    "insert into public.listing_events (listing_id, category, kind, at, info) "
+                    "values (%s, %s, 'riposizionato', %s, %s::jsonb)",
+                    rows,
+                )
+    return len(rows)
 
 
 ACTIVE_STATUSES = ("nuovo", "visto")

@@ -1,4 +1,4 @@
-"""Test di emivita degli affari e allarmi di deriva, zero DB.
+"""Test di emivita degli affari, allarmi di deriva e riposizionamenti, zero DB.
 
 Esegui dalla root:  python scripts/test_deal_watch.py
 """
@@ -46,6 +46,17 @@ ck("campo svuotato", list(evaluate({"potenza": 0.20, "foto": 0.98}, base)), ["po
 ck("valori riportati", evaluate({"potenza": 0.2}, base)["potenza"], {"recent": 0.2, "base": 0.93})
 ck("campo che di solito manca: niente allarme", evaluate({"colore": 0.0}, base), {})
 ck("campo non misurato: ignorato", evaluate({}, base), {})
+
+print("Riposizionamenti:")
+from datetime import datetime, timezone  # noqa: E402
+
+from backend.tasks import is_bump  # noqa: E402
+
+first = datetime(2026, 10, 1, 8, 0, tzinfo=timezone.utc)
+ck("data mostrata 4 giorni dopo = riposizionato", is_bump("2026-10-05T12:00:00+02:00", first) is not None, True)
+ck("stessa ora in un altro fuso = niente", is_bump("2026-10-01T10:30:00+02:00", first), None)
+ck("data senza fuso letta come UTC", is_bump("2026-10-01 08:00:00", "2026-10-01T08:00:00+00:00"), None)
+ck("date mancanti o rotte = niente", (is_bump(None, first), is_bump("rotta", first)), (None, None))
 
 print(f"\n=== {_p} PASS / {_f} FAIL ===")
 raise SystemExit(1 if _f else 0)
