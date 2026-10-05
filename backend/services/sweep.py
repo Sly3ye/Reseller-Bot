@@ -883,6 +883,8 @@ async def _drain_verify_queue(db: Any, category: str) -> dict[str, int]:
         # Via dalla coda solo le pagine verificate davvero: i blocchi restano.
         state["items"] = [it for it in items if it["id"] not in results]
         await asyncio.to_thread(_save_state, db, key, state)
+        logger.info("Verifiche %s: %d pagine, %d rimossi (in coda %d)",
+                    category, len(results), len(removed), len(state["items"]))
         if run.get("aborted") or not results:
             logger.warning("Verifiche %s ferme (blocchi): %d restano in coda", category, len(state["items"]))
             break

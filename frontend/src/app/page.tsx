@@ -13,6 +13,7 @@ import {
   fetchOpportunities,
   fetchScraperHealth,
   fetchDataQuality,
+  fetchGoals,
   fetchRepairMatrix,
   fetchSettings,
   testTelegram,
@@ -50,6 +51,7 @@ import {
   type PresetMode,
   type ScraperHealth,
   type DataQuality,
+  type GoalsState,
   type DealRepair,
   type RepairCell,
   type RepairMatrix,
@@ -5676,8 +5678,47 @@ function ScraperHealthPanel(props: { health: ScraperHealth }) {
         const rows = health.coverage[cat]?.targets ?? [];
         return rows.length ? <TargetCoverageTable key={cat} label={label} rows={rows} /> : null;
       })}
+      <GoalsPanel />
       <DataQualityPanel category="smartphone" />
       <DataQualityPanel category="automobile" />
+    </div>
+  );
+}
+
+/** "Come si sa che ci siamo" (docs/GOAL-VERSION.md): ogni obiettivo misurato ora. */
+function GoalsPanel() {
+  const [g, setG] = useState<GoalsState | null>(null);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchGoals(ctrl.signal).then(setG).catch(() => undefined);
+    return () => ctrl.abort();
+  }, []);
+  if (!g) return null;
+  const mark = (ok: boolean | null) =>
+    ok === true ? { icon: "✅", color: "var(--accent)" }
+      : ok === false ? { icon: "⚠️", color: "oklch(0.68 0.17 25)" }
+        : { icon: "⏳", color: "oklch(0.6 0.01 250)" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px", padding: "14px 16px", borderRadius: "12px",
+      border: "1px solid oklch(0.28 0.01 250)", background: "oklch(0.17 0.008 250)" }}>
+      <div style={{ fontSize: "14px", fontWeight: 700 }}>
+        Obiettivi della Goal Version · {g.met}/{g.total} raggiunti
+      </div>
+      {g.goals.map((goal) => {
+        const m = mark(goal.ok);
+        return (
+          <div key={goal.key} style={{ display: "flex", gap: "10px", flexWrap: "wrap", fontSize: "12.5px", alignItems: "baseline" }}>
+            <span>{m.icon}</span>
+            <span style={{ fontWeight: 600, minWidth: "210px" }}>{goal.label}</span>
+            <span style={{ fontFamily: MONO, color: m.color }}>{goal.value ?? "—"}</span>
+            <span style={{ color: "oklch(0.6 0.01 250)" }}>obiettivo {goal.target}</span>
+            <span style={{ color: "oklch(0.52 0.01 250)" }}>{goal.detail}</span>
+          </div>
+        );
+      })}
+      <div style={{ fontSize: "11.5px", color: "oklch(0.5 0.01 250)" }}>
+        ⏳ = non ancora misurabile (servono dati: Telegram attivo, affari chiusi in pipeline, inventari).
+      </div>
     </div>
   );
 }

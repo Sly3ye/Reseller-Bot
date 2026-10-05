@@ -1001,6 +1001,22 @@ export async function fetchDataQuality(
   return res.json();
 }
 
+/** Obiettivi della Goal Version ("Come si sa che ci siamo") misurati ora. */
+export type Goal = {
+  key: string; label: string; target: string;
+  value: string | number | null;
+  /** true = raggiunto, false = no, null = non ancora misurabile. */
+  ok: boolean | null;
+  detail: string;
+};
+export type GoalsState = { at: string; goals: Goal[]; met: number; total: number };
+
+export async function fetchGoals(signal?: AbortSignal): Promise<GoalsState> {
+  const res = await fetch(`${API_BASE_URL}/health/goals`, { cache: "no-store", signal });
+  if (!res.ok) throw new Error(`GET /health/goals failed (${res.status})`);
+  return res.json();
+}
+
 /* ------------------------------------------------------------- Impostazioni */
 
 export type AppSettings = {

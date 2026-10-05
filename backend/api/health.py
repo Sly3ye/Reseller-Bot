@@ -27,3 +27,13 @@ async def data_quality(category: str = "smartphone") -> dict:
     from backend.services.data_quality import get_data_quality  # noqa: PLC0415
 
     return get_data_quality(category)
+
+
+@router.get("/goals")
+async def goals() -> dict:
+    """Obiettivi della Goal Version ("Come si sa che ci siamo") misurati ora."""
+    import asyncio  # noqa: PLC0415
+
+    from backend.services.goals import goal_scoreboard  # noqa: PLC0415
+
+    return await asyncio.to_thread(goal_scoreboard)
