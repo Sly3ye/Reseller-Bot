@@ -5740,8 +5740,59 @@ function DataQualityPanel(props: { category: Category }) {
               ? `mediana ${q.latency.alertP50Min} min · 95% entro ${q.latency.alertP95Min} min`
               : "nessun alert inviato in 7 giorni"}
           </span>
+          {q.alertDelivery7d && (
+            <span
+              style={{ color: q.alertDelivery7d.failed ? "oklch(0.68 0.17 25)" : undefined }}
+              title="Ultimi 7 giorni. I non inviati sono affari registrati senza Telegram configurato: servono al ricontrollo"
+            >
+              consegna: {q.alertDelivery7d.delivered} ok · {q.alertDelivery7d.failed} falliti
+              {q.alertDelivery7d.not_sent ? ` · ${q.alertDelivery7d.not_sent} senza Telegram` : ""}
+            </span>
+          )}
         </div>
       ) : null}
+      {q.dealHalfLife && q.dealHalfLife.n > 0 && (
+        <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
+          <span style={head}>Emivita affari</span>
+          <span title="Gli affari segnalati si ricontrollano finché la pagina sparisce: quanto tempo hai dopo l'alert">
+            {q.dealHalfLife.halfLifeMin != null
+              ? `metà sparisce entro ${fmtMinutes(q.dealHalfLife.halfLifeMin)}`
+              : "meno di metà sparita finora"}
+          </span>
+          <span>{q.dealHalfLife.gone} spariti su {q.dealHalfLife.n} segnalati in 14 giorni</span>
+          {[60, 360, 1440].map((h) => {
+            const share = q.dealHalfLife?.withinPct[String(h)];
+            return share != null ? <span key={h}>entro {fmtMinutes(h)}: {Math.round(share * 100)}%</span> : null;
+          })}
+        </div>
+      )}
+      {q.drift && Object.keys(q.drift.alarms).length > 0 && (
+        <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px", color: "oklch(0.68 0.17 25)" }}>
+          <span style={head}>Deriva dati</span>
+          {Object.entries(q.drift.alarms).map(([field, a]) => (
+            <span key={field} title={`Negli ultimi ${q.drift?.recentN} annunci contro ${q.drift?.baseN} di base`}>
+              {field} {Math.round(a.recent * 100)}% (di solito {Math.round(a.base * 100)}%) da {relativeTime(a.since)}
+            </span>
+          ))}
+          <span>Subito ha cambiato il formato?</span>
+        </div>
+      )}
+      {q.requestsToday && q.requestsToday.total > 0 && (
+        <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
+          <span style={head}>Richieste oggi</span>
+          <span style={{ color: q.requestsToday.blocks ? "oklch(0.68 0.17 25)" : undefined }}>
+            {q.requestsToday.total.toLocaleString("it-IT")} a Subito
+            {q.requestsToday.blocks ? ` · ${q.requestsToday.blocks} blocchi` : ""}
+          </span>
+          <span style={{ color: "oklch(0.6 0.01 250)" }}>
+            {Object.entries(q.requestsToday.jobs)
+              .sort((a, b) => b[1].requests - a[1].requests)
+              .slice(0, 6)
+              .map(([job, j]) => `${job.replace("_", " ")} ${j.requests.toLocaleString("it-IT")}`)
+              .join(" · ")}
+          </span>
+        </div>
+      )}
       {q.autoCycle && (
         <div style={{ display: "flex", gap: "18px", flexWrap: "wrap", fontSize: "12px" }}>
           <span style={head}>Inventario a rotazione</span>
@@ -5778,6 +5829,14 @@ const BACKUP_STATE: Record<string, { label: string; color: string }> = {
   fallito: { label: "fallito", color: "oklch(0.68 0.17 25)" },
   assente: { label: "mai eseguito", color: "oklch(0.68 0.17 25)" },
 };
+
+/** 45 → "45 min", 120 → "2 h", 1440 → "1 giorno". */
+function fmtMinutes(min: number): string {
+  if (min < 60) return `${min} min`;
+  if (min < 1440) return `${Math.round(min / 60)} h`;
+  const days = Math.round(min / 1440);
+  return days === 1 ? "1 giorno" : `${days} giorni`;
+}
 
 function BackupLine(props: { b: NonNullable<DataQuality["backup"]>; head: CSSProperties }) {
   const { b, head } = props;

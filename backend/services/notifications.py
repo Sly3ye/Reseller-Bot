@@ -415,7 +415,18 @@ async def notify_deals(
     if cfg.get(key) and settings.telegram_bot_token:
         chat_id = cfg[key]
     if not chat_id:
-        return {"sent": 0, "skipped": len(deal_items) + len(drop_events) + len(repair_items or [])}
+        # Senza Telegram i candidati si registrano comunque (delivered resta
+        # NULL = mai tentato): servono al ricontrollo, che misura quanto dura
+        # un affare (services/deal_watch.py), e alla galleria completa delle auto.
+        recorded = [
+            {"listing_id": str(it["id"]), "alert_type": atype, "category": category}
+            for atype, items in ((ALERT_NEW, deal_items), (ALERT_REPAIR, repair_items or []))
+            for it in items if it.get("id")
+        ]
+        if recorded:
+            await asyncio.to_thread(_claim_alerts, db, recorded)
+        return {"sent": 0, "recorded": len(recorded),
+                "skipped": len(deal_items) + len(drop_events) + len(repair_items or [])}
 
     # (lid, tipo, testo, foto pubblica, bottoni)
     to_send: list[tuple[str, str, str, str | None, dict[str, Any] | None]] = []

@@ -944,6 +944,23 @@ export type DataQuality = {
   autoExcluded?: { altroModelloORicambio: number; generazioneIncerta: number } | null;
   /** Annunci con foto ancora da scaricare (backfill dalla CDN). */
   photoQueue?: number | null;
+  /** Alert degli ultimi 7 giorni: consegnati, falliti (devono essere 0), mai
+   *  inviati (Telegram non configurato: registrati solo per il ricontrollo). */
+  alertDelivery7d?: { delivered: number; failed: number; not_sent: number } | null;
+  /** Quanto resta online un affare dopo l'alert: quota sparita entro N minuti
+   *  (solo affari più vecchi di N) ed emivita = primo orizzonte con metà sparita. */
+  dealHalfLife?: {
+    n: number; gone: number; withinPct: Record<string, number | null>; halfLifeMin: number | null;
+  } | null;
+  /** Deriva del formato: campi che si svuotano negli ultimi annunci rispetto alla base. */
+  drift?: {
+    at: string; recentN: number; baseN: number;
+    alarms: Record<string, { recent: number; base: number; since: string }>;
+  } | null;
+  /** Richieste a Subito di oggi per lavoro (stesso IP: il budget conta). */
+  requestsToday?: {
+    jobs: Record<string, { requests: number; blocks: number }>; total: number; blocks: number;
+  } | null;
   /** Esito del servizio `backup` (dump verificato + copia delle foto). */
   backup?: {
     state: "ok" | "fallito" | "vecchio" | "assente";

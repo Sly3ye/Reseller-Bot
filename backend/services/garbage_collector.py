@@ -23,6 +23,7 @@ import logging
 import random
 import re
 from datetime import datetime, timezone
+from typing import Any
 
 from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.exceptions import CurlError
@@ -140,12 +141,37 @@ async def collect_table(db, table: str) -> dict[str, int]:
 
 async def verify_and_mark(db, table: str, rows: list[dict]) -> dict[str, int]:
     """Verifica le pagine di `rows` ({id, listing_url}) e marca le rimosse."""
-    current_job.set("verifiche")
     if not rows:
         return {"checked": 0, "removed": 0}
+    results, state = await check_pages(rows)
+    removed_ids = [listing_id for listing_id, gone in results.items() if gone]
+    if state["aborted"]:
+        logger.warning(
+            "GC %s fermato: %d blocchi 403/429 di fila dopo %d verifiche (riprende domani)",
+            table, MAX_CONSECUTIVE_BLOCKS, state["checked"],
+        )
+    if removed_ids:
+        await asyncio.to_thread(mark_removed, db, table, removed_ids)
+    logger.info("GC %s: %d marcati '%s'", table, len(removed_ids), REMOVED_STATUS)
+    return {"checked": state["checked"], "removed": len(removed_ids)}
 
+
+async def check_pages(rows: list[dict], job: str = "verifiche") -> tuple[dict[Any, bool], dict[str, Any]]:
+    """Verifica le pagine di `rows` ({id, listing_url}) dal pacer globale.
+
+    Ritorna ({id: rimosso?} per le pagine verificate davvero, stato del giro):
+    i blocchi e le risposte dubbie restano fuori, mai marcati.
+    """
+    token = current_job.set(job)
+    try:
+        return await _check_pages(rows)
+    finally:
+        current_job.reset(token)
+
+
+async def _check_pages(rows: list[dict]) -> tuple[dict[Any, bool], dict[str, Any]]:
     semaphore = asyncio.Semaphore(CHECK_CONCURRENCY)
-    removed_ids: list[str] = []
+    results: dict[Any, bool] = {}
     state = {"checked": 0, "consecutive_blocks": 0, "aborted": False}
 
     # curl_cffi con impronta browser: le pagine annuncio di Subito sono dietro
@@ -179,20 +205,10 @@ async def verify_and_mark(db, table: str, rows: list[dict]) -> dict[str, int]:
                 return
             state["consecutive_blocks"] = 0
             state["checked"] += 1
-            if outcome:
-                removed_ids.append(row["id"])
+            results[row["id"]] = bool(outcome)
 
         await asyncio.gather(*(check(row) for row in rows))
-
-    if state["aborted"]:
-        logger.warning(
-            "GC %s fermato: %d blocchi 403/429 di fila dopo %d verifiche (riprende domani)",
-            table, MAX_CONSECUTIVE_BLOCKS, state["checked"],
-        )
-    if removed_ids:
-        await asyncio.to_thread(mark_removed, db, table, removed_ids)
-    logger.info("GC %s: %d marcati '%s'", table, len(removed_ids), REMOVED_STATUS)
-    return {"checked": state["checked"], "removed": len(removed_ids)}
+    return results, state
 
 
 async def run_garbage_collector(category: str | None = None) -> dict[str, int]:

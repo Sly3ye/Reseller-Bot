@@ -13,6 +13,8 @@ from backend.services.photo_backfill import (
     fill_missing_photos,
 )
 from backend.services.repair_feedback import refresh as refresh_repair_feedback
+from backend.services.deal_watch import watch_deals
+from backend.services.drift import drift_check
 from backend.services.request_budget import flush_request_counts
 from backend.services.telegram_bot import poll_telegram
 from backend.services.garbage_collector import run_garbage_collector
@@ -194,6 +196,24 @@ def create_scheduler() -> AsyncIOScheduler:
                 name=f"Testa della coda {cat} (pagina 1 ogni {settings.head_poll_seconds} s)",
                 replace_existing=True,
             )
+
+    # Emivita degli affari: ricontrollo degli affari segnalati finché spariscono.
+    scheduler.add_job(
+        watch_deals,
+        trigger=IntervalTrigger(minutes=10),
+        id="deal_watch",
+        name="Ricontrollo affari segnalati (emivita)",
+        replace_existing=True,
+    )
+
+    # Deriva del formato: campi che si svuotano negli ultimi annunci → allarme ops.
+    scheduler.add_job(
+        drift_check,
+        trigger=IntervalTrigger(hours=1),
+        id="drift_check",
+        name="Allarmi di deriva dei campi (ultimi annunci vs base)",
+        replace_existing=True,
+    )
 
     # Budget di richieste per job → request_log (ogni 5 minuti).
     scheduler.add_job(

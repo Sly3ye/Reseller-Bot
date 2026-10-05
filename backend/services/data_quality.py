@@ -73,6 +73,8 @@ def _auto_cycle() -> dict[str, Any] | None:
 def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
     from backend.core.database import _get_pool, get_db, has_column  # noqa: PLC0415
     from backend.services.backup_status import get_backup_status  # noqa: PLC0415
+    from backend.services.deal_watch import deal_half_life  # noqa: PLC0415
+    from backend.services.drift import drift_state  # noqa: PLC0415
     from backend.services.request_budget import requests_today  # noqa: PLC0415
     from backend.services.photo_backfill import queue_size as photo_queue_size  # noqa: PLC0415
     from backend.services.variants import iphone_model_key  # noqa: PLC0415
@@ -152,9 +154,22 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
               select extract(epoch from a.sent_at - t.found_at) / 60 as m
               from public.sent_alerts a join public.{table} t on t.id = a.listing_id
               where a.sent_at >= now() - interval '7 days'
+                and a.alert_type in ('new_deal', 'repair_deal')
             ) x
             """
         ).fetchone()
+        # Consegna (migrazione 25): NULL = mai tentato (Telegram non
+        # configurato), false = invio fallito. Gli alert falliti devono essere 0.
+        delivery = conn.execute(
+            """
+            select count(*) filter (where delivered) as delivered,
+                   count(*) filter (where delivered = false) as failed,
+                   count(*) filter (where delivered is null) as not_sent
+            from public.sent_alerts
+            where sent_at >= now() - interval '7 days' and coalesce(category, 'smartphone') = %s
+            """,
+            ("smartphone" if tech else "automobile",),
+        ).fetchone() if has_column("sent_alerts", "delivered") else None
         removed_7d = conn.execute(
             f"select count(*) as n from public.{table} "
             f"where status in ('venduto_rimosso','scaduto') and updated_at >= now() - interval '7 days'"
@@ -233,6 +248,11 @@ def get_data_quality(category: str = "smartphone") -> dict[str, Any]:
             "alertP50Min": _round(alert_latency["p50"]),
             "alertP95Min": _round(alert_latency["p95"]),
         },
+        "alertDelivery7d": dict(delivery) if delivery else None,
+        # Quanto resta online un affare dopo l'alert (services/deal_watch.py).
+        "dealHalfLife": _safe(lambda: deal_half_life("smartphone" if tech else "automobile")),
+        # Campi che si svuotano negli ultimi annunci (services/drift.py).
+        "drift": _safe(lambda: drift_state("smartphone" if tech else "automobile")),
         "backup": get_backup_status(),
         # Richieste a Subito di oggi per lavoro (stesso IP: il budget conta).
         "requestsToday": _safe(requests_today),
