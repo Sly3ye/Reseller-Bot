@@ -484,6 +484,93 @@ _UNSELLABLE_DEFECTS = frozenset({"icloud-bloccato", "per-ricambi", "da-riparare"
 _RISK_LABEL = {"alto": "🛑 Rischio alto", "medio": "⚠️ Rischio medio", "basso": "Rischio basso"}
 
 
+# ------------------------------------------------------------------ auto
+
+# Media italiana ~12–15.000 km/anno: sotto i 5.000 km/anno su un'auto di 4+
+# anni il contachilometri va verificato (scalamento).
+_LOW_KM_PER_YEAR = 5000
+_LOW_KM_MIN_AGE = 4
+
+_CAR_EVASIVE_RE = re.compile(
+    r"\b(piccol\w* (?:urt\w*|bott\w*|ammaccatur\w*)|leggerment\w* (?:incidentat\w*|urtat\w*)|"
+    # "da vedere" solo riferito a un componente: "Pronta da vedere e provare" è un invito.
+    r"(?:motore|cambio|frizione|carrozzeria|dann[oi]|turbina)\s+da\s+(?:vedere|rivedere|sistemare|verificare)|"
+    r"vendo cos[iì] com.?[eè]|cos[iì] com.?[eè]|senza garanzia|non garantisco|"
+    r"per commercianti|solo commercianti|solo export\w*|per export|esportazione)\b",
+    re.IGNORECASE,
+)
+_CAR_ADMIN_RE = re.compile(
+    r"\b(fermo amministrativo|fermo fiscale|finanziament\w* (?:in corso|da (?:estinguere|saldare))|"
+    r"rate da pagare|subentro|targa estera|targa (?:tedesca|francese|svizzera)|"
+    r"documenti esteri|da (?:nazionalizzare|immatricolare)|senza documenti|"
+    r"non circolante|radiat[ao]|ipoteca)\b",  # radiata/o, non "radiatore" (pezzo nuovo)
+    re.IGNORECASE,
+)
+
+
+def car_risk_assessment(
+    *,
+    year: int | None,
+    km: int | None,
+    title: str | None,
+    description: str | None,
+    defects: list[str] | None,
+    deal_class: str | None,
+    seller_type: str | None = None,
+    seller_active: int | None = None,
+    has_images: bool = True,
+    ref_year: int | None = None,
+) -> dict[str, Any] | None:
+    """Rischio di comprare QUESTA auto (§5 di VISIONE-AUTO): km scalati,
+    incidenti non dichiarati, fermo/finanziamento/provenienza estera, prezzo
+    troppo basso, rivenditore travestito. Stessa forma di ``risk_assessment``.
+    Nessun segnale → None. Con qualunque segnale, ricorda la visura PRA."""
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    text = " ".join(t for t in (title, description) if t)
+    reasons: list[str] = []
+    score = 0
+    ref_year = ref_year or datetime.now(timezone.utc).year
+    age = ref_year - int(year) if year else None
+
+    if age is not None and km is not None and age >= _LOW_KM_MIN_AGE and km / age < _LOW_KM_PER_YEAR:
+        score += 25
+        reasons.append(f"Km bassi per l'età ({km // age:,} km/anno su {age} anni): verifica tagliandi "
+                       f"e storico revisioni (scalamento contachilometri)".replace(",", "."))
+    if km is None:
+        score += 8
+        reasons.append("Km non dichiarati")
+    if _CAR_ADMIN_RE.search(text):
+        # Con un fermo o un finanziamento attivo il passaggio non si fa: alto da solo.
+        score += 45
+        reasons.append("Possibile fermo amministrativo, finanziamento o provenienza estera: "
+                       "visura PRA prima di muovere soldi")
+    if _CAR_EVASIVE_RE.search(text):
+        score += 15
+        reasons.append("Linguaggio evasivo sullo stato (\"motore da vedere\", \"così com'è\", \"per commercianti\")")
+    if "incidentata" in (defects or []):
+        score += 20
+        reasons.append("Incidentata dichiarata: valuta telaio e airbag, non solo la carrozzeria")
+    if deal_class == "sospetto":
+        score += 25
+        reasons.append("Prezzo troppo basso per anno e km (possibile esca o problema nascosto)")
+    if not has_images:
+        score += 10
+        reasons.append("Nessuna foto")
+    if seller_type == "finto_privato" or (seller_active is not None and seller_active >= 2):
+        score += 10
+        reasons.append("Privato con più auto in vendita: probabile rivenditore senza garanzia legale")
+    if text and _SCAM_TEXT_RE.search(text):
+        score += 30
+        reasons.append("Linguaggio da truffa a distanza (pagamento anticipato / no visione)")
+
+    if score <= 0:
+        return None
+    reasons.append("Prima dell'acquisto: visura PRA (proprietari, fermi, ipoteche) e prova a freddo")
+    level = "alto" if score >= 45 else "medio" if score >= 20 else "basso"
+    return {"level": level, "label": _RISK_LABEL[level], "score": min(100, score), "reasons": reasons}
+
+
 def risk_assessment(
     *,
     defects: list[str] | None,

@@ -94,6 +94,24 @@ def test_nlp_guasti_v2():
     check("batteria sotto 70%", "batteria-esausta" in d("iPhone 12", "batteria 66%"), True)
 
 
+def test_car_risk():
+    print("Rischio auto:")
+    r = lambda **kw: scoring.car_risk_assessment(ref_year=2026, title="BMW 123d", defects=[],  # noqa: E731
+                                                 deal_class="in-linea", **kw)
+    low = r(year=2010, km=40000, description="tagliandata")
+    check("km bassi per l'età = segnale", any("Km bassi" in x for x in low["reasons"]), True)
+    check("km normali, nessun segnale", r(year=2018, km=120000, description="tagliandi BMW"), None)
+    check("fermo amministrativo = alto",
+          r(year=2016, km=90000, description="c'è un fermo amministrativo da togliere")["level"], "alto")
+    check("linguaggio evasivo", any("evasivo" in x for x in
+          r(year=2016, km=90000, description="piccolo urto, vendo così com'è")["reasons"]), True)
+    check("radiatore nuovo non è 'radiata'", r(year=2016, km=90000, description="radiatore nuovo, tagliandata"), None)
+    check("'pronta da vedere' non è evasivo", r(year=2016, km=90000, description="Pronta da vedere e provare"), None)
+    check("'motore da vedere' è evasivo", any("evasivo" in x for x in
+          r(year=2016, km=90000, description="motore da vedere, perde olio")["reasons"]), True)
+    check("visura PRA sempre ricordata", r(year=2016, km=None, description="")["reasons"][-1].startswith("Prima"), True)
+
+
 def test_nlp_auto():
     print("NLP auto:")
     r = nlp.parse_listing("BMW 320d 2018 150.000 km", "M Sport, automatico, incidentata")
@@ -167,6 +185,7 @@ def main() -> None:
     test_nlp_storage()
     test_nlp_guasti_v2()
     test_nlp_auto()
+    test_car_risk()
     test_scoring()
     print(f"\n=== {_passed} PASS / {_failed} FAIL ===")
     raise SystemExit(1 if _failed else 0)

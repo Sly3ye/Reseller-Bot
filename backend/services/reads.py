@@ -27,7 +27,7 @@ from backend.core.database import Client
 from backend.core.database import get_db, has_column
 from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
-from backend.services.scoring import evaluate_opportunity, risk_assessment
+from backend.services.scoring import car_risk_assessment, evaluate_opportunity, risk_assessment
 from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summary
 from backend.services.valuation import car_expected_price, evaluate_value, fit_car_price_model
 from backend.services.variants import (
@@ -974,14 +974,27 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
     # Risk Score anti-frode: aggrega i segnali di rischio (iCloud lock, pattern
     # truffa a distanza, prezzo sospetto, finto privato, venditore senza storico)
     # in un semaforo unico e visibile. Usa il dealClass FINALE (post-AI).
-    shaped["risk"] = risk_assessment(
-        defects=shaped["defects"],
-        description=shaped.get("description"),
-        deal_class=shaped.get("dealClass"),
-        ai_scam_high=ai_scam_high,
-        seller_type=row.get("seller_type"),
-        seller_sold_count=(profile or {}).get("sold"),
-    )
+    if ctx["target_cat"] == "automobile":
+        shaped["risk"] = car_risk_assessment(
+            year=row.get("year"),
+            km=row.get("km"),
+            title=shaped.get("title"),
+            description=shaped.get("description"),
+            defects=shaped["defects"],
+            deal_class=shaped.get("dealClass"),
+            seller_type=row.get("seller_type"),
+            seller_active=(profile or {}).get("active"),
+            has_images=bool(row.get("image_urls")),
+        )
+    else:
+        shaped["risk"] = risk_assessment(
+            defects=shaped["defects"],
+            description=shaped.get("description"),
+            deal_class=shaped.get("dealClass"),
+            ai_scam_high=ai_scam_high,
+            seller_type=row.get("seller_type"),
+            seller_sold_count=(profile or {}).get("sold"),
+        )
     return shaped
 
 

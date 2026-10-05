@@ -127,15 +127,22 @@ Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
 Il Risk Score attuale è **solo tech** (iCloud, per-ricambi). Per l'auto serve
 tutto un altro set:
 
-- ◻️ 🔴 **Km non congruenti**: km troppo bassi per l'anno (o rispetto alla media
+- ✅ 🔴 **Km non congruenti** (2026-10-05, `scoring.car_risk_assessment`): sotto
+  5.000 km/anno su un'auto di 4+ anni → segnale. *Prima:* km troppo bassi per l'anno (o rispetto alla media
   della generazione) → sospetto **scalamento contachilometri**. Dato già in
   mano: anno + km + distribuzione della variante.
-- ◻️ 🔴 **Incidenti non dichiarati**: linguaggio evasivo ("da vedere", "piccolo
+- 🔧 🔴 **Incidenti non dichiarati** (2026-10-05): linguaggio evasivo ("motore da
+  vedere", "così com'è", "per commercianti"), incidentata dichiarata, prezzo
+  sospetto, nessuna foto; regole tarate sui dati veri ("radiatore nuovo" e
+  "pronta da vedere" non scattano). Manca: foto solo da un lato. *Prima:* linguaggio evasivo ("da vedere", "piccolo
   urto"), foto solo da un lato, prezzo fuori scala verso il basso.
-- ◻️ 🟡 **Fermo amministrativo / finanziamento residuo / provenienza estera**:
+- ✅ 🟡 **Fermo amministrativo / finanziamento residuo / provenienza estera**
+  (2026-10-05): rischio alto da solo; con qualunque segnale la scheda ricorda
+  visura PRA e prova a freddo. *Prima:*
   segnali testuali, e la raccomandazione di verificare la visura PRA prima di
   muovere soldi.
-- ◻️ 🟡 **Concessionario travestito da privato**: lo Shadow Dealer c'è già ma sui
+- ✅ 🟡 **Concessionario travestito da privato** (2026-10-05): soglia auto a più
+  di 1 auto tracciata in vendita (iPhone: più di 3). *Prima:* lo Shadow Dealer c'è già ma sui
   numeri auto va ritarato (un privato con 3 auto attive è sospetto; su iPhone no).
 
 ## 6. Pipeline P&L auto

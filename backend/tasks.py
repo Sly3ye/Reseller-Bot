@@ -441,8 +441,12 @@ def apply_republish_updates(
 def apply_shadow_dealer(
     client: Client, table: str, listings: list[ScrapedListing]
 ) -> int:
-    """Smaschera i finti privati: un venditore marcato 'privato' con > 3 annunci
-    attivi in `table` viene riclassificato 'finto_privato' (in place sui metadata)."""
+    """Smaschera i finti privati: un venditore marcato 'privato' con più di N
+    annunci attivi in `table` viene riclassificato 'finto_privato' (in place sui
+    metadata). N = 3 per gli iPhone; 1 per le auto: la tabella contiene solo i
+    modelli tracciati, e un privato con due di quelle auto in vendita è quasi
+    sempre un rivenditore."""
+    threshold = 1 if table.endswith("_auto") else 3
     privati = [
         listing
         for listing in listings
@@ -475,7 +479,7 @@ def apply_shadow_dealer(
                 table,
             )
             return 0
-        if db_n + batch_n > 3:
+        if db_n + batch_n > threshold:
             flagged.add(seller_id)
 
     reclassified = 0
