@@ -887,8 +887,12 @@ async def _drain_verify_queue(db: Any, category: str) -> dict[str, int]:
         if removed:
             totals["removed"] += await asyncio.to_thread(_mark_removed_ids, table, removed)
         totals["checked"] += len(results)
-        # Via dalla coda solo le pagine verificate davvero: i blocchi restano.
-        state["items"] = [it for it in items if it["id"] not in results]
+        # Via dalla coda solo le pagine verificate davvero (i blocchi restano),
+        # sulla coda RILETTA ora: durante il pezzo può essere cambiata (potata
+        # dall'archivio dei fuori ambito, il 5/10 riscriverla vecchia ne ha
+        # rimesse dentro ~200).
+        state = await asyncio.to_thread(_load_state, db, key)
+        state["items"] = [it for it in (state.get("items") or []) if it["id"] not in results]
         await asyncio.to_thread(_save_state, db, key, state)
         logger.info("Verifiche %s: %d pagine, %d rimossi (in coda %d)",
                     category, len(results), len(removed), len(state["items"]))

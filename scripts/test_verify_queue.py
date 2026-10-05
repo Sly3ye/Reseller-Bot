@@ -76,5 +76,20 @@ reset(0)
 out = asyncio.run(sweep._drain_verify_queue(None, "smartphone"))
 ck("coda vuota: nessuna pagina", (calls, out), ([], {"checked": 0, "removed": 0}))
 
+reset(100)
+
+
+async def pruned_meanwhile(rows, job="verifiche"):
+    """Durante il pezzo qualcuno pota la coda (es. l'archivio dei fuori ambito)."""
+    st = store["verify_queue:smartphone"]
+    st["items"] = [it for it in st["items"] if not 50 <= int(it["id"]) < 80]
+    return {r["id"]: False for r in rows}, {"checked": len(rows), "aborted": True}
+
+
+gc.check_pages = pruned_meanwhile
+asyncio.run(sweep._drain_verify_queue(None, "smartphone"))
+left = [int(it["id"]) for it in store["verify_queue:smartphone"]["items"]]
+ck("coda potata durante un pezzo: i potati non tornano", (len(left), any(50 <= i < 80 for i in left)), (20, False))
+
 print(f"\n=== {_p} PASS / {_f} FAIL ===")
 raise SystemExit(1 if _f else 0)
