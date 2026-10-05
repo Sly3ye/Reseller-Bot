@@ -538,7 +538,7 @@ def car_risk_assessment(
     has_images: bool = True,
     ref_year: int | None = None,
 ) -> dict[str, Any] | None:
-    """Rischio di comprare QUESTA auto (§5 di VISIONE-AUTO): km scalati,
+    """Rischio di comprare QUESTA auto (Goal Version §8.5): km scalati,
     incidenti non dichiarati, fermo/finanziamento/provenienza estera, prezzo
     troppo basso, rivenditore travestito. Stessa forma di ``risk_assessment``.
     Nessun segnale → None. Con qualunque segnale, ricorda la visura PRA."""

@@ -59,7 +59,7 @@ API su `http://localhost:8000` (`/docs`). Dettagli, config e deploy →
 | [docs/DATABASE.md](docs/DATABASE.md) | Modello dati e migrazioni |
 | [docs/DEPLOY.md](docs/DEPLOY.md) | Setup, configurazione `.env`, backup, deploy, limiti noti |
 | [docs/API.md](docs/API.md) | Endpoint REST e script operativi |
-| [docs/VISIONE-IPHONE.md](docs/VISIONE-IPHONE.md) | Definizione di "fatto" per il verticale iPhone: schermate, analitiche, funzionalità |
-| [docs/VISIONE-AUTO.md](docs/VISIONE-AUTO.md) | Idem per il verticale auto: perché non è "l'iPhone con altri nomi" e cosa manca |
-| [docs/RELEASE.md](docs/RELEASE.md) | **Versione release v1**: cosa deve fare il programma per il business (riparazione iPhone) e quanto manca |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Cosa manca / da implementare (backlog prioritizzato) |
+| [docs/GOAL-VERSION.md](docs/GOAL-VERSION.md) | **Documento unico di obiettivo e release**: dove deve arrivare il prodotto, tappe e stato, criteri della v1, definizione di "fatto" per i verticali iPhone e auto, backlog aperto e idee |
+| [docs/STORICO.md](docs/STORICO.md) | Cosa è stato fatto: le richieste completate della vecchia roadmap, con problema e soluzione |
+| [docs/MERGE-DB.md](docs/MERGE-DB.md) | Unire o spostare il DB e le foto fra due macchine (passaggi del 3/10 e del 5/10) |
+| [docs/RACCOLTA-SU-QUESTO-PC.md](docs/RACCOLTA-SU-QUESTO-PC.md) | Raccogliere dati da una seconda macchina, password del DB, backup |

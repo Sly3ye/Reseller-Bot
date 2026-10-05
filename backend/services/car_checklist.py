@@ -1,4 +1,4 @@
-"""Cosa controllare prima di comprare un'auto usata (VISIONE-AUTO §2).
+"""Cosa controllare prima di comprare un'auto usata (Goal Version §8.2).
 
 Regole meccaniche GENERALI scelte dai dati dell'annuncio (carburante, km,
 età, cambio, carrozzeria, difetti dichiarati): niente difetti specifici di un

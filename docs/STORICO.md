@@ -1,45 +1,39 @@
-# Roadmap & Backlog
+# Storico — cosa è stato fatto
+
+> Le richieste del backlog già completate, con il problema osservato, la
+> soluzione e le note tecniche di allora. Spostate qui da `ROADMAP.md` il
+> 2026-10-05, quando obiettivo, release, visione e backlog aperto sono stati
+> riuniti in [GOAL-VERSION.md](GOAL-VERSION.md): servono a capire perché il
+> codice è fatto così, non a decidere cosa fare.
 
 Stato: ✅ fatto · 🔜 pianificato · 💡 idea da valutare
 Priorità: 🔴 alta · 🟡 media · ⚪ bassa
 
-> **Focus attuale: verticale iPhone/tech.** Il verticale auto ha molti più
+## Contesto di allora (2026-10-02)
+
+> **Focus: verticale iPhone/tech.** Il verticale auto ha molti più
 > modelli, denominazioni e parametri — a livello di gestione dati è più
 > complesso e viene affrontato dopo aver consolidato il tech.
 >
-> 🧭 **Principio (dal 2026-10-02): niente servizi a pagamento.** Il proxy
-> residenziale IPRoyal è dismesso (crediti finiti, nessun rinnovo). Si scrapa
-> in connessione diretta a un ritmo lento, restando sotto la soglia di blocco
-> invece di aggirarla. Obiettivo di sufficienza: **raccogliere più annunci al
-> giorno di quanti ne vengano pubblicati** nelle categorie seguite; oltre quello
-> la velocità non conta. Ogni nuova dipendenza deve essere gratuita/self-hosted.
->
 > 🎯 **Traguardo iPhone** (schermate, analitiche, funzionalità da completare
-> prima di passare alle auto): vedi [VISIONE-IPHONE.md](VISIONE-IPHONE.md).
+> prima di passare alle auto): oggi è la §7 di [GOAL-VERSION.md](GOAL-VERSION.md).
+
+Il 2026-10-05 il verticale auto è partito in parallelo (§8 di GOAL-VERSION),
+poi le correzioni sulle auto sono state messe in pausa in attesa del parere
+dell'amico rivenditore.
 
 ---
 
-## Fasi BI (piano strutturale)
-
-| Fase | Contenuto | Stato |
-|---|---|---|
-| **Fase 1** | Tassonomia canonica & scrematura (varianti, condizione) | ✅ |
-| **Fase 2** | Valutazione predittiva (valore equo, posizione, affare-vs-truffa) | ✅ |
-| **Fase 3 — robustezza** | Salute scraper, alert down, rotazione impersonation | ✅ |
-| **Fase 3 — scala** | Generazione sistematica dei target: gamma iPhone completa ✅ (`scripts/seed_iphone_targets.py`, 39 modelli fino alla gen 18) + ricerca ampia che copre anche i modelli senza target ✅, gamma auto 🔜 | 🟡 |
-| **Fase 4** | Profili venditore, stagionalità, CV foto, multi-piattaforma | 🔜 |
-| **Fase 5** | Ops: automations reali ✅, deploy VPS 🔜, test, migration runner | 🟡 (in corso) |
-
----
-
-## Richieste da implementare (backlog)
+## Richieste del backlog completate
 
 ### 1. ✅ Time-to-sale per fascia di prezzo + prezzo di vendita REALE — FATTO
+
 **Problema osservato:** vedere molti annunci a un certo prezzo **non** significa
 che si venda a quel prezzo. Il "prezzo di rivendita suggerito" attuale usa la
 distribuzione dei prezzi **listati (attivi)**, che è un segnale distorto.
 
 **Da implementare:**
+
 - Per ogni modello/variante, incrociare `found_at` → data di rimozione (dal
   Garbage Collector) con l'`asking_price` all'atto della sparizione → curva
   **"a quale prezzo si vende in quanti giorni"**.
@@ -56,6 +50,7 @@ rimozione. Sostituire/affiancare `_resale_suggestions` (basato sui listati) con
 un calcolo sui venduti.
 
 ### 2. ✅ Popup immagine richiudibile (X / ESC) — FATTO
+
 Lightbox overlay con X, ESC, click sfondo e frecce ←/→.
 
 Nel frontend, cliccando un'immagine non deve aprirsi una nuova finestra/scheda,
@@ -63,6 +58,7 @@ ma un **modal (lightbox)** sopra la dashboard, chiudibile con la **X** o con
 **ESC** (e click sullo sfondo). Riguarda la galleria nella card espansa del feed.
 
 ### 3. ✅ AI locale per l'analisi delle descrizioni — FATTO (v1)
+
 Ollama (llama3) analizza titolo+descrizione → {motivo_prezzo, categoria_motivo,
 riparabile, nota_riparazione, rischio_truffa, sintesi}. Integrato: un prezzo
 "sospetto" con motivo legittimo (AI) → declassato ad affare; rischio truffa alto
@@ -75,6 +71,7 @@ Resta da tarare il prompt sui casi reali.
 
 **Obiettivo:** far leggere titolo+descrizione a un **LLM locale** (es. Ollama con
 un modello piccolo) per capire *semanticamente* ciò che le regex non colgono:
+
 - Il **motivo** di un prezzo basso → così un annuncio a buon prezzo con una
   spiegazione legittima non viene bollato come "sospetto" (riduce i falsi
   positivi del deal-vs-scam della Fase 2).
@@ -87,15 +84,20 @@ un modello piccolo) per capire *semanticamente* ciò che le regex non colgono:
 promosso perché ad alto valore. Locale = nessun costo per-token, dati in casa.
 Va integrato con `scoring.py` (radar riparazioni) e `valuation.py` (scam).
 
-### 4. 🟡 Documentazione (questo documento + `docs/`)
+### 4. ✅ Documentazione (questo documento + `docs/`)
+
 README splittato in documenti tematici collegati; README ridotto a spiegazione
-del programma, architettura e comandi. ✅ (in corso/fatto)
+del programma, architettura e comandi. Il 2026-10-05 obiettivo, release,
+visione e backlog aperto sono stati riuniti in un solo documento
+([GOAL-VERSION.md](GOAL-VERSION.md)) e lo storico spostato qui.
 
 ### 5. ✅ Dashboard principale: TUTTO l'accumulato, i migliori, con filtri — FATTO
+
 (colore NLP + endpoint con filtri modello/memoria/colore/condizione + sort score/recenti/margine + paginazione + facets)
 
 Oggi la dashboard ("Live Sniper") mostra solo gli **ultimi ~60** annunci
 (ordine per data). Deve invece:
+
 - Mostrare **tutti** gli annunci accumulati (attivi), **ordinati per i migliori**
   (Deal Score), con **paginazione**.
 - **Filtri (iPhone):** modello, taglia (storage), **colore**, condizione,
@@ -108,15 +110,8 @@ endpoint `/api/opportunities` con **filtri + paginazione + ordinamento server**,
 e la UI dei filtri. Attenzione al costo del calcolo BI su molti annunci
 (materializzare le medie/pool per variante).
 
-### 7. ✅ Alert Telegram intelligenti — FATTO
-Le notifiche non usano più il margine grezzo contro una media: a fine giro
-sniper le nuove righe vengono arricchite con la BI completa (valore equo per
-variante, Deal Score, anti-truffa AI) e si notifica **solo la classe "affare"
-con Deal Score ≥ `ALERT_MIN_SCORE`**, scartando sospetti/truffe. Il messaggio
-riporta valore equo, margine, offerta consigliata, radar riparazioni, motivo AI,
-difetti e leve di urgenza. Dedup persistente su `sent_alerts`.
-
 ### 6. ✅ Market Intelligence: più analitiche — FATTO
+
 Implementate: ranking "Cosa comprare" (opportunità = margine potenziale ×
 liquidità), affari attivi/volume per modello, spread affare, box distribuzione
 prezzi, premio memoria, impatto condizione, prezzo→giorni, sell-through rate,
@@ -124,6 +119,7 @@ distribuzione motivi AI, venditori/finti privati, KPI "miglior opportunità".
 Dettaglio per modello espandibile nella schermata.
 
 Lista originale (per riferimento):
+
 - **Distribuzione prezzi per variante** (box plot / istogramma) — la dispersione,
   non solo la media.
 - **Curva di deprezzamento** per modello nel tempo (dati già in `market_trends`).
@@ -139,7 +135,17 @@ Lista originale (per riferimento):
 - **Distribuzione condizioni** (come-nuovo/buono/difetti) e impatto sul prezzo.
 - **Venditori più attivi / finti privati** per modello.
 
+### 7. ✅ Alert Telegram intelligenti — FATTO
+
+Le notifiche non usano più il margine grezzo contro una media: a fine giro
+sniper le nuove righe vengono arricchite con la BI completa (valore equo per
+variante, Deal Score, anti-truffa AI) e si notifica **solo la classe "affare"
+con Deal Score ≥ `ALERT_MIN_SCORE`**, scartando sospetti/truffe. Il messaggio
+riporta valore equo, margine, offerta consigliata, radar riparazioni, motivo AI,
+difetti e leve di urgenza. Dedup persistente su `sent_alerts`.
+
 ### 8. ✅ Filtro accessori/ricambi (cover, vetri, caricatori "per iPhone") — FATTO
+
 Il tech si riempiva di annunci che NON sono un telefono (cover, custodie, vetri
 temperati, caricatori, batterie di ricambio...) inquinando prezzi medi e
 valore equo. `nlp_parser._is_accessory_listing`: se una parola-accessorio
@@ -149,8 +155,13 @@ scraping (`subito.py`), prima di essere salvati. Verificato su titoli reali,
 nessun falso positivo sui telefoni con corredo incluso.
 Limite noto: non copre "batteria iPhone 12 nuova" da sola (parola troppo
 ambigua con "batteria 89%" nei telefoni reali) — accettato per ora.
+Aggiornamento del 2026-10-05: aggiunti kit, portafogli, MagSafe, grip,
+custodie, "batteria originale/compatibile", scatole, controller, altri marchi
+(Samsung, Xiaomi, Pixel...) e il "mini" giocattolo; cloni e repliche esclusi
+in qualunque posizione.
 
 ### 9. ✅ Fix sovrastima valore equo (doppio conteggio condizione) — FATTO
+
 Il valore equo per un "come nuovo" moltiplicava la mediana dei venduti
 (già mix di fasce sane) per il fattore condizione (1.08×) → contava
 l'aggiustamento due volte, gonfiando sistematicamente il valore equo.
@@ -162,20 +173,24 @@ fascia specifica non ha ancora abbastanza campioni. Verificato su dati reali:
 fino a 211€ di sovrastima rimossa per variante.
 
 ### 10. ✅ Filtri Live Sniper: giorni online + prezzo — FATTO
+
 `/api/opportunities` accetta `min_price`/`max_price` (filtro DB) e
 `min_days`/`max_days` (giorni online, filtro post-arricchimento). UI: campi
 range accanto ai filtri esistenti, validi per entrambe le categorie.
 
 ### 11. ✅ Wording venditore: "negozio" invece di "concessionario" per il tech — FATTO
+
 `sellerTypeLabel(type, category)` in `flipradar-data.ts`: "concessionario" solo
 per le auto, "negozio" per il tech. Corretto anche nel messaggio Telegram.
 
 ### 12. ✅ Scraping senza proxy, a ritmo controllato — FATTO (2026-10-02)
+
 Pacer globale, stop e cooldown crescente su 403/429, paginazione fino a
 ricongiungersi, misura dei buchi (`scrape_runs.gaps`), sonda del rate limit
 (`scripts/probe_rate_limit.py`). Vedi [ARCHITETTURA.md](ARCHITETTURA.md#ritmo-da-un-solo-ip-niente-proxy).
 
 ### 13. ✅ Copertura totale del tech — FATTO (2026-10-02)
+
 Ricerca ampia "iphone" al posto delle 36 query per target; ogni annuncio va al
 target del SUO modello (prima: della query che l'aveva trovato → statistiche
 per modello mescolate); inventario notturno per fasce di prezzo al posto del
@@ -184,6 +199,7 @@ GC tech; recupero iniziale con `scripts/deep_sweep.py`; correzione storica con
 linea Air unificata (`iphone-air`), target gen 18.
 
 ### 14. ✅ Data di pubblicazione reale (`published_at`) — FATTO (2026-10-02)
+
 Migrazione 19. Età e tempo di vendita partono dalla pubblicazione su Subito,
 non da quando l'abbiamo visto (che per un annuncio da backfill arriva giorni
 dopo). Le righe vecchie la ricevono quando l'inventario le rivede.
@@ -205,23 +221,7 @@ Testate in `scripts/test_variants.py`, `test_republish.py`, `test_survival.py`.
 
 ---
 
-## In discussione
-
-### 💬 Valutazione condition-aware delle condizioni (ML/AI) — punto 1, da definire insieme
-La schermata Tempo di vendita deve mostrare (quasi) tutti i venduti in un
-grafico prezzo↔giorni, ma condizione/difetti/corredo cambiano il prezzo più di
-ogni altra cosa e oggi non sono isolati nel grafico. Due strade proposte:
-1. **Filtro semplice**: grafico limitato ai venduti "come nuovo"/sani (già
-   distinguibile con `condition_tier`), pulito ma butta via molti dati.
-2. **Modello di pricing per feature** (no deep ML: regressione tipo quella già
-   usata per il prezzo~km delle auto) che stima l'impatto di condizione,
-   batteria, difetti, corredo sul prezzo, usando i dati NLP/AI già estratti.
-Il punto 9 sopra è un primo passo in questa direzione (segmentazione per
-fascia condizione sui venduti) fatto con metodo "semplice", senza ML.
-
----
-
-## Refinement già annotati
+## Refinement completati
 
 - ✅ **NLP storage**: i GB erano estratti solo dal ~30% dei titoli → ora l'AI
   locale (punto 3) li recupera dalla descrizione e ri-risolve la variante.
@@ -235,15 +235,6 @@ fascia condizione sui venduti) fatto con metodo "semplice", senza ML.
   (`/api/automations`): avvio immediato, pausa/ripresa, cambio cadenza, stato e
   prossima esecuzione per ogni job.
 - ✅ **Migration runner**: `backend/core/migrations.py`, all'avvio del backend.
-- 🟡 **Verticale auto**: catalogo modelli×generazioni completo, denominazioni,
-  parametri — rimandato (più complesso del tech).
-
----
-
-## Idee future (💡)
-
-- Multi-piattaforma (AutoScout24, Vinted, Facebook Marketplace) per arbitraggio
-  cross-platform (compro su A, rivendo su B).
-- Computer Vision sulle foto: rilevare condizione/danni, foto-stock (scam),
-  verifica che l'oggetto corrisponda al titolo.
-- Frontend real-time (SSE/WebSocket) invece del polling.
+- Il refinement ancora aperto di allora, il **verticale auto** (catalogo
+  modelli × generazioni, denominazioni, parametri), allora rimandato perché più
+  complesso del tech, è oggi la §8 di [GOAL-VERSION.md](GOAL-VERSION.md).

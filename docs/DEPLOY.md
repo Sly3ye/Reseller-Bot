@@ -96,5 +96,7 @@ in `backend/.env`.
   ogni worker duplica i job.
 - I **costi di riparazione/penalità** in `scoring.py` sono euristiche da tarare
   con la Pipeline P&L.
-- Migrazioni: `init.sql` per installazioni nuove; manca un runner versionato per
-  aggiornamenti incrementali (vedi [ROADMAP.md](ROADMAP.md)).
+- Migrazioni: `init.sql` per installazioni nuove; gli aggiornamenti
+  incrementali li applica il runner all'avvio (`backend/core/migrations.py`,
+  criterio F1 di [GOAL-VERSION.md](GOAL-VERSION.md); storia in
+  [STORICO.md](STORICO.md)).
