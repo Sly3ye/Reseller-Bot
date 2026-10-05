@@ -10,7 +10,13 @@ from backend.services.backup_status import check_backup
 from backend.services.photo_backfill import fill_missing_photos
 from backend.services.repair_feedback import refresh as refresh_repair_feedback
 from backend.services.garbage_collector import run_garbage_collector
-from backend.services.sweep import inventory_watchdog, reconcile_inventory, run_nightly_once, run_sweep
+from backend.services.sweep import (
+    inventory_watchdog,
+    reconcile_auto_inventory,
+    reconcile_inventory,
+    run_nightly_once,
+    run_sweep,
+)
 from backend.tasks import run_sniper_all_products
 
 logger = logging.getLogger(__name__)
@@ -80,14 +86,35 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    scheduler.add_job(
-        run_garbage_collector,
-        trigger=CronTrigger(hour=4, minute=30, timezone=SCHEDULER_TIMEZONE),
-        kwargs={"category": "automobile"},
-        id="garbage_collector",
-        name="Garbage Collector Auto (annunci rimossi → time-to-sale)",
-        replace_existing=True,
-    )
+    if settings.auto_full_category:
+        # Tutte le auto: inventario a rotazione (una fetta di fasce a notte)
+        # al posto del Garbage Collector, che verificherebbe pagina per pagina
+        # mezzo milione di annunci.
+        scheduler.add_job(
+            reconcile_auto_inventory,
+            trigger=CronTrigger(hour=3, minute=30, timezone=SCHEDULER_TIMEZONE),
+            id="inventory_auto",
+            name=f"Inventario Auto (1/{settings.auto_inventory_slices} delle fasce a notte)",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            inventory_watchdog,
+            trigger=IntervalTrigger(minutes=30),
+            kwargs={"category": "automobile"},
+            id="inventory_watchdog_auto",
+            name="Recupero inventario auto (se l'ultima fetta ha più di 26h)",
+            replace_existing=True,
+        )
+
+    else:
+        scheduler.add_job(
+            run_garbage_collector,
+            trigger=CronTrigger(hour=4, minute=30, timezone=SCHEDULER_TIMEZONE),
+            kwargs={"category": "automobile"},
+            id="garbage_collector",
+            name="Garbage Collector Auto (annunci rimossi → time-to-sale)",
+            replace_existing=True,
+        )
 
     # Tech: UNA ricerca ampia "iphone" invece di una per target (vedi
     # services/sweep.py). L'id resta "sniper_live" per la UI Automations.
@@ -100,12 +127,15 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
 
+    # Auto: tutta la categoria (sweep come per gli iPhone) o i soli target.
     scheduler.add_job(
-        run_sniper_all_products,
+        run_sweep if settings.auto_full_category else run_sniper_all_products,
         trigger=IntervalTrigger(minutes=settings.sniper_auto_interval_min),
         kwargs={"category": "automobile"},
         id="sniper_auto_live",
-        name=f"Cecchino Auto (automobile, {settings.sniper_auto_interval_min} min)",
+        name=(f"Cecchino Auto (tutte le auto, {settings.sniper_auto_interval_min} min)"
+              if settings.auto_full_category
+              else f"Cecchino Auto (target, {settings.sniper_auto_interval_min} min)"),
         replace_existing=True,
     )
 

@@ -68,6 +68,11 @@ class Settings:
     # false = solo dashboard/API, nessun job (raccolta, inventario, foto...):
     # per una seconda macchina che non deve far divergere il DB principale.
     scheduler_enabled: bool = os.getenv("SCHEDULER_ENABLED", "true").lower() in ("1", "true", "yes")
+    # true = raccolta di TUTTE le auto di Subito (categoria intera) invece dei
+    # target auto: sweep dei nuovi + inventario a rotazione su più notti.
+    # Spento finché il feed auto non filtra lato DB (537k annunci).
+    auto_full_category: bool = os.getenv("AUTO_FULL_CATEGORY", "false").lower() in ("1", "true", "yes")
+    auto_inventory_slices: int = int(os.getenv("AUTO_INVENTORY_SLICES", "4"))
     ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
     ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
 

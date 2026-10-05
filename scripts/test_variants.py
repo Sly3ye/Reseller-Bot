@@ -122,6 +122,9 @@ ck("anno compatibile con F20", v.year_fits_generation("bmw-125i@f2x", 2016), Tru
 ck("F20 del 2025: anno sbagliato", v.year_fits_generation("bmw-125i@f2x", 2025), False)
 ck("modello senza tabella", v.year_fits_generation("golf-gti", 2018), True)
 ck("dati Subito: generazione dal nome", v.structured_car_variant("BMW", "Serie 1 (E87)")[0], "bmw-serie-1@e87")
+ck("generazione 'Nª serie'", v.structured_car_variant("FORD", "Fiesta 4ª serie")[0], "ford-fiesta@4a-serie")
+ck("generazione '1° serie'", v.structured_car_variant("PEUGEOT", "208 1° serie")[0], "peugeot-208@1-serie")
+ck("'Serie 1' non è una generazione", v.structured_car_variant("BMW", "Serie 1 (F20)")[0], "bmw-serie-1@f20")
 ck("dati Subito: senza generazione", v.structured_car_variant("Fiat", "Panda")[0], "fiat-panda@tutte")
 ck("i dati Subito vincono sulla tabella",
    v.resolve_variant("automobile", "BMW 123d", {"year": 2008, "km": 200000, "car_brand": "BMW",

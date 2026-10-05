@@ -50,7 +50,9 @@ logger = logging.getLogger(__name__)
 
 # Query ampia per categoria. Solo il tech: le auto hanno troppi modelli e
 # volumi per una ricerca unica e restano sullo Sniper per target.
-SWEEP_QUERY = {"smartphone": "iphone"}
+SWEEP_QUERY = {"smartphone": "iphone", "automobile": ""}
+# Categoria Subito sfogliata per intero (query vuota): tutte le auto.
+SWEEP_CATEGORY_ID = {"automobile": "2"}
 # Tetto pagine per giro normale: 30 × 100 = 3.000 annunci ≈ 2 giorni di
 # pubblicazioni iPhone. Basta a ricucire anche un fermo di una notte.
 SWEEP_MAX_PAGES = 30
@@ -194,7 +196,7 @@ async def run_sweep(
     last = await asyncio.to_thread(get_last_sweep, db, category)
     since = (last - SINCE_MARGIN) if last else started - FIRST_SCAN_LOOKBACK
 
-    scraper = SubitoScraper()
+    scraper = SubitoScraper(category_id=SWEEP_CATEGORY_ID.get(category))
     anti_min, anti_max = anti_spam_bounds(category)
     blocked = False
     listings: list[ScrapedListing] = []
@@ -207,8 +209,10 @@ async def run_sweep(
         blocked = True
         logger.warning("Sweep %s fermato: %s", category, exc)
 
+    # Auto: foto solo per le occasioni (mezzo milione di gallerie = terabyte);
+    # restano le URL originali (raw_image_urls).
     totals = await persist_by_target(
-        scraper, category, listings, index, download_images=True
+        scraper, category, listings, index, download_images=category != "automobile"
     )
     gap = bool(scraper.last_search.get("gap"))
     if not blocked:
@@ -297,6 +301,7 @@ async def walk_inventory(
     category: str = "smartphone",
     min_price: int | None = None,
     progress: Any = print,
+    bands_override: list[tuple[int, int | None]] | None = None,
 ) -> tuple[dict[str, Any], set[str]]:
     """Sfoglia TUTTO lo stock attivo della query ampia, fascia per fascia, e
     salva (senza immagini) nuovi annunci e variazioni di prezzo.
@@ -305,15 +310,22 @@ async def walk_inventory(
     idempotente: rilanciarlo deduplica su listing_url. ``min_price`` riprende
     da una fascia (l'output indica da dove ripartire). Ritorna i totali (con
     ``complete`` = nessuna fascia oltre il tetto di hades) e gli URL visti.
+    ``bands_override``: solo queste fasce (inventario auto a rotazione), ognuna
+    ri-suddivisa se nel frattempo ha superato il tetto di hades.
     """
     query = SWEEP_QUERY[category]
     targets = await asyncio.to_thread(get_active_targets, category)
     index = build_target_index(targets)
-    scraper = SubitoScraper()
+    scraper = SubitoScraper(category_id=SWEEP_CATEGORY_ID.get(category))
     anti_min, anti_max = anti_spam_bounds(category)
     lo = max(anti_min, min_price or anti_min)
 
-    bands = await price_bands(scraper, query, lo, anti_max)
+    if bands_override is not None:
+        bands = []
+        for b_lo, b_hi in bands_override:
+            bands += await price_bands(scraper, query, b_lo, b_hi)
+    else:
+        bands = await price_bands(scraper, query, lo, anti_max)
     total_ads = sum(c for _, _, c in bands)
     progress(f"{len(bands)} fasce di prezzo, {total_ads} annunci totali da sfogliare")
 
@@ -355,6 +367,8 @@ async def walk_inventory(
             grand["short_bands"].append(f"{band_lo}-{band_hi or ''}: {band_read}/{count}")
             grand["complete"] = False
     progress(f"\nFatto: { {k: v for k, v in grand.items()} }")
+    if bands_override is not None:
+        return grand, seen_all  # una fetta: la fotografia di copertura è per il ciclo
     # Fotografia della copertura per il cruscotto qualità: quanti annunci
     # dichiara Subito, quanti ne abbiamo visti, quanti erano iPhone veri.
     try:
@@ -405,10 +419,11 @@ async def reconcile_inventory(category: str = "smartphone") -> dict[str, Any]:
     Con il vecchio GC il tech costava una richiesta per annuncio attivo
     (decine di migliaia a notte); così ~540 + i candidati.
     """
-    if _INVENTORY_LOCK.locked():
+    lock = _inventory_lock(category)
+    if lock.locked():
         logger.info("Inventario %s già in corso: salto", category)
         return {"mode": "reconcile", "category": category, "skipped": True}
-    async with _INVENTORY_LOCK:
+    async with lock:
         try:
             result = await _reconcile(category)
         except Exception as exc:  # noqa: BLE001 (un inventario non deve morire in silenzio)
@@ -445,7 +460,147 @@ async def run_nightly_once() -> dict[str, Any] | None:
 
 
 _NIGHTLY_DONE: dict[str, Any] = {}
-_INVENTORY_LOCK = asyncio.Lock()
+# Un lock per categoria: iPhone e auto possono girare nella stessa notte (il
+# ritmo delle richieste lo serializza comunque il pacer globale).
+_INVENTORY_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _inventory_lock(category: str) -> asyncio.Lock:
+    return _INVENTORY_LOCKS.setdefault(category, asyncio.Lock())
+
+
+# ------------------------------------------------- inventario auto a rotazione
+
+# Oltre questa quota di attivi "spariti" in un ciclo, qualcosa non va (ciclo
+# rotto, fasce saltate): niente rimozioni, allarme.
+AUTO_MAX_REMOVED_SHARE = 0.25
+
+
+def _load_state(db: Any, key: str) -> dict[str, Any]:
+    try:
+        rows = db.table("app_settings").select("value").eq("key", key).limit(1).execute().data
+        return (rows[0]["value"] or {}) if rows else {}
+    except Exception:
+        return {}
+
+
+async def reconcile_auto_inventory(category: str = "automobile") -> dict[str, Any]:
+    """Inventario di TUTTE le auto, a rotazione (AUTO_INVENTORY_SLICES notti).
+
+    537k annunci = ~5.400 richieste: dallo stesso IP degli iPhone non si fanno
+    in una notte. Le fasce di prezzo si fissano a inizio ciclo e ogni notte se
+    ne sfoglia una fetta (fasce k, k+N, k+2N...). Una notte saltata o una
+    fetta incompleta non fa avanzare il ciclo.
+
+    Venduti SENZA verifica pagina per pagina (migliaia di sparizioni al giorno
+    non si verificano una per una): a fine ciclo, ogni auto attiva non vista
+    da quando il ciclo è cominciato (``updated_at`` < inizio ciclo) è sparita,
+    con data = l'ultima volta vista. Precisione della data: ±durata del ciclo,
+    accettabile su tempi di vendita di settimane. Le ripubblicazioni dello
+    stesso venditore si fondono prima (services/republish.merge_into_old).
+    """
+    lock = _inventory_lock(category)
+    if lock.locked():
+        return {"mode": "auto_slice", "category": category, "skipped": True}
+    async with lock:
+        try:
+            result = await _auto_slice(category)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Inventario %s fallito", category)
+            result = {"mode": "auto_slice", "category": category, "aborted": True,
+                      "error": f"{type(exc).__name__}: {exc}"[:300]}
+        await _record_inventory(category, result)
+    return result
+
+
+async def _auto_slice(category: str) -> dict[str, Any]:
+    from backend.core.config import settings  # noqa: PLC0415
+
+    db = get_db()
+    key = f"inventory_cycle:{category}"
+    state = await asyncio.to_thread(_load_state, db, key)
+    n = max(1, settings.auto_inventory_slices)
+    now = datetime.now(timezone.utc)
+    if not state.get("bands") or state.get("next", 0) == 0:
+        # Nuovo ciclo: fasce fissate ora (ognuna sotto il tetto di hades).
+        scraper = SubitoScraper(category_id=SWEEP_CATEGORY_ID.get(category))
+        anti_min, anti_max = anti_spam_bounds(category)
+        bands = await price_bands(scraper, SWEEP_QUERY[category], anti_min, anti_max)
+        state = {"bands": [[lo, hi] for lo, hi, _ in bands], "slices": n, "next": 0,
+                 "cycleStart": now.isoformat(), "walked": {},
+                 "subitoTotal": sum(c for _, _, c in bands)}
+    k = int(state["next"])
+    mine = [tuple(b) for i, b in enumerate(state["bands"]) if i % int(state["slices"]) == k]
+    try:
+        grand, _seen = await walk_inventory(category, progress=logger.info, bands_override=mine)
+    except ScraperBlockedError as exc:
+        await asyncio.to_thread(_save_state, db, key, state)
+        return {"mode": "auto_slice", "category": category, "aborted": True, "error": str(exc)[:200]}
+    if not grand["complete"]:
+        await asyncio.to_thread(_save_state, db, key, state)
+        return {"mode": "auto_slice", "category": category, "slice": k, **grand}
+
+    state["walked"][str(k)] = datetime.now(timezone.utc).isoformat()
+    state["read"] = int(state.get("read", 0)) + grand["read"]
+    result: dict[str, Any] = {"mode": "auto_slice", "category": category, "slice": k,
+                              "slices": state["slices"], **grand}
+    if k + 1 < int(state["slices"]):
+        state["next"] = k + 1
+    else:
+        state["next"] = 0  # ciclo completo: il prossimo giro ne apre uno nuovo
+        result.update(await asyncio.to_thread(_close_auto_cycle, db, category, state))
+        # Copertura del ciclo per il cruscotto (come l'inventario iPhone).
+        await asyncio.to_thread(_save_state, db, f"inventory_last:{category}", {
+            "at": datetime.now(timezone.utc).isoformat(), "subitoTotal": state.get("subitoTotal"),
+            "read": state.get("read"), "complete": True, "cycleStart": state["cycleStart"],
+        })
+    await asyncio.to_thread(_save_state, db, key, state)
+    return result
+
+
+def _close_auto_cycle(db: Any, category: str, state: dict[str, Any]) -> dict[str, Any]:
+    """Fine ciclo: le auto attive non viste dall'inizio del ciclo sono sparite."""
+    from backend.core.database import _get_pool  # noqa: PLC0415
+    from backend.services.garbage_collector import TABLES  # noqa: PLC0415
+
+    table = TABLES[category]
+    cutoff = state["cycleStart"]
+    cols = ("id, listing_url, title, asking_price, seller_id, variant_key, found_at, "
+            "updated_at, published_at")
+    with _get_pool().connection() as conn:
+        active_n = conn.execute(
+            f"select count(*) as n from public.{table} where status in ('nuovo','visto')"
+        ).fetchone()["n"]
+        missing = [dict(r) for r in conn.execute(
+            f"select {cols} from public.{table} where status in ('nuovo','visto') and updated_at < %s",
+            (cutoff,),
+        ).fetchall()]
+        if not missing:
+            return {"candidates": 0, "removed": 0}
+        if len(missing) > AUTO_MAX_REMOVED_SHARE * max(active_n, 1):
+            logger.warning("Ciclo %s: %d spariti su %d attivi, oltre la soglia: niente rimozioni",
+                           category, len(missing), active_n)
+            return {"candidates": len(missing), "removed": 0, "capped": len(missing)}
+        # Ripubblicazioni: solo i venditori dei "mancanti", tra gli attivi visti.
+        sellers = sorted({str(r["seller_id"]) for r in missing if r.get("seller_id")})
+        still_online: list[dict[str, Any]] = []
+        for i in range(0, len(sellers), 500):
+            still_online += [dict(r) for r in conn.execute(
+                f"select {cols} from public.{table} where status in ('nuovo','visto') "
+                f"and updated_at >= %s and seller_id = any(%s)",
+                (cutoff, sellers[i:i + 500]),
+            ).fetchall()]
+    merged = set(merge_into_old(db, table, category, missing, still_online))
+    gone = [r["id"] for r in missing if r["id"] not in merged]
+    with _get_pool().connection() as conn, conn.cursor() as cur:
+        for i in range(0, len(gone), 1000):
+            # updated_at NON si tocca: resta l'ultima volta vista = data di sparizione.
+            cur.execute(
+                f"update public.{table} set status = 'venduto_rimosso' where id = any(%s)",
+                (gone[i:i + 1000],),
+            )
+    logger.info("Ciclo %s chiuso: %d spariti, %d ripubblicazioni fuse", category, len(gone), len(merged))
+    return {"candidates": len(missing), "removed": len(gone), "republished_merged": len(merged)}
 # Oltre quest'età l'ultimo inventario si rifà appena possibile (PC spento
 # all'ora programmata: senza, i venduti di quella notte non si vedono mai).
 INVENTORY_MAX_AGE_H = 26
@@ -481,7 +636,15 @@ async def _record_inventory(category: str, result: dict[str, Any]) -> None:
 
 async def inventory_watchdog(category: str = "smartphone") -> dict[str, Any] | None:
     """Rifà l'inventario se l'ultimo completato è più vecchio di
-    INVENTORY_MAX_AGE_H ore (PC spento all'ora programmata)."""
+    INVENTORY_MAX_AGE_H ore (PC spento all'ora programmata). Per le auto:
+    l'ultima fetta del ciclo a rotazione."""
+    if category == "automobile":
+        state = await asyncio.to_thread(_load_state, get_db(), f"inventory_cycle:{category}")
+        walked = [datetime.fromisoformat(v) for v in (state.get("walked") or {}).values()]
+        last = max(walked) if walked else None
+        if last and (datetime.now(timezone.utc) - last).total_seconds() < INVENTORY_MAX_AGE_H * 3600:
+            return None
+        return await reconcile_auto_inventory(category)
     try:
         rows = await asyncio.to_thread(
             lambda: get_db().table("app_settings").select("value")

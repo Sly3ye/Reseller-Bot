@@ -280,15 +280,21 @@ CAR_EXCLUDED = "escluso"
 CAR_GEN_ALL = "tutte"   # il modello di Subito non dichiara la generazione
 
 _MODEL_GEN_RE = re.compile(r"^(?P<family>.*?)\s*\((?P<gen>[^)]+)\)\s*(?P<rest>.*)$")
+# "Fiesta 4ª serie", "208 1° serie", "Q5 2ª serie": la generazione in coda.
+_MODEL_SERIE_RE = re.compile(r"^(?P<family>.+?)\s+(?P<gen>\d+\s*[ªa°º]?\s*serie)\b(?P<rest>.*)$",
+                             re.IGNORECASE)
 
 
 def split_car_model(model: str) -> tuple[str, str | None]:
-    """"Serie 1 (E87)" → ("Serie 1", "E87"); "Panda" → ("Panda", None)."""
-    m = _MODEL_GEN_RE.match(model.strip())
-    if not m:
-        return model.strip(), None
-    family = f"{m.group('family')} {m.group('rest')}".strip()
-    return family, m.group("gen").strip()
+    """"Serie 1 (E87)" → ("Serie 1", "E87"); "Fiesta 4ª serie" → ("Fiesta",
+    "4ª serie"); "Panda" → ("Panda", None)."""
+    model = model.strip()
+    for regex in (_MODEL_GEN_RE, _MODEL_SERIE_RE):
+        m = regex.match(model)
+        if m:
+            family = f"{m.group('family')} {m.group('rest')}".strip()
+            return family, m.group("gen").strip()
+    return model, None
 
 
 def structured_car_variant(brand: str | None, model: str | None) -> tuple[str, str] | None:

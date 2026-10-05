@@ -855,7 +855,10 @@ async def run_nightly_batch(
 
 # Categorie coperte per intero dalla ricerca ampia: la media notturna si
 # calcola dagli annunci attivi già nel DB, senza nuove richieste a Subito.
-DB_TREND_CATEGORIES = frozenset({"smartphone"})
+# Con la raccolta completa delle auto anche i loro trend si calcolano dal DB
+# (niente scraping per target nel Motore Notturno).
+DB_TREND_CATEGORIES = frozenset({"smartphone", "automobile"} if settings.auto_full_category
+                                else {"smartphone"})
 
 
 def nightly_trend_from_db(target: dict[str, Any]) -> dict[str, Any]:

@@ -159,8 +159,12 @@ class SubitoScraper(BaseScraper):
         timeout_ms: int = 30_000,
         browser_name: str = "firefox",  # legacy: ignorato
         organic_only: bool = True,      # legacy: hades restituisce già annunci reali
+        category_id: str | None = None,
     ) -> None:
         self.timeout_s = timeout_ms / 1000
+        # Categoria Subito (es. "2" = Auto): con una query vuota si sfoglia
+        # TUTTA la categoria, non una ricerca testuale.
+        self.category_id = category_id
         self.organic_only = organic_only
         self.last_search: dict[str, Any] = {"pages": 0, "gap": False, "oldest_published": None}
 
@@ -349,13 +353,16 @@ class SubitoScraper(BaseScraper):
         max_price: int | None,
     ) -> dict:
         params: dict[str, str] = {
-            "q": query,
             "t": "s",              # t=s → vendita
             "sort": "datedesc",    # più recenti prima: ogni giro dello sniper
                                    # vede gli ultimi pubblicati, non i "rilevanti"
             "lim": str(limit),
             "start": str(start),
         }
+        if query:
+            params["q"] = query
+        if self.category_id:
+            params["c"] = self.category_id
         if min_price is not None:
             params["ps"] = str(min_price)
         if max_price is not None:
