@@ -56,7 +56,12 @@ def _get_pool() -> ConnectionPool:
                     settings.database_url,
                     min_size=1,
                     max_size=int(os.getenv("DB_POOL_MAX", "10")),
-                    kwargs={"row_factory": dict_row},
+                    # prepare_threshold=None: niente query preparate lato server.
+                    # Con le preparate, una migrazione applicata da un altro
+                    # processo (es. backend di sviluppo accanto al raccoglitore)
+                    # fa fallire le query in corso con "cached plan must not
+                    # change result type" (inventario interrotto il 2026-10-05).
+                    kwargs={"row_factory": dict_row, "prepare_threshold": None},
                     open=True,
                 )
                 atexit.register(_close_pool)
