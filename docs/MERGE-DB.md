@@ -171,6 +171,19 @@ del 5/10; il segnale per spegnerla (`AUTO_FULL_CATEGORY=false` nel `.env`,
 poi `docker compose up -d collector`) è la riga "Richieste oggi" con blocchi,
 o pause del governatore nei log (`Governatore: … in pausa`).
 
+Via di mezzo, da decidere: solo gli annunci nuovi delle auto (testa e
+sweep, circa 1.700 richieste al giorno), senza l'inventario a rotazione.
+Basta una riga nel `.env` di root del Mac:
+`SCHEDULER_SKIP=inventory_auto,inventory_watchdog_auto`, poi
+`docker compose up -d collector`. I modelli di prezzo delle auto continuano
+a crescere; i venduti delle auto no, finché l'amico non usa il programma.
+
+**Ambito iPhone dal 12 in su (5/10).** I modelli più vecchi, gli accessori e
+gli altri marchi già raccolti sono nella tabella
+`live_opportunities_tech_archivio`, che viaggia nel dump: sul Mac non c'è
+niente da fare. Per rimetterli al loro posto:
+`docker compose exec -T backend python scripts/archive_out_of_scope.py --restore`.
+
 **Verifiche dei venduti a metà.** L'inventario iPhone del 5/10 ha trovato
 ~3.600 candidati venduti. La loro coda (`verify_queue:smartphone` in
 `app_settings`) viaggia nel dump e il `collector` del Mac la riprende da solo

@@ -269,6 +269,21 @@ Due correzioni dai primi dati:
   dallo stesso account; la foto servirebbe per gli account nuovi, e la sua
   precisione va prima misurata a mano (G12).
 
+**Ambito e riconoscimento (5/10 pomeriggio):**
+- **iPhone dal 12 in su** (`IPHONE_MIN_GEN`): sotto c'è poco giro e poco
+  margine. 11.177 annunci più vecchi e 272 non iPhone (altri marchi,
+  accessori) sono in archivio, non cancellati. Il filtro modelli passa da 859
+  voci (809 erano titoli non riconosciuti) a 29 modelli veri.
+- **Riconoscimento dei guasti misurato:** le regole trovano il 48% dei guasti
+  reali, con il 91% di precisione (serie di verifica, 99 annunci). Più di metà
+  dei rotti passa per sana: il collo di bottiglia è l'AI (B5 sul Mac), non
+  altre regole. Intanto l'AI legge prima i candidati, poi gli annunci sotto
+  l'80% della mediana del modello, poi i modelli non riconosciuti. La scheda
+  avvisa quando un annuncio non è ancora stato letto dall'AI.
+- **Rivendita dai venduti:** un modello passa alla stima dai venduti con
+  almeno 5 vendite pulite. Il 5/10 erano 0 venduti al mattino; nel pomeriggio
+  254, con 19 varianti già sopra soglia.
+
 **Resilienza, fatto il 5/10 pomeriggio:**
 - **Verifiche dei venduti in coda nel DB**, a pezzi da 50 (§2.5, la parte più
   lunga dell'inventario). L'inventario iPhone del 5/10 ha trovato 3.565
