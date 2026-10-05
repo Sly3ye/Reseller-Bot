@@ -171,8 +171,9 @@ del 5/10; il segnale per spegnerla (`AUTO_FULL_CATEGORY=false` nel `.env`,
 poi `docker compose up -d collector`) è la riga "Richieste oggi" con blocchi,
 o pause del governatore nei log (`Governatore: … in pausa`).
 
-Via di mezzo, da decidere: solo gli annunci nuovi delle auto (testa e
-sweep, circa 1.700 richieste al giorno), senza l'inventario a rotazione.
+Deciso il 5/10: si tiene tutto acceso. **Se arrivano blocchi**, si passa alla
+via di mezzo: solo gli annunci nuovi delle auto (testa e sweep, circa 1.700
+richieste al giorno), senza l'inventario a rotazione.
 Basta una riga nel `.env` di root del Mac:
 `SCHEDULER_SKIP=inventory_auto,inventory_watchdog_auto`, poi
 `docker compose up -d collector`. I modelli di prezzo delle auto continuano
