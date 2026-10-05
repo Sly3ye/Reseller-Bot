@@ -29,8 +29,11 @@ from backend.scrapers.nlp_parser import _is_accessory_listing
 from backend.services.depreciation import carry_cost_by_variant
 from backend.services.scoring import evaluate_opportunity, risk_assessment
 from backend.services.survival import EXPIRY_DAYS, removal_kind, survival_summary
-from backend.services.valuation import evaluate_value
-from backend.services.variants import AUTO_ONLY_DEFECTS, iphone_model_key, is_healthy, model_text
+from backend.services.valuation import car_expected_price, evaluate_value, fit_car_price_model
+from backend.services.variants import (
+    AUTO_ONLY_DEFECTS, CAR_GEN_SEP, car_model_label, iphone_model_key, is_healthy, model_text,
+    year_fits_generation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -359,49 +362,35 @@ def _seller_profiles(
     return profiles
 
 
-_KM_MODEL_MIN_SAMPLES = 8
-
-
-def _km_price_models(
-    db: Client, table: str, target_ids: list[str]
-) -> dict[str, tuple[float, float, int]]:
-    """Regressione lineare prezzo~km per target (A1, solo auto).
-
-    target_id → (slope, intercept, n). Il modello è accettato solo con ≥ 8
-    campioni e pendenza negativa (il prezzo DEVE scendere coi km: una
-    pendenza positiva indica dati sporchi, meglio nessuna stima).
-    """
-    models: dict[str, tuple[float, float, int]] = {}
-    for target_id in target_ids:
-        try:
-            rows = (
-                db.table(table)
-                .select("km, asking_price")
-                .eq("target_id", target_id)
-                .in_("status", list(_ACTIVE_STATUSES))
-                .not_.is_("km", "null")
-                .limit(500)
-                .execute()
-            ).data or []
-        except Exception:
+def _car_price_models(db: Client, table: str) -> dict[str, dict[str, Any]]:
+    """Modello prezzo ~ età + km per VARIANTE auto (modello@generazione), dagli
+    annunci attivi SANI con anno e km. Varianti incerte (@nd) o escluse
+    (@escluso) non hanno modello: lì l'auto resta senza valore equo.
+    Vedi ``valuation.fit_car_price_model`` per le soglie di accettazione."""
+    try:
+        rows = _select_all(
+            lambda: db.table(table)
+            .select("variant_key, year, km, asking_price, condition_tier")
+            .in_("status", list(_ACTIVE_STATUSES))
+        )
+    except Exception:
+        return {}
+    by_variant: dict[str, list[tuple[int, int, float]]] = {}
+    for r in rows:
+        vk = r.get("variant_key") or ""
+        if CAR_GEN_SEP not in vk or vk.endswith(("@nd", "@escluso")):
             continue
-        points = [
-            (float(r["km"]), float(r["asking_price"]))
-            for r in rows
-            if r.get("km") and r.get("asking_price")
-            and float(r["asking_price"]) > 0
-        ]
-        if len(points) < _KM_MODEL_MIN_SAMPLES:
+        if not is_healthy(r.get("condition_tier") or "buono"):
             continue
-        xs = [p[0] for p in points]
-        ys = [p[1] for p in points]
-        try:
-            slope, intercept = statistics.linear_regression(xs, ys)
-        except statistics.StatisticsError:
-            continue
-        if slope >= 0:
-            continue
-        models[target_id] = (slope, intercept, len(points))
+        price = _to_float(r.get("asking_price"))
+        if (r.get("year") and r.get("km") is not None and price
+                and year_fits_generation(vk, r["year"])):
+            by_variant.setdefault(vk, []).append((int(r["year"]), int(r["km"]), price))
+    models = {}
+    for vk, pts in by_variant.items():
+        fitted = fit_car_price_model(pts)
+        if fitted:
+            models[vk] = fitted
     return models
 
 
@@ -619,10 +608,16 @@ def _sold_variant_refs(db: Client, table: str) -> dict[str, dict[str, tuple[floa
 
 def _model_key(variant_key: str | None) -> str | None:
     """Chiave modello = variante senza il suffisso memoria (iphone-13-pro-max-256
-    → iphone-13-pro-max). Serve per filtrare per modello senza ambiguità."""
+    → iphone-13-pro-max) o senza la generazione per le auto (bmw-125i@f2x →
+    bmw-125i). Serve per filtrare per modello senza ambiguità."""
     if not variant_key or variant_key == "auto":
         return None
-    return variant_key.rsplit("-", 1)[0]
+    if CAR_GEN_SEP in variant_key:
+        return variant_key.split(CAR_GEN_SEP, 1)[0]
+    head, _, last = variant_key.rpartition("-")
+    # Toglie solo un suffisso di memoria (128, 1024, na): "bmw-123d" resta
+    # intero (prima diventava "bmw" e tutte le auto finivano sotto "Bmw").
+    return head if head and (last.isdigit() or last == "na") else variant_key
 
 
 def _model_label(model_key: str) -> str:
@@ -637,7 +632,7 @@ def _model_label(model_key: str) -> str:
             return "mini" if p == "mini" else p.capitalize()
         rest = " ".join(word(p) for p in parts[1:])
         return f"iPhone {rest}".strip()
-    return model_key.replace("-", " ").title()
+    return car_model_label(model_key) or model_key.replace("-", " ").title()
 
 
 def _row_model(row: dict[str, Any], targets: dict[str, str]) -> str | None:
@@ -654,6 +649,8 @@ def _row_model(row: dict[str, Any], targets: dict[str, str]) -> str | None:
         # versioni precedenti del resolver (iphone-12e, iphone-17-mini).
         if iphone_model_key(label) == mk:
             return label
+    if mk and car_model_label(mk):
+        return car_model_label(mk)
     return targets.get(row.get("target_id"))
 
 
@@ -746,7 +743,7 @@ def _build_enrich_ctx(
         "price_history": _latest_price_history(db, [r["id"] for r in rows]),
         "price_watch": _price_watch(db, [r["id"] for r in rows]),
         "seller_profiles": _seller_profiles(db, table, rows),
-        "km_models": {},
+        "car_models": {},
     }
     # Quanto vale meno un riparato aftermarket (schermo/batteria non originali),
     # misurato sul mercato dalla matrice riparazioni (in cache 5').
@@ -779,10 +776,7 @@ def _build_enrich_ctx(
         carry_cost_by_variant(ctx["variant_pools"]) if target_cat != "automobile" else {}
     )
     if target_cat == "automobile":
-        auto_targets = list(
-            {r["target_id"] for r in rows if r.get("target_id") and r.get("km")}
-        )
-        ctx["km_models"] = _km_price_models(db, table, auto_targets)
+        ctx["car_models"] = _car_price_models(db, table)
     return ctx
 
 
@@ -829,13 +823,18 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
 
     shaped["expectedPrice"] = None
     shaped["marginVsExpected"] = None
-    km_model = ctx["km_models"].get(target_id) if target_id else None
-    if km_model and row.get("km") and shaped["askingPrice"]:
-        slope, intercept, _n = km_model
-        expected = intercept + slope * float(row["km"])
-        if expected > 0:
-            shaped["expectedPrice"] = round(expected, 2)
-            shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
+    car_model = ctx["car_models"].get(variant_key) if variant_key else None
+    if car_model and not year_fits_generation(variant_key, row.get("year")):
+        car_model = None  # anno incompatibile con la generazione: niente stima
+    expected = car_expected_price(car_model, row.get("year"), row.get("km"))
+    if expected and shaped["askingPrice"]:
+        # Prezzo atteso di un'auto SANA di quell'anno e km nella sua generazione.
+        shaped["expectedPrice"] = expected
+        shaped["marginVsExpected"] = round(expected - shaped["askingPrice"], 2)
+    shaped["carModel"] = (
+        {k: car_model[k] for k in ("n", "errPct", "perYearPct", "per10kKmPct", "yearRange", "kmRange")}
+        if car_model else None
+    )
 
     # Riferimento dai VENDUTI per questa variante (prezzo di realizzo reale, n
     # campioni). Preferisce il riferimento della STESSA fascia di condizione
@@ -859,7 +858,8 @@ def _enrich_opportunity(row: dict[str, Any], ctx: dict[str, Any]) -> dict[str, A
         condition_tier=row.get("condition_tier"),
         variant_prices=pool or [],
         km=row.get("km"),
-        km_model=km_model,
+        year=row.get("year"),
+        car_model=car_model,
         sold_reference=sold_reference,
         sold_reference_is_tier_specific=sold_tier_specific,
         has_images=bool(row.get("image_urls")),

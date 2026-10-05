@@ -38,6 +38,7 @@ from tenacity import (
 
 from backend.core.config import settings
 from backend.core.database import upload_image_to_storage
+from backend.services.valuation import normalize_km
 from backend.scrapers.base import BaseScraper, ScrapedListing, SearchRequest
 from backend.scrapers.nlp_parser import parse_listing
 
@@ -434,7 +435,11 @@ class SubitoScraper(BaseScraper):
                 # Campi strutturati auto (None per gli smartphone). Preferiamo il
                 # dato nativo dell'API; se assente, ripieghiamo sull'NLP.
                 "year": self._feature_int(features, "/year") or nlp["year"],
-                "km": self._feature_int(features, "/mileage_scalar") or nlp["km"],
+                # "184" nel campo km = 184.000 (vedi valuation.normalize_km).
+                "km": normalize_km(
+                    self._feature_int(features, "/mileage_scalar") or nlp["km"],
+                    self._feature_int(features, "/year") or nlp["year"],
+                ),
                 "transmission": self._feature(features, "/gearbox"),
                 "fuel": self._feature(features, "/fuel"),
                 # Variante tech (None per le auto): segmentazione di mercato.

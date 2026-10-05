@@ -1,0 +1,80 @@
+{
+  "_note": "Generazioni per modello auto: la variante canonica e' (modello, generazione). Anni = anni di produzione del modello in quella generazione. Fonte: conoscenza generale dei listini BMW, NON verificata su documenti ufficiali: correggere qui se un dato risulta sbagliato. 'codes' = sigle che, se scritte nell'annuncio, decidono la generazione anche contro l'anno. 'exclude' = parole che indicano un altro modello (es. X1 23d). 'exclude' vale ovunque nel titolo; 'parts_prefix' solo se il titolo COMINCIA cosi' (un ricambio, non l'auto).",
+  "models": {
+    "bmw-123d": {
+      "label": "BMW 123d",
+      "exclude": [
+        "x1",
+        "x2",
+        "x3",
+        "x4",
+        "x5",
+        "xdrive23d",
+        "sdrive23d"
+      ],
+      "generations": [
+        {
+          "code": "e8x",
+          "label": "E81/E82/E87/E88",
+          "from": 2007,
+          "to": 2013,
+          "codes": [
+            "e81",
+            "e82",
+            "e87",
+            "e88"
+          ]
+        }
+      ]
+    },
+    "bmw-125i": {
+      "label": "BMW 125i",
+      "exclude": [
+        "x1",
+        "x2",
+        "125d"
+      ],
+      "generations": [
+        {
+          "code": "e8x",
+          "label": "E82/E88",
+          "from": 2008,
+          "to": 2013,
+          "codes": [
+            "e82",
+            "e88",
+            "n52"
+          ]
+        },
+        {
+          "code": "f2x",
+          "label": "F20/F21",
+          "from": 2012,
+          "to": 2019,
+          "codes": [
+            "f20",
+            "f21",
+            "n20",
+            "b48"
+          ]
+        }
+      ]
+    }
+  },
+  "parts_prefix": [
+    "motore",
+    "cambio",
+    "centralina",
+    "cerchi",
+    "cerchio",
+    "fari",
+    "faro",
+    "paraurti",
+    "sedili",
+    "volante",
+    "turbina",
+    "iniettori",
+    "ricambi",
+    "pezzi"
+  ]
+}

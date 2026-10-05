@@ -95,10 +95,27 @@ ck("rotto", tech("iPhone 13", 128, defects=["schermo-rotto"])["condition_tier"],
 ck("difetti", tech("iPhone 13", 128, defects=["batteria-esausta"])["condition_tier"], "difetti")
 ck("buono", tech("iPhone 13", 128)["condition_tier"], "buono")
 
-print("AUTO — variante per generazione (dal target):")
-ck("123d gen", auto("BMW 123d", {"min_year": 2007, "max_year": 2013})["variant_key"], "bmw-123d-2007-2013")
-ck("125i F20", auto("BMW 125i", {"min_year": 2012, "max_year": 2019})["variant_key"], "bmw-125i-2012-2019")
-ck("no filtri", auto("BMW 123d", {})["variant_key"], "bmw-123d")
+print("AUTO — generazione dall'annuncio (tabella data/car_generations.json):")
+def car(query, title, year=None, desc=None):
+    return v.resolve_variant("automobile", title, {"year": year, "defects_noted": [], "features": []},
+                             query=query, description=desc)
+ck("123d 2008 = E8x", car("BMW 123d", "BMW 123d Futura", 2008)["variant_key"], "bmw-123d@e8x")
+ck("125i 2016 = F2x", car("BMW 125i", "BMW 125i M Sport", 2016)["variant_key"], "bmw-125i@f2x")
+ck("125i 2013: a cavallo → incerta", car("BMW 125i", "BMW 125i", 2013)["variant_key"], "bmw-125i@nd")
+ck("la sigla vince sull'anno", car("BMW 125i", "Bmw 125i F20", 2025)["variant_key"], "bmw-125i@f2x")
+ck("sigla in descrizione", car("BMW 125i", "BMW 125i coupé", 2012, "E82 N52 6 cilindri")["variant_key"], "bmw-125i@e8x")
+ck("anno fuori tabella → incerta", car("BMW 125i", "BMW 125i Sport 224cv", 2022)["variant_key"], "bmw-125i@nd")
+ck("X1 23d = altro modello", car("BMW 123d", "Bmw x1 123d del 2023", 2023)["variant_key"], "bmw-123d@escluso")
+ck("ricambio = escluso", car("BMW 123d", "Motore km0 semicompleto BMW 123D")["variant_key"], "bmw-123d@escluso")
+ck("'cambio manuale' nel titolo dell'auto non esclude",
+   car("BMW 123d", "BMW 123d cambio manuale", 2009)["variant_key"], "bmw-123d@e8x")
+ck("etichetta", car("BMW 125i", "BMW 125i", 2016)["variant_label"], "BMW 125i F20/F21")
+ck("anno compatibile con F20", v.year_fits_generation("bmw-125i@f2x", 2016), True)
+ck("F20 del 2025: anno sbagliato", v.year_fits_generation("bmw-125i@f2x", 2025), False)
+ck("modello senza tabella", v.year_fits_generation("golf-gti", 2018), True)
+ck("modello senza tabella: fascia dal target",
+   auto("Golf GTI", {"min_year": 2017, "max_year": 2020})["variant_key"], "golf-gti@2017-2020")
+ck("modello senza tabella e senza fascia", auto("Golf GTI", {})["variant_key"], "golf-gti")
 ck("incidentata", auto("BMW 123d", {}, defects=["incidentata"])["condition_tier"], "incidentata")
 
 print("Helper is_healthy:")

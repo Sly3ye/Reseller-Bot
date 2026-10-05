@@ -37,21 +37,32 @@ Conseguenza pratica: le fondamenta tech (variante canonica → mediana → margi
 
 Senza questi, tutto il resto misura rumore. Sono la vera Fase 1 dell'auto.
 
-- ◻️ 🔴 **Variante canonica per generazione** (`variants._car_variant`). Oggi la
+- ✅ 🔴 **Variante canonica per generazione** (`variants._car_variant`, 2026-10-05):
+  `modello@generazione` da `backend/data/car_generations.json` (la sigla scritta
+  vince sull'anno; anno a cavallo o fuori tabella → `@nd`; altro modello o
+  ricambio → `@escluso`). Retroattivo: `scripts/backfill_car_variants.py`.
+  *Prima:* Oggi la
   variante è lo slug della query (`bmw-125i`) e la generazione entra solo se il
   target ha `min_year`/`max_year` nei `strict_filters` — che i nostri due target
   **non hanno**. Risultato misurato: un unico pool `bmw-125i` che copre
   **2008→2025 e 1.499€→30.900€**. Serve la generazione dedotta dall'anno
   (tabella per modello: E82/E88 2007-2013, F20/F21 2011-2019, F40 2019-…) e,
   quando dichiarata, la **motorizzazione**.
-- ◻️ 🔴 **Valore equo anno + km** (`valuation`). Oggi la regressione è
+- 🔧 🔴 **Valore equo anno + km** (`valuation.fit_car_price_model`, 2026-10-05):
+  log(prezzo) ~ età + km per generazione, anomali esclusi, niente
+  estrapolazione, errore tipico dichiarato e un "affare" deve superarlo; senza
+  modello affidabile → "non so". Km in migliaia ("184") corretti. Sui dati
+  del PC: 125i F20/F21 −8,2%/anno, −1,8%/10.000 km, errore 12% (5 affari su
+  29, prima 17 su 66 artefatti); 123d E8x **non stimabile** (errore 46%: serve
+  carrozzeria/allestimento o più dati). *Prima:* Oggi la regressione è
   `prezzo ~ km` sul target intero e **ignora l'anno**: sui nostri dati stima un
   123d del 2007 con 280.000 km a **6.811€** (chiesto 4.500€ → "affare +52%") e
   un 125i 2013 con 60.000 km a **24.695€**. Su 66 annunci ne classifica
   **17 come "affare"**: sono artefatti, non occasioni. Serve regressione a due
   variabili (età, km) per generazione, con fallback esplicito quando il campione
   non basta — meglio "non so" che un numero inventato.
-- ◻️ 🔴 **Raggruppamento per modello** (`reads._model_key`). Toglie l'ultimo
+- ✅ 🔴 **Raggruppamento per modello** (`reads._model_key`, 2026-10-05): chiave
+  = parte prima di `@`, etichetta dalla tabella ("BMW 125i"). *Prima:* Toglie l'ultimo
   segmento della variante (pensato per `iphone-15-pro-256`), quindi per le auto
   `bmw-123d` → **`bmw`**: nei facet del feed tutte le 66 auto finiscono sotto un
   unico modello "Bmw". Serve una chiave modello nativa dell'auto.
