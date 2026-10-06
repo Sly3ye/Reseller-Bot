@@ -28,7 +28,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from backend.scrapers.nlp_parser import parse_listing  # noqa: E402
-from backend.services.defects import GUASTI, PARTI, PROMPT_V2, coerce_ai_v2, from_nlp  # noqa: E402
+from backend.services.ai_analysis import PROMPT_TECH, ollama_payload  # noqa: E402
+from backend.services.defects import GUASTI, PARTI, coerce_ai_v2, from_nlp, merge_ai_defects  # noqa: E402
 
 SETS = {
     "sviluppo": ROOT / "scripts" / "data" / "eval_guasti.json",          # usata per scrivere le regex
@@ -79,19 +80,22 @@ def predict_regex(it: dict) -> dict:
 def predict_ollama(it: dict, model: str, url: str) -> dict | None:
     import httpx
 
-    prompt = PROMPT_V2.format(title=it["title"] or "", description=it["description"] or "")
+    # Lo stesso prompt e le stesse opzioni della produzione (services/ai_analysis).
+    prompt = PROMPT_TECH.format(title=it["title"] or "", description=(it["description"] or "")[:2000])
     try:
-        r = httpx.post(
-            f"{url}/api/generate",
-            json={"model": model, "prompt": prompt, "format": "json", "stream": False,
-                  "options": {"temperature": 0}},
-            timeout=180,
-        )
+        r = httpx.post(f"{url}/api/generate", json=ollama_payload(prompt, model), timeout=180)
         r.raise_for_status()
         return coerce_ai_v2(json.loads(r.json()["response"]))
     except Exception as exc:  # JSON non valido, timeout, modello assente
         print(f"    ! {model}: {type(exc).__name__}: {str(exc)[:80]}")
         return None
+
+
+def predict_union(it: dict, ai: dict | None) -> dict:
+    """Come lavora la produzione: guasti delle regex + guasti dell'AI."""
+    parsed = parse_listing(it["title"], it["description"])
+    defects, features = merge_ai_defects(parsed["defects_noted"], parsed["features"], ai)
+    return from_nlp(defects, features)
 
 
 def report(name: str, s: dict, secs: float | None) -> None:
@@ -115,7 +119,7 @@ def main() -> int:
     args = ap.parse_args()
 
     names = list(SETS) if args.set == "tutte" else [args.set]
-    items = [it for n in names for it in json.loads(SETS[n].read_text(encoding="utf-8"))["items"]]
+    items = [{**it, "_set": n} for n in names for it in json.loads(SETS[n].read_text(encoding="utf-8"))["items"]]
     print(f"serie: {', '.join(names)} ({len(items)} annunci)")
     runs: list[tuple[str, list, float | None]] = []
     if not args.no_regex:
@@ -129,9 +133,15 @@ def main() -> int:
             if i % 25 == 0:
                 print(f"  {i}/{len(items)}")
         runs.append((model, preds, (time.time() - t0) / len(items)))
+        runs.append((f"regex + {model}", [predict_union(it, p) for it, p in zip(items, preds)], None))
 
     for name, preds, secs in runs:
         report(name, score(items, preds), secs)
+        if len(names) > 1:  # sulla serie di sviluppo le regex sono ottimiste per costruzione
+            for n in names:
+                idx = [i for i, it in enumerate(items) if it["_set"] == n]
+                g = score([items[i] for i in idx], [preds[i] for i in idx])["guasti"]
+                print(f"    solo {n:<9} guasti P {g[0]:.2f}  R {g[1]:.2f}  F1 {g[2]:.2f}")
         if args.show_errors:
             shown = 0
             for it, p in zip(items, preds):

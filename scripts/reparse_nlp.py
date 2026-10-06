@@ -2,7 +2,8 @@
 le righe già in archivio: aggiorna defects_noted, features e condition_tier.
 
 Serve ogni volta che il riconoscimento migliora: le righe vecchie restano
-altrimenti con la classificazione dell'epoca. Non tocca memoria/colore/batteria
+altrimenti con la classificazione dell'epoca. I guasti letti dall'AI (salvati
+in ai_analysis) vengono riaggiunti a quelli delle regex, non persi. Non tocca memoria/colore/batteria
 (alcuni li ha riempiti l'AI) né la variante.
 
 Esegui dalla root (meglio nel container):
@@ -20,6 +21,7 @@ from psycopg.types.json import Jsonb  # noqa: E402
 
 from backend.core.database import _get_pool, get_db  # noqa: E402
 from backend.scrapers.nlp_parser import parse_listing  # noqa: E402
+from backend.services.defects import merge_ai_defects  # noqa: E402
 from backend.services.variants import condition_tier  # noqa: E402
 
 TABLE = "live_opportunities_tech"
@@ -30,7 +32,7 @@ def main() -> int:
     db = get_db()
     rows, start = [], 0
     while True:
-        page = (db.table(TABLE).select("id, title, description, defects_noted, features, condition_tier")
+        page = (db.table(TABLE).select("id, title, description, defects_noted, features, condition_tier, ai_analysis")
                 .order("id").range(start, start + 4999).execute().data or [])
         rows += page
         if len(page) < 5000:
@@ -41,7 +43,7 @@ def main() -> int:
     changes = []
     for r in rows:
         parsed = parse_listing(r["title"], r["description"])
-        defects, features = parsed["defects_noted"], parsed["features"]
+        defects, features = merge_ai_defects(parsed["defects_noted"], parsed["features"], r.get("ai_analysis"))
         tier = condition_tier("smartphone", defects, features)
         before[r["condition_tier"]] += 1
         after[tier] += 1

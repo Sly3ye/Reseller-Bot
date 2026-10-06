@@ -7,15 +7,16 @@ DB principale, **senza perdere né sovrascrivere** nulla.
 ## Perché è sicuro
 - Tutte le chiavi primarie sono **UUID** → due istanze non generano ID in
   collisione.
-- I target si allineano per **nome** `(category, query)`, non per UUID: lo script
-  rimappa `target_id` da solo. iPhone e BMW sono stati seedati con le stesse query
-  su entrambe le macchine (`scripts/seed_targets.py`), quindi combaciano.
+- I target si allineano per **identità** `(category, query, strict_filters)`,
+  non per UUID: lo script rimappa `target_id` da solo. Un target senza filtri
+  (es. "BMW 123d" generico) ripiega sul target **attivo** con lo stesso nome.
+  Stessa chiave su tutte le macchine dalla migrazione 29.
 - Il merge è **additivo, idempotente e atomico**: porta solo ciò che manca,
   rilanciarlo non duplica, e in caso di errore fa rollback (principale intatto).
 
 ## Cosa fa lo script `scripts/merge_instances.py`
-- **target_models**: mappa per `(category, query)`; i target presenti solo nel PC
-  vengono aggiunti (stesso UUID).
+- **target_models**: mappa per identità (vedi sopra, `scripts/target_identity.py`);
+  i target presenti solo nel PC vengono aggiunti (stesso UUID).
 - **live_opportunities_tech / _auto**: inserisce solo gli annunci **nuovi**, dedup
   su `listing_url` (quelli già nel principale non si toccano). `target_id`
   rimappato.
@@ -206,6 +207,22 @@ Sul Mac non servono né `SCHEDULER_SKIP` né `SCHEDULER_ONLY`: girano tutti i
 lavori, compresa la fetta auto, che sul PC il pomeriggio del 5/10 era spenta
 per dare la precedenza alle verifiche dei venduti iPhone.
 
+> **Eseguito il 2026-10-06 notte sul Mac** (dump PC del 5/10 come principale,
+> vecchio Mac dentro). Il Mac aveva raccolto dal 3 al 5/10 (54.776 iPhone).
+> Esito: iPhone 38.078 → 43.415 (+5.337 visti solo dal Mac), auto 78.093 →
+> 81.718 (+3.625, storico BMW del Mac), +1.219 righe di storico prezzi, +173
+> target (BMW per generazione, quasi tutti spenti). Poi `seed_targets.py`
+> (29 iPhone dal 12 + 2 BMW per generazione), `archive_out_of_scope.py --apply`
+> (122 fuori ambito arrivati dal Mac), backfill memoria/modello, reparse NLP,
+> varianti auto, foto del PC (8,7 GB). Differenze dalla procedura:
+> - il vecchio DB del Mac **non** è stato cancellato: `alter database reseller
+>   rename to reseller_mac` (è già la sorgente del passo 2), poi `createdb` +
+>   `pg_restore` del dump PC. Si elimina a mano quando il nuovo principale è
+>   verificato;
+> - il merge ora **salta gli annunci già nell'archivio fuori ambito** del
+>   principale (`<tabella>_archivio`, migrazione 28): senza, 11.450 iPhone
+>   archiviati sul PC tornavano nella tabella viva.
+
 ## Dopo il merge
 - **Rigenera gli aggregati**: attendi il batch notturno sul principale, oppure
   forzalo — `market_trends` (curve/momentum) si ricostruisce dai nuovi annunci.
@@ -232,13 +249,14 @@ dei due (meno i `listing_url` già presenti, che sono deduplicati di proposito).
 > ⚠️ **La gamma iPhone è cambiata**: la flotta include ora la generazione 17
 > (17, 17 Air, 17 Pro, 17 Pro Max, 17e). Prima del merge, sul Mac rilancia
 > `python scripts/seed_targets.py` (dopo il `git pull`): così i target si
-> allineano per `(category, query)` e gli annunci gen 17 finiscono sui target
-> giusti invece di crearne di nuovi.
+> allineano per identità e gli annunci gen 17 finiscono sui target
+> giusti invece di crearne di nuovi. Attenzione: il seed **spegne** ogni target
+> attivo fuori dalla sua lista (es. gli iPhone sotto `IPHONE_MIN_GEN`).
 
 ## Note sull'allineamento dei target
-- Gli **iPhone** combaciano al 100% (query deterministiche da `seed_targets.py`).
-- Per le **auto** (BMW 123d/125i): se sul Mac le query erano scritte diversamente
-  (es. "BMW Serie 1 123d"), quei target non matchano per nome. Non è un problema:
-  lo script li porta comunque come target nuovi (nessun annuncio perso). Se vuoi
-  fonderli, rinomina la `query` in `target_models` così coincide, poi rilancia il
-  merge (è idempotente).
+- Gli **iPhone** combaciano al 100% (query deterministiche, filtri vuoti).
+- Le **auto** hanno un target per generazione (fasce d'anno in `strict_filters`;
+  i BMW attivi sono 123d 2007–2013 e 125i 2012–2019, da `seed_targets.py`).
+  Un target con nome diverso o con filtri diversi da tutti quelli del principale
+  arriva come target nuovo (nessun annuncio perso). Per fonderlo, allinea
+  `query`/`strict_filters` in `target_models` e rilancia il merge (idempotente).

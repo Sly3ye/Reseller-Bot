@@ -266,7 +266,9 @@ microservizi: una coda `asyncio` nello stesso processo basta.
    30 affari).
 7. **AI su tutti gli annunci.** Si usa solo sui candidati (≈ il 2–5% che
    passa il filtro di prezzo o guasto), su richiesta. Meno carico, e latenza
-   compatibile con la corsia veloce.
+   compatibile con la corsia veloce. *(Superato il 6/10: sul Mac `gemma4:e4b`
+   legge circa 5.000 annunci al giorno, quindi si analizzano tutti gli iPhone,
+   in ordine di utilità — prima i candidati e i sottoprezzati, criterio B5.)*
 8. **Foto per tutto.** Archivio storico degli iPhone (annunci per lo più
    spariti) e prima foto di 537k auto: costo marginale basso, ma nessun
    vantaggio. Il valore sta nelle foto degli annunci candidati, salvati e in
@@ -303,7 +305,8 @@ avere 30 affari veri.
 
 **P0, manca:**
 
-- il nodo unico (A5), che è hardware;
+- il nodo unico (A5): dal 6/10 raccoglie solo il Mac; restano niente
+  sospensione in carica e avvio automatico di Docker (criterio A5, §6);
 - spegnere le auto complete in produzione: confermato di **tenerle accese**
   (decisione del 5/10 sera). Se arrivano blocchi, la via di mezzo è
   `SCHEDULER_SKIP=inventory_auto,inventory_watchdog_auto` nel `.env` (vedi
@@ -353,6 +356,9 @@ Due correzioni dai primi dati:
   altre regole. Intanto l'AI legge prima i candidati, poi gli annunci sotto
   l'80% della mediana del modello, poi i modelli non riconosciuti. La scheda
   avvisa quando un annuncio non è ancora stato letto dall'AI.
+- **Il 6/10, sul Mac:** modello AI scelto su misure (`gemma4:e4b`, F1 0,79) e
+  acceso su tutti gli iPhone attivi, nello stesso ordine di utilità. Nella
+  condizione entrano solo i guasti dove l'AI è affidabile (criteri B3–B5, §6).
 - **Rivendita dai venduti:** un modello passa alla stima dai venduti con
   almeno 5 vendite pulite. Il 5/10 erano 0 venduti al mattino; nel pomeriggio
   254, con 19 varianti già sopra soglia.
@@ -421,7 +427,7 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 | A2 | Copertura ≥ 95% della ricerca che Subito dichiara (annunci letti / dichiarati, dall'inventario) | ✅ 99,95% (51.643 letti su 51.669, inventario del 2026-10-02, completo) · 99,9% il 2026-10-05 · da mantenere ogni notte |
 | A3 | Zero annunci persi tra un giro e l'altro (`gaps` = 0 per 14 giorni di fila) | 🔧 da osservare |
 | A4 | Venduti/rimossi rilevati ogni notte (inventario + verifica) | ✅ codice: esito sempre registrato, allarme se interrotto/incompleto, recupero automatico se il PC era spento all'1:30 · dal 5/10 verifiche in coda nel DB, riprese dopo un riavvio · 🔧 primi dati: 520 venduti marcati il 5/10 |
-| A5 | Gira da solo 30 giorni senza interventi, su UNA macchina sempre accesa | ◻️ oggi PC + Mac separati |
+| A5 | Gira da solo 30 giorni senza interventi, su UNA macchina sempre accesa | 🔧 dal 2026-10-06 raccoglie solo il **Mac** (`collector`, DB unico, foto unite, password DB non di default); il PC fa solo da dashboard · da fare sul Mac: niente sospensione in carica (`sudo pmset -c sleep 0`), Docker Desktop all'accesso, coperchio aperto · conta dei 30 giorni dal 6/10 |
 
 ### B. Qualità del dato — sapere cosa c'è nell'annuncio
 
@@ -429,9 +435,9 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 |---|---|---|
 | B1 | Modello riconosciuto ≥ 97% degli annunci attivi | ✅ 97,8% (anche dalla descrizione se il titolo dice solo "iPhone") |
 | B2 | Memoria letta in ≥ 95% degli annunci che la scrivono (prima: "≥ 85% di tutti") | ✅ ~97% di chi la scrive · 80,1% di tutti: il ~18% degli annunci non riporta alcun taglio, nessuna regola o AI lo può leggere dal testo |
-| B3 | **Guasto classificato per tipo** (tassonomia in `services/defects.py`) con F1 ≥ 0,90 sulla serie di **verifica** etichettata (`scripts/eval_guasti.py`) | 🔧 regex v2: precisione 0,91 ma richiamo 0,48 (F1 0,62) su annunci mai visti (rimisurato il 5/10) — serve l'AI per il richiamo |
-| B4 | **Parti non originali** riconosciute (display/batteria già sostituiti: pesano sul prezzo) | 🔧 regex: F1 0,77 in verifica |
-| B5 | Modello AI locale scelto **su misure**, che copre tutti gli annunci rilevanti | 🔧 prompt v2 e banco di prova pronti; misura dei candidati da fare sul Mac |
+| B3 | **Guasto classificato per tipo** (tassonomia in `services/defects.py`) con F1 ≥ 0,90 sulla serie di **verifica** etichettata (`scripts/eval_guasti.py`) | 🔧 regex v2: precisione 0,91 ma richiamo 0,48 (F1 0,62) su annunci mai visti (rimisurato il 5/10) · AI `gemma4:e4b` (6/10): richiamo 0,76 ma precisione 0,50 in verifica (immagina schermo/scocca/"altro" su telefoni sani) → nella condizione entrano solo i guasti dove l'AI è affidabile (face-id, fotocamera, audio, tasti, scheda madre, acqua, non si accende, bloccato); gli altri restano nell'analisi visibile · prossimo passo: prompt contro le allucinazioni, tarato sulla serie di sviluppo |
+| B4 | **Parti non originali** riconosciute (display/batteria già sostituiti: pesano sul prezzo) | 🔧 regex: F1 0,77 in verifica · AI `gemma4:e4b`: F1 0,93 su tutte le 244 (regex 0,87) → l'AI le aggiunge |
+| B5 | Modello AI locale scelto **su misure**, che copre tutti gli annunci rilevanti | ✅ misurati sul Mac (M4, 24 GB, senza ventola) il 6/10 con lo stesso prompt della produzione: `gemma4:e4b` F1 0,79 · 13,5 s/annuncio; `qwen3.5:4b` 0,60 · 16 s; `qwen3.5:9b` 36 s e `gemma4:12b` 48 s/annuncio (troppo lenti per tutto l'archivio); MLX +15% soltanto. In produzione `gemma4:e4b` su **tutti** gli iPhone attivi (prima candidati e sottoprezzati), ~5.000 annunci al giorno al ritmo di default (14 s l'uno, 80% del tempo): candidati e sottoprezzati in poche ore, l'intero archivio (~39.000) in ~2 settimane insieme ai ~2.200 nuovi al giorno |
 
 ### C. Metriche per il business
 
@@ -499,7 +505,7 @@ Ancora da fare per la v1:
 | G13 | **Latenza annuncio → alert** misurata (p50/p95): nel business dei rotti vince chi arriva primo | ✅ misura nel cruscotto (scoperta, tardivi oltre 2h, alert) · ✅ dal 5/10 testa della coda ogni 60 s (alert nello stesso giro, foto dal CDN) ed emivita degli affari (quanto restano online dopo l'alert) · 🔧 alert solo con Telegram configurato: pulsanti di prova in Impostazioni |
 | G14 | **Prezzo di realizzo ≠ prezzo chiesto**: fattore di trattativa dalle proprie compravendite, applicato a rivendita e tetto | ◻️ si attiva con la pipeline (come E3) |
 | G15 | **Incertezza visibile**: campione accanto a ogni cifra di matrice, tetto e alert; matrice per memoria (il mix 64/128/256 differisce tra rotti e sani) | ✅ campione e celle fragili nella matrice, confidenza sul valore equo; margini della matrice col sano a parità di memoria (scheda e tetto lo erano già: valore equo per variante modello+memoria) |
-| G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ✅ merge del 2026-10-03 sul Mac (51.794 annunci tech); foto ancora da importare · dopo A5 non servirà più |
+| G16 | Unione dei DB PC+Mac senza false vendite (le sparizioni durante il fermo di una macchina) | ✅ ultimo merge il 2026-10-06 sul Mac (dump PC principale + vecchio Mac, foto comprese); con una sola macchina non servono altri merge · prima: merge del 2026-10-03 sul Mac (51.794 annunci tech) |
 
 ### Distanza (valutazione del 2026-10-02)
 
@@ -508,10 +514,12 @@ Ancora da fare per la v1:
 - **Sviluppo che manca, in ordine:**
   1. **A5 — una macchina sempre accesa.** È il collo di bottiglia: senza
      inventari ogni notte C4/C6/G11 non maturano mai. Deciso questo, i dati
-     del PC si uniscono una volta e poi c'è un solo DB.
+     del PC si uniscono una volta e poi c'è un solo DB. *(Dal 6/10 il Mac:
+     ultimo merge fatto, vedi A5 e G16.)*
   2. **G11 + G12** — validare venduto e ripubblicazioni su campioni a mano
      (mezza giornata di etichettatura, dopo una settimana di inventari).
   3. **B5 → B3/B4** — modello AI misurato sul Mac, poi guasti oltre le regex.
+     *(B5 fatto il 6/10; B3 resta da migliorare: troppi guasti immaginati.)*
   4. **G13, G15** — latenza degli alert e incertezza visibile (fatti entrambi
      dal 5/10, vedi la tabella sopra).
 - **Dati che solo tu puoi dare:** riparazioni registrate in pipeline (E3 si

@@ -40,7 +40,7 @@ def main() -> None:
     try:
         result = (
             db.table("target_models")
-            .upsert(TARGETS, on_conflict="category,query")
+            .upsert(TARGETS, on_conflict="category,query,strict_filters")
             .execute()
         )
     except Exception as exc:

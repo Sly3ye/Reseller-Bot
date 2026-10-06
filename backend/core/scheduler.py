@@ -268,16 +268,20 @@ def create_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
 
-    # AI locale: consuma il backlog delle descrizioni un po' alla volta (solo se
-    # abilitata). Batch piccolo per non saturare l'LLM locale.
+    # AI locale: analizza TUTTI gli iPhone attivi (prima i candidati, poi il
+    # resto, poi le analisi di una versione vecchia). Ogni giro lavora al massimo
+    # AI_RUN_SECONDS con una pausa tra due annunci: il Mac non resta a pieno
+    # carico e Ollama tiene il modello in memoria tra un giro e l'altro.
     if settings.ai_enabled:
         scheduler.add_job(
             enrich_missing,
-            trigger=IntervalTrigger(minutes=10),
+            trigger=IntervalTrigger(minutes=settings.ai_interval_min),
             kwargs={"limit": 30, "category": "smartphone"},
             id="ai_enrich",
-            name="AI enrich descrizioni (smartphone, 10 min)",
+            name=f"AI analisi annunci (smartphone, {settings.ai_interval_min} min)",
             replace_existing=True,
+            max_instances=1,
+            coalesce=True,
         )
 
     if settings.scheduler_only:

@@ -89,7 +89,22 @@ class Settings:
     # poco giro e poco margine (scelta del 5/10).
     iphone_min_gen: int = int(os.getenv("IPHONE_MIN_GEN", "12"))
     ollama_url: str = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
-    ollama_model: str = os.getenv("OLLAMA_MODEL", "llama3")
+    ollama_model: str = os.getenv("OLLAMA_MODEL", "gemma4:e4b")
+    # Contesto ridotto: prompt + 2.000 caratteri di descrizione stanno in ~2k
+    # token; 4096 tiene bassa la memoria del Mac (default dei modelli: 128k+).
+    ollama_num_ctx: int = int(os.getenv("OLLAMA_NUM_CTX", "4096"))
+    # Ritmo dell'analisi di tutto l'archivio: ogni giro (AI_INTERVAL_MIN) lavora
+    # al massimo AI_RUN_SECONDS, con AI_PAUSE_S di respiro tra due annunci, così
+    # il Mac non resta a pieno carico e il modello resta caricato tra un giro e
+    # l'altro.
+    ai_interval_min: int = int(os.getenv("AI_INTERVAL_MIN", "5"))
+    ai_run_seconds: int = int(os.getenv("AI_RUN_SECONDS", "240"))
+    ai_pause_s: float = float(os.getenv("AI_PAUSE_S", "1.0"))
+    # Guasti dell'AI che contano nella condizione (vuoto = default misurato in
+    # services/defects.AI_TRUSTED_DEFAULT). Es.: "face-id,acqua,parti-non-originali".
+    ai_trusted_guasti: tuple[str, ...] = tuple(
+        g.strip() for g in os.getenv("AI_TRUSTED_GUASTI", "").split(",") if g.strip()
+    )
 
     # Telegram alerts — un bot, due chat (una per verticale). Lascia vuoto
     # per disattivare le notifiche di quel verticale.
