@@ -95,7 +95,7 @@ Leggi l'annuncio e rispondi SOLO con un oggetto JSON valido con ESATTAMENTE ques
 - "segni_estetici": true se dichiara graffi, segni d'usura o ammaccature sul telefono
   (non sulla pellicola o sulla cover), false altrimenti.
 - "per_ricambi": true solo se è venduto dichiaratamente "per ricambi/pezzi".
-- "motivo_prezzo": breve frase sul perché del prezzo (o "").
+- "motivo_prezzo": perché del prezzo in massimo 10 parole (o "").
 - "rischio_truffa": "basso", "medio" o "alto".
 
 ATTENZIONE alle negazioni: "nessun graffio", "senza crepe", "nessun blocco iCloud",
@@ -104,6 +104,57 @@ La percentuale di batteria da sola (es. 78%) non è un guasto se non sotto il 70
 
 Titolo: {title}
 Descrizione: {description}"""
+
+
+# Guasti dell'AI che entrano nella condizione dell'annuncio (gli altri restano
+# solo in ai_analysis, visibili nella scheda). Scelti sulla serie etichettata il
+# 2026-10-06 con gemma4:e4b: F1 >= 0,89 e mai peggio delle regex. Esclusi per
+# ora schermo/scocca/batteria (le regex sono già buone, l'AI li immagina su
+# telefoni sani), "altro" (F1 0,35), ricarica (0,50), segni estetici (81%).
+# Sovrascrivibile con AI_TRUSTED_GUASTI (lista separata da virgole).
+AI_TRUSTED_DEFAULT = (
+    "face-id", "fotocamera", "audio", "tasti", "scheda-madre", "acqua",
+    "non-si-accende", "bloccato", "parti-non-originali", "per-ricambi",
+)
+
+
+def merge_ai_defects(
+    defects: list[str] | None, features: list[str] | None, ai: dict[str, Any] | None,
+    trusted: tuple[str, ...] | set[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Unisce ai codici NLP (regex) i guasti letti dall'AI (ai_analysis v3+).
+
+    Le regex sono precise ma colgono meno della metà dei guasti (verifica del
+    5/10): l'AI aggiunge, non toglie, e solo le voci in ``trusted`` (default
+    AI_TRUSTED_GUASTI / AI_TRUSTED_DEFAULT; "parti-non-originali", "per-ricambi"
+    e "segni-estetici" valgono per i rispettivi campi). La fonte dell'AI resta
+    ``ai_analysis``, così ``reparse_nlp`` può rifare le regex e riapplicare
+    questa unione senza perdere nulla. Senza analisi v3 ritorna l'input.
+    """
+    d = list(defects or [])
+    f = list(features or [])
+    if not ai or "guasti" not in ai:
+        return d, f
+    if trusted is None:
+        from backend.core.config import settings  # noqa: PLC0415
+
+        trusted = settings.ai_trusted_guasti or AI_TRUSTED_DEFAULT
+    trusted = set(trusted)
+    have = set(d)
+    add = {GUASTO_TO_NLP[g] for g in ai.get("guasti") or [] if g in GUASTO_TO_NLP and g in trusted}
+    if ai.get("per_ricambi") and "per-ricambi" in trusted:
+        add.add("per-ricambi")
+    if ai.get("segni_estetici") and "segni-estetici" in trusted:
+        add.add("graffi")
+    d += sorted(add - have)
+    if "parti-non-originali" not in trusted:
+        return d, f
+    part_to_feature = {v: k for k, v in NON_ORIGINAL_FEATURES.items()}
+    for part in ai.get("parti_non_originali") or []:
+        feat = part_to_feature.get(part)
+        if feat and feat not in f:
+            f.append(feat)
+    return d, f
 
 
 def coerce_ai_v2(raw: dict[str, Any]) -> dict[str, Any]:

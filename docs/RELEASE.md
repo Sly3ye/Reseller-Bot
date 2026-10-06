@@ -46,9 +46,9 @@ Stato: ✅ fatto · 🔧 c'è ma non basta / va misurato · ◻️ manca
 |---|---|---|
 | B1 | Modello riconosciuto ≥ 97% degli annunci attivi | ✅ 97,8% (anche dalla descrizione se il titolo dice solo "iPhone") |
 | B2 | Memoria letta in ≥ 95% degli annunci che la scrivono (prima: "≥ 85% di tutti") | ✅ ~97% di chi la scrive · 80,1% di tutti: il ~18% degli annunci non riporta alcun taglio, nessuna regola o AI lo può leggere dal testo |
-| B3 | **Guasto classificato per tipo** (tassonomia in `services/defects.py`) con F1 ≥ 0,90 sulla serie di **verifica** etichettata (`scripts/eval_guasti.py`) | 🔧 regex v2: precisione 0,91 ma richiamo 0,48 (F1 0,62) su annunci mai visti — serve l'AI per il richiamo |
-| B4 | **Parti non originali** riconosciute (display/batteria già sostituiti: pesano sul prezzo) | 🔧 regex: F1 0,77 in verifica |
-| B5 | Modello AI locale scelto **su misure**, che copre tutti gli annunci rilevanti | 🔧 prompt v2 e banco di prova pronti; misura dei candidati da fare sul Mac |
+| B3 | **Guasto classificato per tipo** (tassonomia in `services/defects.py`) con F1 ≥ 0,90 sulla serie di **verifica** etichettata (`scripts/eval_guasti.py`) | 🔧 regex v2: precisione 0,91 ma richiamo 0,48 (F1 0,62) su annunci mai visti · AI `gemma4:e4b` (6/10): richiamo 0,76 ma precisione 0,50 in verifica (immagina schermo/scocca/"altro" su telefoni sani) → nella condizione entrano solo i guasti dove l'AI è affidabile (face-id, fotocamera, audio, tasti, scheda madre, acqua, non si accende, bloccato); gli altri restano nell'analisi visibile · prossimo passo: prompt contro le allucinazioni, tarato sulla serie di sviluppo |
+| B4 | **Parti non originali** riconosciute (display/batteria già sostituiti: pesano sul prezzo) | 🔧 regex: F1 0,77 in verifica · AI `gemma4:e4b`: F1 0,93 su tutte le 244 (regex 0,87) → l'AI le aggiunge |
+| B5 | Modello AI locale scelto **su misure**, che copre tutti gli annunci rilevanti | ✅ misurati sul Mac (M4, 24 GB, senza ventola) il 6/10 con lo stesso prompt della produzione: `gemma4:e4b` F1 0,79 · 13,5 s/annuncio; `qwen3.5:4b` 0,60 · 16 s; `qwen3.5:9b` 36 s e `gemma4:12b` 48 s/annuncio (troppo lenti per tutto l'archivio); MLX +15% soltanto. In produzione `gemma4:e4b` su **tutti** gli iPhone attivi (prima candidati e sottoprezzati), ~5.000 annunci al giorno al ritmo di default (14 s l'uno, 80% del tempo): candidati e sottoprezzati in poche ore, l'intero archivio (~39.000) in ~2 settimane insieme ai ~2.200 nuovi al giorno |
 
 ### C. Metriche per il business
 
